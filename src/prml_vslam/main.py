@@ -774,8 +774,8 @@ def eval_trajectory(
     """Evaluate trajectory against a reference directly from an existing artifact root."""
     import json as _json
 
-    from prml_vslam.eval.query import DiscoveredRun, SelectionSnapshot
     from prml_vslam.eval.services import TrajectoryEvaluationService
+    from prml_vslam.eval.trajectory_contracts import DiscoveredRun, SelectionSnapshot
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)

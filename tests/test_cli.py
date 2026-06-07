@@ -230,7 +230,8 @@ def test_eval_trajectory_command_uses_advio_provider_baseline_file(
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
 
-        def compute_evaluation(self, *, selection):
+        def compute_evaluation(self, *, selection, candidate_trajectory_paths=None):
+            del candidate_trajectory_paths
             captured["reference_path"] = selection.reference_path
             return SimpleNamespace(artifact_root=artifact_root, error_series_paths=[])
 

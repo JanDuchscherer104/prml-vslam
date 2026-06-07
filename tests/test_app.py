@@ -31,8 +31,8 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
-from prml_vslam.eval.query import DiscoveredRun, TrajectoryEvaluationQueryService
-from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
+from prml_vslam.eval.query import TrajectoryEvaluationQueryService
+from prml_vslam.eval.trajectory_contracts import DiscoveredRun, TrajectoryEvaluationManifest
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode

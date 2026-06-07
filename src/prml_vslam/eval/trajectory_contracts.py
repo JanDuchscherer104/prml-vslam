@@ -16,6 +16,47 @@ from pydantic import Field
 from prml_vslam.utils import BaseData
 
 
+class DiscoveredRun(BaseData):
+    """Describe one normalized trajectory candidate under a run artifact root."""
+
+    artifact_root: Path
+    """Root directory for the selected run."""
+
+    estimate_path: Path
+    """Estimated trajectory path for the run."""
+
+    point_cloud_path: Path | None = None
+    """Estimated point-cloud path for optional aligned overlay materialization."""
+
+    method: str | None = None
+    """Known benchmark method id, when it can be inferred from the path."""
+
+    label: str
+    """Compact user-facing label for selection widgets."""
+
+
+class SelectionSnapshot(BaseData):
+    """Capture the resolved reference/candidate choice for trajectory computation."""
+
+    sequence_slug: str
+    """Selected sequence slug."""
+
+    reference_path: Path | None = None
+    """Reference TUM trajectory path when available."""
+
+    target_frame: str | None = None
+    """Target coordinate frame for alignment and metrics."""
+
+    coordinate_status: str | None = None
+    """Native coordinate status of the reference trajectory."""
+
+    reference_source: str | None = None
+    """Reference source key used for persisted alignment provenance."""
+
+    run: DiscoveredRun
+    """Selected artifact run."""
+
+
 class TrajectoryMetricResultRow(BaseData):
     """Long-form trajectory metric statistic row for cross-run aggregation."""
 
@@ -82,6 +123,8 @@ class TrajectoryEvaluationManifest(BaseData):
 
 
 __all__ = [
+    "DiscoveredRun",
+    "SelectionSnapshot",
     "TrajectoryEvaluationManifest",
     "TrajectoryMetricResultRow",
 ]

@@ -1651,11 +1651,11 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
     coordinator._path_config = path_config
     coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
 
-    metrics_path = plan.artifact_root / "evaluation" / "trajectory_metrics.json"
+    manifest_path = plan.artifact_root / "evaluation" / "trajectory" / "manifest.json"
 
     def _fake_trajectory_run_offline(self, input_payload):
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text('{"title": "fake"}', encoding="utf-8")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text('{"run_id": "fake"}', encoding="utf-8")
         return StageResult(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             payload=None,
@@ -1664,7 +1664,13 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
                 status=StageStatus.COMPLETED,
                 config_hash="traj-cfg",
                 input_fingerprint="traj-inp",
-                artifacts={"trajectory_metrics": ArtifactRef(path=metrics_path, kind="json", fingerprint="metrics")},
+                artifacts={
+                    "trajectory_evaluation_manifest": ArtifactRef(
+                        path=manifest_path,
+                        kind="json",
+                        fingerprint="manifest",
+                    )
+                },
             ),
             final_runtime_status=StageRuntimeStatus(
                 stage_key=StageKey.TRAJECTORY_EVALUATION,
@@ -1686,8 +1692,8 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
 
     snapshot = coordinator.snapshot()
     assert snapshot.stage_outcomes[StageKey.TRAJECTORY_EVALUATION].status is StageStatus.COMPLETED
-    assert metrics_path.exists()
-    assert "trajectory_metrics" in snapshot.artifacts
+    assert manifest_path.exists()
+    assert "trajectory_evaluation_manifest" in snapshot.artifacts
     assert snapshot.state is RunState.COMPLETED
 
 

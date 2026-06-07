@@ -28,8 +28,9 @@ from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentMode,
 )
 from prml_vslam.eval.contracts import CloudAlignmentArtifact, CloudAlignmentSelection, MetricStats
-from prml_vslam.eval.query import BenchmarkReference, DiscoveredRun, SelectionSnapshot
 from prml_vslam.eval.trajectory_contracts import (
+    DiscoveredRun,
+    SelectionSnapshot,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
 )
@@ -55,12 +56,6 @@ _SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
 _SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
 _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
 _RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-
-_BENCHMARK_REFERENCE_FILES: list[tuple[str, str, str]] = [
-    ("Ground Truth", "ground_truth", "ground_truth.tum"),
-    ("ARCore", "arcore", "arcore.tum"),
-    ("ARKit", "arkit", "arkit.tum"),
-]
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.config import RunConfig
@@ -165,6 +160,7 @@ class TrajectoryEvaluationService:
         self,
         *,
         selection: SelectionSnapshot,
+        candidate_trajectory_paths: list[Path] | None = None,
     ) -> TrajectoryEvaluationManifest:
         """Compute and persist trajectory APE via the `evo` Python API.
 
@@ -198,6 +194,7 @@ class TrajectoryEvaluationService:
             preview=preview,
             reference_source=selection.reference_source or "ground_truth",
             estimate_source=selection.run.method or "vslam",
+            candidate_trajectory_paths=candidate_trajectory_paths,
         )
 
     def compute_pipeline_evaluation(
@@ -228,6 +225,10 @@ class TrajectoryEvaluationService:
                 "Prepared benchmark inputs do not include the requested trajectory baseline "
                 f"'{trajectory_config.baseline_source.value}'."
             )
+        candidate_paths = [
+            slam.trajectory_tum.path,
+            *(candidate.path for candidate in benchmark_inputs.candidate_trajectories),
+        ]
         return self.compute_evaluation(
             selection=SelectionSnapshot(
                 sequence_slug=sequence_manifest.sequence_id,
@@ -251,70 +252,8 @@ class TrajectoryEvaluationService:
                         else "unknown"
                     ),
                 ),
-            )
-        )
-
-    def discover_benchmark_references(self, run_root: Path) -> list[BenchmarkReference]:
-        """Return aligned reference trajectories present in the run's ``benchmark/`` directory."""
-        benchmark_dir = run_root / "benchmark"
-        return [
-            BenchmarkReference(label=label, source_key=source_key, path=benchmark_dir / filename)
-            for label, source_key, filename in _BENCHMARK_REFERENCE_FILES
-            if (benchmark_dir / filename).exists()
-        ]
-
-    def load_evaluation_for_source(
-        self,
-        *,
-        run: DiscoveredRun,
-        reference: BenchmarkReference,
-    ) -> TrajectoryEvaluationManifest | None:
-        """Load a persisted evaluation for one specific benchmark reference source."""
-        del reference
-        manifest_path = self.manifest_path(run.artifact_root)
-        if not manifest_path.exists():
-            return None
-        return TrajectoryEvaluationManifest.model_validate_json(manifest_path.read_text(encoding="utf-8")).model_copy(
-            update={"path": manifest_path}
-        )
-
-    def compute_evaluation_for_source(
-        self,
-        *,
-        run: DiscoveredRun,
-        reference: BenchmarkReference,
-    ) -> TrajectoryEvaluationManifest:
-        """Compute and persist trajectory APE against one specific benchmark reference."""
-        # TODO: ADVIO: {vSLAM, arkit, arcore} vs GT
-        # TODO: TUM-RGBD: vSLAM vs GT
-        # TODO: Record3D: vSLAM vs GT, where GT is iPhone 17 Pro arkit
-        target_frame = _infer_target_frame(
-            DatasetId.ADVIO, reference.path
-        )  # BenchmarkReferences are ADVIO-only for now
-        preview = compute_trajectory_ape_preview(
-            reference_path=reference.path,
-            estimate_path=run.estimate_path,
-            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
-            target_frame=target_frame,
-            source_frame=_method_world_frame(run.method),
-            reference_source=reference.source_key,
-            method_id=run.method,
-            method_label=run.label,
-        )
-        result_path = self.result_path_for_source(run.artifact_root, reference.source_key)
-        result_path.parent.mkdir(parents=True, exist_ok=True)
-        return self._persist_single_metric_manifest(
-            selection=SelectionSnapshot(
-                sequence_slug=run.artifact_root.name,
-                reference_path=reference.path,
-                target_frame=target_frame,
-                reference_source=reference.source_key,
-                run=run,
             ),
-            reference_path=reference.path,
-            preview=preview,
-            reference_source=reference.source_key,
-            estimate_source=run.method or "vslam",
+            candidate_trajectory_paths=candidate_paths,
         )
 
     def _persist_single_metric_manifest(
@@ -325,6 +264,7 @@ class TrajectoryEvaluationService:
         preview: _TrajectoryMetricPreview,
         reference_source: str,
         estimate_source: str,
+        candidate_trajectory_paths: list[Path] | None = None,
     ) -> TrajectoryEvaluationManifest:
         """Persist the current single-metric output in the future manifest shape."""
         run_root = selection.run.artifact_root
@@ -364,7 +304,9 @@ class TrajectoryEvaluationService:
             sequence_id=selection.sequence_slug,
             run_id=run_root.name,
             reference_trajectories=[reference_path],
-            candidate_trajectories=[selection.run.estimate_path],
+            candidate_trajectories=(
+                [selection.run.estimate_path] if candidate_trajectory_paths is None else candidate_trajectory_paths
+            ),
             error_series_paths=[error_series_path],
         )
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -373,18 +315,6 @@ class TrajectoryEvaluationService:
             encoding="utf-8",
         )
         return manifest
-
-    @staticmethod
-    def result_path_for_source(run_root: Path, source_key: str) -> Path:
-        """Return the persisted metrics path for one benchmark reference source."""
-        if source_key == "ground_truth":
-            return run_root / "evaluation" / "trajectory_metrics.json"
-        return run_root / "evaluation" / f"trajectory_metrics_{source_key}.json"
-
-    @staticmethod
-    def result_path(run_root: Path) -> Path:
-        """Return the deterministic persisted trajectory-metrics path for the controls."""
-        return run_root / "evaluation" / "trajectory_metrics.json"
 
     @staticmethod
     def alignment_path(run_root: Path) -> Path:

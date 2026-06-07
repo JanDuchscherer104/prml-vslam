@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
-from prml_vslam.eval.query import DiscoveredRun, SelectionSnapshot
 from prml_vslam.eval.services import TrajectoryEvaluationService
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
+from prml_vslam.eval.trajectory_contracts import DiscoveredRun, SelectionSnapshot
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus

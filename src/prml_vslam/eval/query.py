@@ -13,65 +13,15 @@ from pathlib import Path
 import numpy as np
 from pydantic import Field
 
-from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest, TrajectoryMetricResultRow
+from prml_vslam.eval.trajectory_contracts import (
+    DiscoveredRun,
+    TrajectoryEvaluationManifest,
+    TrajectoryMetricResultRow,
+)
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.registry import list_sequence_slugs
 from prml_vslam.utils import BaseData, PathConfig
-
-
-class DiscoveredRun(BaseData):
-    """Describe one normalized run discovered under the configured artifacts root."""
-
-    artifact_root: Path
-    """Root directory for the selected run."""
-
-    estimate_path: Path
-    """Estimated trajectory path for the run."""
-
-    point_cloud_path: Path | None = None
-    """Estimated point-cloud path for optional aligned overlay materialization."""
-
-    method: str | None = None
-    """Known benchmark method id, when it can be inferred from the path."""
-
-    label: str
-    """Compact user-facing label for selection widgets."""
-
-
-class BenchmarkReference(BaseData):
-    """Describe one reference trajectory available for benchmark comparison."""
-
-    label: str
-    """Human-readable label shown in the UI."""
-
-    source_key: str
-    """Machine key used to derive result-file names."""
-
-    path: Path
-    """Absolute path to the aligned TUM reference trajectory."""
-
-
-class SelectionSnapshot(BaseData):
-    """Capture the resolved dataset-and-run choice for one explicit evaluation action."""
-
-    sequence_slug: str
-    """Selected sequence slug."""
-
-    reference_path: Path | None = None
-    """Reference TUM trajectory path when available."""
-
-    target_frame: str | None = None
-    """Target coordinate frame for alignment and metrics."""
-
-    coordinate_status: str | None = None
-    """Native coordinate status of the reference trajectory."""
-
-    reference_source: str | None = None
-    """Reference source key used for persisted alignment provenance."""
-
-    run: DiscoveredRun
-    """Selected artifact run."""
 
 
 class EvaluationSelection(BaseData):
@@ -230,10 +180,7 @@ def _optional_float(value: str | None) -> float | None:
 
 
 __all__ = [
-    "BenchmarkReference",
-    "DiscoveredRun",
     "EvaluationSelection",
     "RunTrajectoryEvaluation",
-    "SelectionSnapshot",
     "TrajectoryEvaluationQueryService",
 ]

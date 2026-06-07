@@ -19,13 +19,14 @@ from prml_vslam.eval.contracts import (
     CloudAlignmentSelection,
     MetricStats,
 )
-from prml_vslam.eval.query import DiscoveredRun, SelectionSnapshot
 from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
 from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
 from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
 from prml_vslam.eval.trajectory_contracts import (
+    DiscoveredRun,
+    SelectionSnapshot,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
 )
@@ -146,6 +147,14 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         ],
         timestamps=[0.0, 1.0],
     )
+    arkit_path = write_tum_trajectory(
+        tmp_path / "arkit.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.2, ty=0.0, tz=0.0),
+        ],
+        timestamps=[0.0, 1.0],
+    )
     artifact_root = tmp_path / "run"
     run_config = build_run_config(
         experiment_name="trajectory-stage",
@@ -163,7 +172,10 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     benchmark_inputs = PreparedBenchmarkInputs(
         reference_trajectories=[
             ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path),
-        ]
+        ],
+        candidate_trajectories=[
+            ReferenceTrajectoryRef(source=ReferenceSource.ARKIT, path=arkit_path),
+        ],
     )
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="estimate"),
@@ -181,7 +193,7 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
 
     assert artifact is not None
     assert artifact.reference_trajectories == [reference_path]
-    assert artifact.candidate_trajectories == [estimate_path]
+    assert artifact.candidate_trajectories == [estimate_path, arkit_path]
     assert (artifact_root / "evaluation" / "trajectory" / "manifest.json").exists()
     assert (artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").exists()
     assert artifact.error_series_paths == [
