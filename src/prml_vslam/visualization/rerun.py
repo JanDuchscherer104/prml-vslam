@@ -153,6 +153,20 @@ class RerunScene:
     def evaluation_metric_root(metric_id: str, reference_source: str) -> str:
         return f"{EVALUATION_ENTITY_PATH}/{_entity_token(reference_source)}/{_entity_token(metric_id)}"
 
+    @staticmethod
+    def evaluation_case_root(
+        *,
+        reference_source: str,
+        metric_id: str,
+        candidate_source: str,
+        candidate_coordinate_status: str,
+    ) -> str:
+        metric_token = metric_id.strip().replace(" ", "_") or "metric"
+        return (
+            f"{EVALUATION_ENTITY_PATH}/{_entity_token(reference_source)}/{metric_token}/"
+            f"{_entity_token(candidate_source)}/{_entity_token(candidate_coordinate_status)}"
+        )
+
 
 RERUN_SCENE = RerunScene()
 DEFAULT_3D_SCENE_CONTENTS = RERUN_SCENE.default_3d_scene_contents
@@ -548,7 +562,8 @@ def log_correspondence_strips3d(
     recording_stream.log(entity_path, rr.LineStrips3D(strips, radii=[radii], colors=colors), static=static)
 
 
-def _ape_error_colors(error_values: np.ndarray) -> np.ndarray:
+def ape_error_colors(error_values: np.ndarray) -> np.ndarray:
+    """Map APE error magnitudes to the repo-owned low/high diagnostic colors."""
     values = np.asarray(error_values, dtype=np.float64).reshape(-1)
     if len(values) == 0:
         return np.empty((0, 3), dtype=np.uint8)
@@ -839,6 +854,7 @@ def augment_viewer_recording_with_ground_plane(
 
 __all__ = [
     "augment_viewer_recording_with_ground_plane",
+    "ape_error_colors",
     "attach_recording_sinks",
     "build_default_blueprint",
     "collect_native_visualization_artifacts",

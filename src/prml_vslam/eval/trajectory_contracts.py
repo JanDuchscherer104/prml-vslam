@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from evo.core import metrics
-from pydantic import Field
+from pydantic import Field, field_serializer, field_validator
 
 from prml_vslam.utils import BaseData
 
@@ -100,6 +100,49 @@ class TrajectoryMetricResultRow(BaseData):
     """Path to the raw error series backing distribution plots."""
 
 
+class TrajectoryEvaluationCase(BaseData):
+    """Describe one persisted reference-vs-candidate trajectory metric case."""
+
+    reference_path: Path
+    """Reference TUM trajectory path used for this metric case."""
+
+    candidate_path: Path
+    """Candidate TUM trajectory path evaluated against the reference."""
+
+    reference_source: str
+    """Reference trajectory source key, for example ``ground_truth``."""
+
+    candidate_source: str
+    """Candidate source key, for example ``vista``, ``arcore``, or ``arkit``."""
+
+    candidate_coordinate_status: str
+    """Candidate coordinate status, for example ``raw``, ``source_native``, or ``aligned``."""
+
+    metric_family: Literal["ape", "rpe"]
+    """Metric family computed for this case."""
+
+    pose_relation: metrics.PoseRelation
+    """evo pose relation used for this metric case."""
+
+    error_series_path: Path
+    """Raw error-series artifact backing the case diagnostics."""
+
+    matched_pairs: int
+
+    @field_validator("pose_relation", mode="before")
+    @classmethod
+    def _validate_pose_relation(cls, value: object) -> object:
+        if isinstance(value, str) and value in metrics.PoseRelation.__members__:
+            return metrics.PoseRelation[value]
+        return value
+
+    @field_serializer("pose_relation", when_used="json")
+    def _serialize_pose_relation(self, value: metrics.PoseRelation) -> str:
+        return value.name
+
+    """Number of associated pose pairs used by the metric."""
+
+
 class TrajectoryEvaluationManifest(BaseData):
     """Canonical manifest for one run's trajectory evaluation outputs."""
 
@@ -121,10 +164,14 @@ class TrajectoryEvaluationManifest(BaseData):
     error_series_paths: list[Path] = Field(default_factory=list)
     """Raw error-series artifacts produced by the trajectory evaluator."""
 
+    evaluation_cases: list[TrajectoryEvaluationCase] = Field(default_factory=list)
+    """Structured per-candidate trajectory metric cases produced by the evaluator."""
+
 
 __all__ = [
     "DiscoveredRun",
     "SelectionSnapshot",
+    "TrajectoryEvaluationCase",
     "TrajectoryEvaluationManifest",
     "TrajectoryMetricResultRow",
 ]
