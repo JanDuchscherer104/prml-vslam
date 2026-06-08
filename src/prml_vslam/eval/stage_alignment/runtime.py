@@ -47,22 +47,28 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
     def _run(self, input_payload: TrajectoryAlignmentStageInput) -> StageResult:
         reference = _resolve_reference(input_payload)
         service = TrajectoryEvaluationService(PathConfig(artifacts_dir=input_payload.artifact_root.parent))
-        alignment_path, aligned_estimate_path, aligned_point_cloud_path = service.compute_trajectory_alignment(
-            selection=SelectionSnapshot(
-                sequence_slug=input_payload.sequence_manifest.sequence_id,
-                reference_path=reference,
-                run=DiscoveredRun(
-                    artifact_root=input_payload.artifact_root,
-                    estimate_path=input_payload.slam.trajectory_tum.path,
-                    point_cloud_path=(
-                        input_payload.slam.dense_points_ply.path
-                        if input_payload.slam.dense_points_ply is not None
-                        else None
+        try:
+            alignment_path, aligned_estimate_path, aligned_point_cloud_path = service.compute_trajectory_alignment(
+                selection=SelectionSnapshot(
+                    sequence_slug=input_payload.sequence_manifest.sequence_id,
+                    reference_path=reference,
+                    run=DiscoveredRun(
+                        artifact_root=input_payload.artifact_root,
+                        estimate_path=input_payload.slam.trajectory_tum.path,
+                        point_cloud_path=(
+                            input_payload.slam.dense_points_ply.path
+                            if input_payload.slam.dense_points_ply is not None
+                            else None
+                        ),
+                        label="alignment",
                     ),
-                    label="alignment",
-                ),
+                )
             )
-        )
+        except ValueError as exc:
+            # A degenerate (near-collinear) or timestamp-unmatched estimate cannot be Sim(3)-aligned.
+            # That is an expected condition for up-to-scale monocular runs, not a stage failure:
+            # skip with a warning so the run completes and downstream stages still execute.
+            return self._skipped_result(input_payload, reason=str(exc))
         artifacts: dict[str, ArtifactRef] = {
             "trajectory_alignment": artifact_ref(alignment_path, kind="json"),
             "aligned_estimate_tum": artifact_ref(aligned_estimate_path, kind="tum"),
@@ -94,6 +100,36 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
                 total_steps=1,
                 progress_unit="alignment",
                 processed_items=1,
+            ),
+        )
+
+    def _skipped_result(self, input_payload: TrajectoryAlignmentStageInput, *, reason: str) -> StageResult:
+        outcome = StageOutcome(
+            stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+            status=StageStatus.COMPLETED,
+            config_hash=stable_hash({"baseline_source": input_payload.baseline_source.value}),
+            input_fingerprint=stable_hash(
+                {
+                    "benchmark_inputs": input_payload.benchmark_inputs,
+                    "slam_trajectory": input_payload.slam.trajectory_tum,
+                }
+            ),
+            artifacts={},
+            metrics={"alignment_skipped_reason": reason},
+        )
+        return StageResult(
+            stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+            payload=None,
+            outcome=outcome,
+            final_runtime_status=StageRuntimeStatus(
+                stage_key=StageKey.TRAJECTORY_ALIGNMENT,
+                lifecycle_state=StageStatus.COMPLETED,
+                progress_message=f"Sim(3) alignment skipped: {reason}",
+                last_warning=reason,
+                completed_steps=0,
+                total_steps=1,
+                progress_unit="alignment",
+                processed_items=0,
             ),
         )
 

@@ -148,11 +148,18 @@ class Mast3rSlamBackendConfig(SlamBackendConfig, FactoryConfig["Mast3rSlamBacken
     device: str = "cuda:0"
     """Torch device used for model inference and CUDA kernels."""
 
-    img_size: int = 512
-    """Image long-edge size for the MASt3R encoder (512 upstream default; 224 also supported)."""
+    img_size: Literal[224, 512] = 512
+    """Encoder long-edge size for MASt3R. Upstream supports only 224 or 512."""
 
     use_calib: bool | None = None
     """Override the YAML 'use_calib' flag. None = respect YAML; True/False = force it."""
+
+    match_frac_thresh: float | None = Field(default=None, gt=0.0, lt=1.0)
+    """Override the upstream keyframe overlap threshold (`tracking.match_frac_thresh`).
+
+    A new keyframe is added when the overlap with the current keyframe drops below
+    this fraction. Higher values keyframe more eagerly (denser cloud, higher image
+    coverage, slower run). ``None`` respects the YAML default (0.333)."""
 
     backend_poll_interval_s: float = 0.01
     """Sleep between iterations of the backend optimisation thread when idle."""

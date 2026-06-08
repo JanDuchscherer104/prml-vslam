@@ -49,6 +49,49 @@ from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
 
 
+def test_image_quality_page_is_registered_and_state_round_trips() -> None:
+    from prml_vslam.app.models import ImageQualityPageState
+    from prml_vslam.sources.datasets.contracts import DatasetId
+
+    assert any(
+        page_id is AppPageId.IMAGE_QUALITY and page_module == "image_quality"
+        for page_id, _, page_module, _ in _PAGE_SPECS
+    )
+
+    state = AppState(
+        image_quality=ImageQualityPageState(
+            dataset=DatasetId.ADVIO,
+            sequence_slug="advio-15",
+            run_root=Path(".artifacts/advio-15-offline-vista/vista"),
+            gallery_every=5,
+        )
+    )
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+    assert reloaded.image_quality.sequence_slug == "advio-15"
+    assert reloaded.image_quality.run_root == Path(".artifacts/advio-15-offline-vista/vista")
+    assert reloaded.image_quality.gallery_every == 5
+
+
+def test_session_state_persists_strict_telemetry_history_round_trip() -> None:
+    from pydantic import ValidationError
+
+    status = StageRuntimeStatus(stage_key=StageKey.SOURCE, lifecycle_state=StageStatus.RUNNING)
+    state = AppState(pipeline=PipelinePageState(telemetry_history=[status]))
+
+    # python-mode dump (what SessionStateStore.save now uses) round-trips strict enums.
+    reloaded = AppState.model_validate(state.model_dump(mode="python"))
+    assert reloaded.pipeline.telemetry_history[0].stage_key is StageKey.SOURCE
+    assert reloaded.pipeline.telemetry_history[0].lifecycle_state is StageStatus.RUNNING
+
+    # json-mode dump serializes enums to strings, which strict validation rejects (the bug we fixed).
+    try:
+        AppState.model_validate(state.model_dump(mode="json"))
+        json_round_trips = True
+    except ValidationError:
+        json_round_trips = False
+    assert json_round_trips is False
+
+
 def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert any(
         page_id is AppPageId.ARTIFACTS and page_module == "artifacts" for page_id, _, page_module, _ in _PAGE_SPECS

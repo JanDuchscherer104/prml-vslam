@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
 from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
+from prml_vslam.eval.stage_image.config import ImageEvaluationStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,
@@ -65,6 +66,7 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
     (StageKey.RECONSTRUCTION, "reconstruction"),
     (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+    (StageKey.IMAGE_EVALUATION, "evaluate_image"),
     (StageKey.SUMMARY, "summary"),
 )
 
@@ -100,6 +102,11 @@ class StageBundle(BaseConfig):
         default_factory=lambda: CloudEvaluationStageConfig(enabled=False)
     )
     """Dense-cloud diagnostic stage section."""
+
+    evaluate_image: ImageEvaluationStageConfig = Field(
+        default_factory=lambda: ImageEvaluationStageConfig(enabled=False)
+    )
+    """Rendered-image evaluation stage section."""
 
     summary: SummaryStageConfig = Field(default_factory=SummaryStageConfig)
     """Summary-projection stage section."""
@@ -370,6 +377,7 @@ def build_run_config(
     trajectory_alignment_enabled: bool = False,
     trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
     evaluate_cloud: bool = False,
+    evaluate_image: bool = False,
     ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
     export_viewer_rrd: bool = False,
@@ -412,6 +420,7 @@ def build_run_config(
                 backend=Open3dTsdfBackendConfig(),
             ),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),
+            evaluate_image=ImageEvaluationStageConfig(enabled=evaluate_image),
             summary=SummaryStageConfig(enabled=True),
         ),
         visualization=VisualizationConfig(

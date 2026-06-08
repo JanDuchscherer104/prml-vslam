@@ -46,6 +46,18 @@ __all__ = ["TrajectoryEvaluationService", "compute_trajectory_ape_preview"]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 
+
+def _sequence_matches(relative_parts: tuple[str, ...], sequence_slug: str) -> bool:
+    """Return whether a run artifact path belongs to one dataset sequence.
+
+    A run is attributed to ``sequence_slug`` when any path component equals it or
+    begins with ``f"{sequence_slug}-"``. This lets experiments named with a
+    suffix (for example ``advio-15-offline-vista``) be discovered for the bare
+    sequence slug (``advio-15``) without false-matching ``advio-150``.
+    """
+    return any(part == sequence_slug or part.startswith(f"{sequence_slug}-") for part in relative_parts)
+
+
 _BENCHMARK_REFERENCE_FILES: list[tuple[str, str, str]] = [
     ("Ground Truth", "ground_truth", "ground_truth.tum"),
     ("ARCore", "arcore", "arcore_aligned_to_gt.tum"),
@@ -88,7 +100,7 @@ class TrajectoryEvaluationService(TrajectoryEvaluator):
             for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
             for run_root in [trajectory_path.parent.parent]
             for relative_parts in [run_root.relative_to(self.path_config.artifacts_dir).parts]
-            if any(part == sequence_slug for part in relative_parts)
+            if _sequence_matches(relative_parts, sequence_slug)
             for method in [
                 next(
                     (method for part in reversed(relative_parts) for method in MethodId if part == method.value),

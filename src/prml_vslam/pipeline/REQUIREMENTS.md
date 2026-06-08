@@ -12,7 +12,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
 - The current executable slice uses target persisted stage keys: `source`,
   `slam`, optional `gravity.align`, optional `evaluate.trajectory`, optional
-  `reconstruction`, diagnostic `evaluate.cloud`, and `summary`.
+  `reconstruction`, diagnostic `evaluate.cloud`, optional `evaluate.image`, and
+  `summary`.
 - Runtime execution flows through domain-owned stage configs plus lazy local
   runtime-handle construction. Ray is the pipeline backend infrastructure, not
   the semantic owner of stage behavior.
@@ -47,12 +48,15 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   canonical truth.
 - Ground alignment may run only after `slam`, in offline execution and
   streaming finalize; it must never widen the streaming hot path.
-- `summary` must be projection-only; it must not compute trajectory or cloud
-  metrics.
+- `summary` must be projection-only; it must not compute trajectory, cloud, or
+  image metrics.
 - Trajectory evaluation may run only from prepared benchmark inputs and
   normalized SLAM artifacts. `evaluate.cloud` is a diagnostic binding with no
-  runtime yet; performance telemetry metrics are not part of the current public
-  surface.
+  runtime yet. `evaluate.image` is a full runtime stage that renders the SLAM
+  dense cloud from the estimated trajectory and scores the synthetic views
+  against the input frames; like other derived eval stages it runs only at
+  offline/streaming finalize and must never widen the streaming hot path.
+  Performance telemetry metrics are not part of the current public surface.
 
 ## Pipeline Stage Refactor Requirements
 
@@ -78,7 +82,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   plus live runtime updates/status; it must not become mutable runtime truth.
 - Target public stage vocabulary is exactly `source`, `slam`,
   `gravity.align`, `evaluate.trajectory`, `reconstruction`, `evaluate.cloud`,
-  and `summary`.
+  `evaluate.image`, and `summary`.
 - Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
   DTOs, proxies, and visualization adapters may expose neutral visualization
   items but must not call the Rerun SDK.

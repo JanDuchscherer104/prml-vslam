@@ -226,6 +226,10 @@ docs/slides/**/*.svgz
 !.codex/config.toml
 !.codex/hooks.json
 
+# Claude Code local state
+.claude/
+
+
 # Agent scratch space
 .agents/tmp/
 .agents/work/

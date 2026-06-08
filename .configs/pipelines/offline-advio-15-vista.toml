@@ -36,5 +36,14 @@ enabled = false
 [stages.evaluate_cloud]
 enabled = false
 
+[stages.evaluate_image]
+enabled = true
+
+[stages.evaluate_image.rendering]
+depth_max_m   = 1e6      # render depth clip in cloud units (SLAM is up-to-scale -> keep large)
+dilation_px   = 0        # optional hole-fill for sparse clouds (0 = raw)
+save_gallery  = true     # write GT/render/side-by-side under evaluation/render_eval/
+gallery_every = 10       # keep every Nth scored pair in the gallery (1 = all)
+
 [stages.summary]
 enabled = true

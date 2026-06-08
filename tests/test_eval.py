@@ -382,6 +382,41 @@ def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: P
     assert runtime.status().lifecycle_state is StageStatus.FAILED
 
 
+def test_trajectory_alignment_runtime_skips_degenerate_trajectory(tmp_path: Path) -> None:
+    timestamps = [0.0, 0.1, 0.2, 0.3]
+    collinear = [(float(index), 0.0, 0.0) for index in range(4)]  # all on the x-axis -> rank 1
+
+    def _write(path: Path) -> Path:
+        return write_tum_trajectory(
+            path,
+            poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=p[0], ty=p[1], tz=p[2]) for p in collinear],
+            timestamps=timestamps,
+        )
+
+    reference_path = _write(tmp_path / "reference.tum")
+    estimate_path = _write(tmp_path / "estimate.tum")
+    benchmark_inputs = PreparedBenchmarkInputs(
+        reference_trajectories=[ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path)]
+    )
+    slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
+    input_payload = TrajectoryAlignmentStageInput(
+        artifact_root=tmp_path / "run",
+        sequence_manifest=SequenceManifest(sequence_id="seq"),
+        benchmark_inputs=benchmark_inputs,
+        slam=slam,
+    )
+
+    runtime = TrajectoryAlignmentRuntime()
+    result = runtime.run_offline(input_payload)
+
+    # Degenerate trajectory is skipped gracefully, not a stage failure, so the run continues.
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.outcome.artifacts == {}
+    assert "alignment_skipped_reason" in result.outcome.metrics
+    assert runtime.status().lifecycle_state is StageStatus.COMPLETED
+    assert runtime.status().last_warning is not None
+
+
 def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
     from prml_vslam.eval.stage_alignment.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
 
