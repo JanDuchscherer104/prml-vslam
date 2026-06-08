@@ -15,6 +15,7 @@ class StageKey(StrEnum):
     TRAJECTORY_EVALUATION = "evaluate.trajectory"
     RECONSTRUCTION = "reconstruction"
     CLOUD_EVALUATION = "evaluate.cloud"
+    IMAGE_EVALUATION = "evaluate.image"
     SUMMARY = "summary"
 
     @property
@@ -28,6 +29,7 @@ class StageKey(StrEnum):
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.RECONSTRUCTION: "Build Reconstruction",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
+            StageKey.IMAGE_EVALUATION: "Evaluate Image Quality",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]
 

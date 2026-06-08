@@ -161,7 +161,7 @@ def _render_comparison_table(
         for ref in references
         for ev in (evaluations.get(ref.source_key),)
     ]
-    st.dataframe(rows, use_container_width=True)
+    st.dataframe(rows, width="stretch")
 
 
 def _render_source_detail(evaluation: EvaluationArtifact) -> None:

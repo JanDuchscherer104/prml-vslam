@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from prml_vslam.interfaces import Observation, ObservationProvenance
+from prml_vslam.interfaces.camera import CameraIntrinsics, load_camera_intrinsics_yaml
 from prml_vslam.sources.contracts import SequenceManifest
 
 
@@ -18,17 +19,40 @@ def iter_sequence_manifest_observations(
     *,
     max_frames: int | None = None,
 ) -> Iterator[Observation]:
-    """Yield RGB observations from a normalized source sequence manifest."""
+    """Yield RGB observations from a normalized source sequence manifest.
+
+    Each observation carries the source-raster camera intrinsics when the
+    manifest provides a calibration, so calibrated backends (for example
+    MASt3R-SLAM with ``use_calib=True``) can read ``Observation.intrinsics``.
+    Sequences without a calibration yield ``intrinsics=None`` (the uncalibrated
+    case), which estimating backends ignore.
+    """
     image_paths, timestamps_ns = _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
     provenance = _manifest_provenance(sequence)
+    intrinsics = _resolve_manifest_intrinsics(sequence)
     for seq, (image_path, timestamp_ns) in enumerate(zip(image_paths, timestamps_ns, strict=True)):
         yield Observation(
             seq=seq,
             timestamp_ns=timestamp_ns,
             source_frame_index=seq,
             rgb=_load_rgb(image_path),
+            intrinsics=intrinsics,
             provenance=provenance.model_copy(update={"source_frame_index": seq}),
         )
+
+
+def _resolve_manifest_intrinsics(sequence: SequenceManifest) -> CameraIntrinsics | None:
+    """Resolve the source-raster intrinsics describing the materialized frames.
+
+    Prefer the normalized ``intrinsics.yaml`` (written alongside the frames, so it
+    matches their raster exactly); fall back to dataset-specific manifest assets.
+    Returns ``None`` when the sequence carries no calibration.
+    """
+    if sequence.intrinsics_path is not None and sequence.intrinsics_path.exists():
+        return load_camera_intrinsics_yaml(sequence.intrinsics_path)
+    if sequence.advio is not None:
+        return sequence.advio.intrinsics
+    return None
 
 
 def _load_manifest_rgb_inputs(

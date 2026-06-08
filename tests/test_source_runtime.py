@@ -164,8 +164,28 @@ def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: 
     assert [observation.timestamp_ns for observation in observations] == [10, 20]
     assert observations[0].rgb is not None
     assert observations[0].rgb.shape == (2, 3, 3)
+    assert observations[0].intrinsics is None  # no calibration in the manifest -> uncalibrated
     assert observations[0].provenance.source_id == "source_manifest"
     assert observations[0].provenance.sequence_id == "seq-rgb"
+
+
+def test_sequence_manifest_observation_reader_attaches_manifest_intrinsics(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=2)
+    intrinsics_path = tmp_path / "intrinsics.yaml"
+    intrinsics_path.write_text(
+        "cameras:\n- camera:\n    image_width: 3\n    image_height: 2\n"
+        "    intrinsics:\n      data: [100.0, 110.0, 1.5, 1.0]\n",
+        encoding="utf-8",
+    )
+    manifest = manifest.model_copy(update={"intrinsics_path": intrinsics_path})
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert all(observation.intrinsics is not None for observation in observations)
+    assert observations[0].intrinsics.fx == 100.0
+    assert observations[0].intrinsics.fy == 110.0
+    assert observations[0].intrinsics.width_px == 3
+    assert observations[0].intrinsics.height_px == 2
 
 
 def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path) -> None:

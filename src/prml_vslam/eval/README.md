@@ -47,3 +47,40 @@ remains here.
 Evaluation consumes prepared references and normalized method outputs. It does
 not prepare sources, execute SLAM backends, own Rerun logging, or compute
 summary projections.
+
+## Image Quality
+
+[`image_metrics.py`](./image_metrics.py) is a standalone, IO-free module that
+scores one `(reference, generated)` image pair: L1 (MAE), L2 (RMSE), MSE, PSNR,
+and SSIM, on a `[0, 1]` normalized scale, with an optional boolean mask so
+sparse renders are only scored on covered pixels. It assumes the two images are
+already raster-aligned; it does not resample, warp, or render.
+
+[`image_service.py`](./image_service.py) is the retrieval seam:
+`ImageQualityEvaluationService` loads images, computes per-pair metrics, and
+aggregates them into an `ImageQualitySummary` (per-metric `MetricStats`), which
+it persists to and reloads from `<run_root>/evaluation/image_metrics.json` —
+the same `evaluation/` layout as trajectory and cloud metrics. The CLI command
+`prml-vslam eval-image <reference> <generated>` runs it over single files or
+matched directories. Result DTOs (`ImageQualityMetricId`, `ImageQualityMetrics`,
+`ImageQualitySummary`) live in [`contracts.py`](./contracts.py).
+
+[`render_eval.py`](./render_eval.py) is the run-level engine that joins
+rendering and metrics: given a run's dense cloud, estimated trajectory, source
+intrinsics, and input frames, it renders one view per estimated pose (via
+[`prml_vslam.rendering`](../rendering/README.md)), pairs each with the input
+frame nearest in time, scores masked metrics, and persists
+`image_metrics.json` plus an optional side-by-side gallery. It is the shared
+core behind three surfaces:
+
+- **CLI**: `prml-vslam render-run <artifact_root>` (post-hoc on a finished run);
+  `prml-vslam eval-image` for an already-paired image set; `prml-vslam render-cloud`
+  for low-level rendering only.
+- **Pipeline stage**: [`stage_image/`](./stage_image/) defines `evaluate.image`,
+  a full runtime stage that runs `render_eval` automatically per run when enabled
+  in the TOML (`[stages.evaluate_image] enabled = true`).
+- **App**: the Streamlit review page consumes the persisted JSON + gallery.
+
+The renderer compares the *raw* cloud at *source* intrinsics — the fair,
+reproducible cross-method comparison (ViSTA vs. MASt3R). Source↔model raster
+reconciliation and cloud cleanup are explicit follow-ups, not silent behavior.

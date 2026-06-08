@@ -11,11 +11,14 @@ stage-authoring guidance lives in [`../README.md`](../README.md).
 The pipeline is a linear benchmark runtime, not a generic workflow engine:
 
 ```text
-source -> slam -> [gravity.align] -> [evaluate.trajectory] -> [reconstruction] -> [evaluate.cloud] -> summary
+source -> slam -> [gravity.align] -> [evaluate.trajectory] -> [reconstruction] -> [evaluate.cloud] -> [evaluate.image] -> summary
 ```
 
-`evaluate.cloud` is a diagnostic planning binding without a runtime. Efficiency
-evaluation is intentionally out of the current public pipeline surface.
+`evaluate.cloud` is a diagnostic planning binding without a runtime.
+`evaluate.image` is a full runtime stage that renders the SLAM dense cloud from
+the estimated trajectory and scores it against the input frames
+(`evaluation/image_metrics.json`). Efficiency evaluation is intentionally out of
+the current public pipeline surface.
 
 ## Current Entry Points
 
