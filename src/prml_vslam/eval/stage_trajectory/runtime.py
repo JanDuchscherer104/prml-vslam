@@ -125,10 +125,6 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
             "Prepared benchmark inputs do not include the requested trajectory baseline "
             f"'{input_payload.baseline_source.value}'."
         )
-    candidate_paths = [
-        input_payload.slam.trajectory_tum.path,
-        *(candidate.path for candidate in input_payload.candidate_trajectories),
-    ]
     return TrajectoryEvaluationService(path_config=_path_config_for(input_payload)).compute_evaluation(
         selection=SelectionSnapshot(
             sequence_slug=input_payload.sequence_manifest.sequence_id,
@@ -148,7 +144,7 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
                 label=input_payload.method_label,
             ),
         ),
-        candidate_trajectory_paths=candidate_paths,
+        candidate_trajectories=list(input_payload.candidate_trajectories),
     )
 
 

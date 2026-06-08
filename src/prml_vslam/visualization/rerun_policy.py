@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.methods.stage.visualization import (
@@ -150,6 +151,8 @@ class RerunLoggingPolicy:
                 self._log_ground_alignment(stream, metadata=semantic_event)
             if isinstance(semantic_event, TrajectoryAlignmentArtifact):
                 self._log_trajectory_alignment(stream, alignment=semantic_event)
+            if isinstance(semantic_event, TrajectoryEvaluationManifest):
+                self._log_trajectory_evaluation(stream, manifest=semantic_event)
         for item in update.visualizations:
             self._log_visualization_item(stream, item, payloads=resolved_payloads)
 
@@ -500,6 +503,87 @@ class RerunLoggingPolicy:
             static=True,
         )
 
+    def _log_trajectory_evaluation(self, stream, *, manifest: TrajectoryEvaluationManifest) -> None:
+        for evaluation_case in manifest.evaluation_cases:
+            self._log_trajectory_evaluation_case(stream, evaluation_case=evaluation_case)
+
+    def _log_trajectory_evaluation_case(
+        self,
+        stream,
+        *,
+        evaluation_case: TrajectoryEvaluationCase,
+    ) -> None:
+        try:
+            with np.load(evaluation_case.error_series_path) as payload:
+                error_values = np.asarray(payload["values"], dtype=np.float64)
+                timestamps_s = np.asarray(payload["timestamps_s"], dtype=np.float64)
+                reference_positions_xyz = np.asarray(payload["reference_positions_xyz"], dtype=np.float32)
+                estimate_positions_xyz = np.asarray(payload["estimate_positions_xyz"], dtype=np.float32)
+        except Exception as exc:
+            _LOGGER.warning(
+                "Skipping trajectory evaluation case '%s' vs '%s': %s",
+                evaluation_case.reference_path,
+                evaluation_case.candidate_path,
+                exc,
+            )
+            return
+        matched_pairs = min(
+            evaluation_case.matched_pairs,
+            len(error_values),
+            len(timestamps_s),
+            len(reference_positions_xyz),
+            len(estimate_positions_xyz),
+        )
+        if matched_pairs == 0:
+            _LOGGER.warning(
+                "Skipping empty trajectory evaluation case '%s' vs '%s'.",
+                evaluation_case.reference_path,
+                evaluation_case.candidate_path,
+            )
+            return
+        metric_root = RERUN_SCENE.evaluation_case_root(
+            reference_source=evaluation_case.reference_source,
+            metric_id=_evaluation_metric_id(evaluation_case),
+            candidate_source=evaluation_case.candidate_source,
+            candidate_coordinate_status=evaluation_case.candidate_coordinate_status,
+        )
+        rerun_helpers.log_line_strip3d(
+            stream,
+            entity_path=f"{metric_root}/reference/trajectory",
+            positions_xyz=reference_positions_xyz[:matched_pairs],
+            color_rgb=RERUN_SCENE.reference_color(evaluation_case.reference_source),
+            static=True,
+        )
+        rerun_helpers.log_line_strip3d(
+            stream,
+            entity_path=f"{metric_root}/estimate/trajectory",
+            positions_xyz=estimate_positions_xyz[:matched_pairs],
+            color_rgb=_evaluation_candidate_color(evaluation_case.candidate_source),
+            static=True,
+        )
+        rerun_helpers.log_points3d(
+            stream,
+            entity_path=f"{metric_root}/estimate/ape_points",
+            points_xyz=estimate_positions_xyz[:matched_pairs],
+            colors=rerun_helpers.ape_error_colors(error_values[:matched_pairs]),
+            radii=rerun_helpers.POINT_CLOUD_RADII,
+            static=True,
+        )
+        rerun_helpers.log_correspondence_strips3d(
+            stream,
+            entity_path=f"{metric_root}/correspondences",
+            reference_positions_xyz=reference_positions_xyz[:matched_pairs],
+            estimate_positions_xyz=estimate_positions_xyz[:matched_pairs],
+            static=True,
+        )
+        rerun_helpers.log_scalar_series(
+            stream,
+            entity_path=f"{metric_root}/error/translation_m",
+            timestamps_s=timestamps_s[:matched_pairs],
+            values=error_values[:matched_pairs],
+            static=False,
+        )
+
     def _log_tracking_trajectory(self, stream, *, pose: FrameTransform) -> None:
         if not self.show_tracking_trajectory:
             return
@@ -675,6 +759,19 @@ def _image_plane_distance_for_role(role: str) -> float | None:
     if role == ROLE_SOURCE_PINHOLE:
         return SOURCE_IMAGE_PLANE_DISTANCE
     return None
+
+
+def _evaluation_metric_id(evaluation_case: TrajectoryEvaluationCase) -> str:
+    if evaluation_case.metric_family == "ape" and evaluation_case.pose_relation is not None:
+        return "ape.translation"
+    return f"{evaluation_case.metric_family}.{str(evaluation_case.pose_relation).replace(' ', '_')}"
+
+
+def _evaluation_candidate_color(candidate_source: str) -> np.ndarray:
+    token = _entity_token(candidate_source)
+    if token in {"vista", "vslam"}:
+        return RERUN_SCENE.slam_aligned_rgb
+    return RERUN_SCENE.reference_color(candidate_source)
 
 
 def _trajectory_pose_transforms(trajectory, *, target_frame: str) -> list[FrameTransform]:

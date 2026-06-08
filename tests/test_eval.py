@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -147,14 +148,23 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         ],
         timestamps=[0.0, 1.0],
     )
-    arkit_path = write_tum_trajectory(
-        tmp_path / "arkit.tum",
-        poses=[
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.2, ty=0.0, tz=0.0),
-        ],
-        timestamps=[0.0, 1.0],
-    )
+    candidate_specs = [
+        (ReferenceSource.ARCORE, "source_native", tmp_path / "arcore.tum", 1.2),
+        (ReferenceSource.ARCORE, "aligned", tmp_path / "arcore_aligned_to_gt.tum", 1.3),
+        (ReferenceSource.ARKIT, "source_native", tmp_path / "arkit.tum", 1.4),
+        (ReferenceSource.ARKIT, "aligned", tmp_path / "arkit_aligned_to_gt.tum", 1.5),
+    ]
+    candidate_paths = [
+        write_tum_trajectory(
+            path,
+            poses=[
+                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=offset, ty=0.0, tz=0.0),
+            ],
+            timestamps=[0.0, 1.0],
+        )
+        for _, _, path, offset in candidate_specs
+    ]
     artifact_root = tmp_path / "run"
     run_config = build_run_config(
         experiment_name="trajectory-stage",
@@ -174,7 +184,12 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
             ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path),
         ],
         candidate_trajectories=[
-            ReferenceTrajectoryRef(source=ReferenceSource.ARKIT, path=arkit_path),
+            ReferenceTrajectoryRef(
+                source=source,
+                path=path,
+                coordinate_status=ReferenceCloudCoordinateStatus(status),
+            )
+            for (source, status, _, _), path in zip(candidate_specs, candidate_paths, strict=True)
         ],
     )
     slam = SlamArtifacts(
@@ -193,12 +208,41 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
 
     assert artifact is not None
     assert artifact.reference_trajectories == [reference_path]
-    assert artifact.candidate_trajectories == [estimate_path, arkit_path]
-    assert (artifact_root / "evaluation" / "trajectory" / "manifest.json").exists()
-    assert (artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").exists()
-    assert artifact.error_series_paths == [
-        artifact_root / "evaluation" / "trajectory" / "error_series" / "ground_truth__vista__ape_translation_part.npz"
+    assert artifact.candidate_trajectories == [estimate_path, *candidate_paths]
+    manifest_path = artifact_root / "evaluation" / "trajectory" / "manifest.json"
+    assert manifest_path.exists()
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert {case["pose_relation"] for case in manifest_payload["evaluation_cases"]} == {"translation_part"}
+    metrics_long_path = artifact_root / "evaluation" / "trajectory" / "metrics_long.csv"
+    assert metrics_long_path.exists()
+    assert [case.candidate_source for case in artifact.evaluation_cases] == [
+        "vista",
+        "arcore",
+        "arcore",
+        "arkit",
+        "arkit",
     ]
+    assert [case.candidate_coordinate_status for case in artifact.evaluation_cases] == [
+        "raw",
+        "source_native",
+        "aligned",
+        "source_native",
+        "aligned",
+    ]
+    assert artifact.error_series_paths == [case.error_series_path for case in artifact.evaluation_cases]
+    assert len(artifact.error_series_paths) == 5
+    assert all(path.exists() for path in artifact.error_series_paths)
+    assert artifact.error_series_paths[0].name == "ground_truth__vista__raw__ape_translation_part.npz"
+    assert artifact.error_series_paths[1].name == "ground_truth__arcore__source_native__ape_translation_part.npz"
+    with metrics_long_path.open("r", encoding="utf-8", newline="") as handle:
+        estimate_sources = {row["estimate_source"] for row in csv.DictReader(handle)}
+    assert estimate_sources == {
+        "vista/raw",
+        "arcore/source_native",
+        "arcore/aligned",
+        "arkit/source_native",
+        "arkit/aligned",
+    }
 
 
 # ---------------------------------------------------------------------------

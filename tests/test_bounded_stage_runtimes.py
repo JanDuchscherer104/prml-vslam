@@ -140,9 +140,9 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
         def __init__(self, path_config) -> None:
             self.path_config = path_config
 
-        def compute_evaluation(self, *, selection, candidate_trajectory_paths=None):
+        def compute_evaluation(self, *, selection, candidate_trajectories=None):
             captured["selection"] = selection
-            captured["candidate_trajectory_paths"] = candidate_trajectory_paths
+            captured["candidate_trajectories"] = candidate_trajectories
             return _evaluation_artifact(tmp_path)
 
     monkeypatch.setattr(
@@ -175,7 +175,7 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
     assert selection.reference_path == reference_path
     assert selection.target_frame == "benchmark_world"
     assert selection.coordinate_status == "aligned"
-    assert captured["candidate_trajectory_paths"] == [_slam_artifacts(tmp_path).trajectory_tum.path]
+    assert captured["candidate_trajectories"] == []
 
 
 def test_reconstruction_runtime_returns_reconstruction_artifacts(

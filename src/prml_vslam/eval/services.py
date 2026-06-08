@@ -31,11 +31,12 @@ from prml_vslam.eval.contracts import CloudAlignmentArtifact, CloudAlignmentSele
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
+    TrajectoryEvaluationCase,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
 )
 from prml_vslam.interfaces.slam import SlamArtifacts
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils.geometry import (
     apply_similarity_to_trajectory,
@@ -68,8 +69,21 @@ class _TrajectoryMetricPreview:
 
     error_timestamps_s: np.ndarray
     error_values: np.ndarray
+    reference_positions_xyz: np.ndarray
+    estimate_positions_xyz: np.ndarray
     stats: MetricStats
     alignment: TrajectoryAlignmentArtifact | None = None
+
+
+@dataclass(slots=True)
+class _TrajectoryEvaluationCandidate:
+    """Internal candidate metadata used to persist multi-baseline metrics."""
+
+    path: Path
+    source: str
+    coordinate_status: str
+    method_id: str | None
+    method_label: str
 
 
 class TrajectoryEvaluationService:
@@ -160,7 +174,7 @@ class TrajectoryEvaluationService:
         self,
         *,
         selection: SelectionSnapshot,
-        candidate_trajectory_paths: list[Path] | None = None,
+        candidate_trajectories: list[ReferenceTrajectoryRef] | None = None,
     ) -> TrajectoryEvaluationManifest:
         """Compute and persist trajectory APE via the `evo` Python API.
 
@@ -172,29 +186,14 @@ class TrajectoryEvaluationService:
         if reference_path is None:
             raise FileNotFoundError("The selected dataset slice is missing a TUM reference trajectory.")
 
-        preview = compute_trajectory_ape_preview(
-            reference_path=reference_path,
-            estimate_path=selection.run.estimate_path,
-            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
-            target_frame=selection.target_frame or "world",
-            source_frame=_method_world_frame(selection.run.method),
-            reference_source=selection.reference_source or "reference",
-            method_id=selection.run.method,
-            method_label=selection.run.label,
-        )
-        alignment_mode = (
-            TrajectoryAlignmentMode.SIM3_UMEYAMA
-            if preview.alignment is not None
-            else TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-        )
-        del alignment_mode
-        return self._persist_single_metric_manifest(
+        return self._persist_metric_manifest(
             selection=selection,
             reference_path=reference_path,
-            preview=preview,
             reference_source=selection.reference_source or "ground_truth",
-            estimate_source=selection.run.method or "vslam",
-            candidate_trajectory_paths=candidate_trajectory_paths,
+            candidates=_evaluation_candidates_for(
+                selection=selection,
+                candidate_trajectories=candidate_trajectories,
+            ),
         )
 
     def compute_pipeline_evaluation(
@@ -225,10 +224,6 @@ class TrajectoryEvaluationService:
                 "Prepared benchmark inputs do not include the requested trajectory baseline "
                 f"'{trajectory_config.baseline_source.value}'."
             )
-        candidate_paths = [
-            slam.trajectory_tum.path,
-            *(candidate.path for candidate in benchmark_inputs.candidate_trajectories),
-        ]
         return self.compute_evaluation(
             selection=SelectionSnapshot(
                 sequence_slug=sequence_manifest.sequence_id,
@@ -253,61 +248,90 @@ class TrajectoryEvaluationService:
                     ),
                 ),
             ),
-            candidate_trajectory_paths=candidate_paths,
+            candidate_trajectories=list(benchmark_inputs.candidate_trajectories),
         )
 
-    def _persist_single_metric_manifest(
+    def _persist_metric_manifest(
         self,
         *,
         selection: SelectionSnapshot,
         reference_path: Path,
-        preview: _TrajectoryMetricPreview,
         reference_source: str,
-        estimate_source: str,
-        candidate_trajectory_paths: list[Path] | None = None,
+        candidates: list[_TrajectoryEvaluationCandidate],
     ) -> TrajectoryEvaluationManifest:
-        """Persist the current single-metric output in the future manifest shape."""
+        """Persist one translation-APE metric case for every ordered candidate."""
         run_root = selection.run.artifact_root
         evaluation_dir = run_root / "evaluation" / "trajectory"
         error_series_dir = evaluation_dir / "error_series"
         error_series_dir.mkdir(parents=True, exist_ok=True)
-        error_series_path = error_series_dir / f"{reference_source}__{estimate_source}__ape_translation_part.npz"
-        np.savez(
-            error_series_path,
-            values=preview.error_values,
-            timestamps_s=preview.error_timestamps_s,
-            pair_index=np.arange(len(preview.error_values), dtype=np.int64),
-        )
-
-        matched_pairs = int(len(preview.error_values))
         manifest_path = self.manifest_path(run_root)
         metrics_long_path = self.metrics_long_path(run_root)
-        rows = [
-            TrajectoryMetricResultRow(
-                run_id=run_root.name,
-                sequence_id=selection.sequence_slug,
+
+        rows: list[TrajectoryMetricResultRow] = []
+        cases: list[TrajectoryEvaluationCase] = []
+        for candidate in candidates:
+            preview = compute_trajectory_ape_preview(
+                reference_path=reference_path,
+                estimate_path=candidate.path,
+                alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+                target_frame=selection.target_frame or "world",
+                source_frame=_method_world_frame(candidate.method_id),
                 reference_source=reference_source,
-                estimate_source=estimate_source,
-                metric_family="ape",
-                pose_relation=metrics.PoseRelation.translation_part,
-                statistic=statistic,
-                value=value,
-                unit="m",
-                matched_pairs=matched_pairs,
-                error_series_path=error_series_path,
+                method_id=candidate.method_id,
+                method_label=candidate.method_label,
             )
-            for statistic, value in preview.stats.model_dump(mode="python").items()
-        ]
+            matched_pairs = int(len(preview.error_values))
+            error_series_path = error_series_dir / (
+                f"{_entity_token(reference_source)}__{_entity_token(candidate.source)}__"
+                f"{_entity_token(candidate.coordinate_status)}__ape_translation_part.npz"
+            )
+            np.savez(
+                error_series_path,
+                values=preview.error_values,
+                timestamps_s=preview.error_timestamps_s,
+                pair_index=np.arange(matched_pairs, dtype=np.int64),
+                reference_positions_xyz=preview.reference_positions_xyz,
+                estimate_positions_xyz=preview.estimate_positions_xyz,
+            )
+            cases.append(
+                TrajectoryEvaluationCase(
+                    reference_path=reference_path,
+                    candidate_path=candidate.path,
+                    reference_source=reference_source,
+                    candidate_source=candidate.source,
+                    candidate_coordinate_status=candidate.coordinate_status,
+                    metric_family="ape",
+                    pose_relation=metrics.PoseRelation.translation_part,
+                    error_series_path=error_series_path,
+                    matched_pairs=matched_pairs,
+                )
+            )
+            rows.extend(
+                TrajectoryMetricResultRow(
+                    run_id=run_root.name,
+                    sequence_id=selection.sequence_slug,
+                    reference_source=reference_source,
+                    estimate_source=f"{candidate.source}/{candidate.coordinate_status}",
+                    metric_family="ape",
+                    pose_relation=metrics.PoseRelation.translation_part,
+                    statistic=statistic,
+                    value=value,
+                    unit="m",
+                    matched_pairs=matched_pairs,
+                    error_series_path=error_series_path,
+                )
+                for statistic, value in preview.stats.model_dump(mode="python").items()
+            )
+
         _write_metric_rows(metrics_long_path, rows)
         manifest = TrajectoryEvaluationManifest(
             artifact_root=run_root,
             sequence_id=selection.sequence_slug,
             run_id=run_root.name,
             reference_trajectories=[reference_path],
-            candidate_trajectories=(
-                [selection.run.estimate_path] if candidate_trajectory_paths is None else candidate_trajectory_paths
-            ),
-            error_series_paths=[error_series_path],
+            candidate_trajectories=[candidate.path for candidate in candidates],
+            error_series_paths=[case.error_series_path for case in cases],
+            evaluation_cases=cases,
         )
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
@@ -448,6 +472,8 @@ def compute_trajectory_ape_preview(
     return _TrajectoryMetricPreview(
         error_timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
         error_values=error_values,
+        reference_positions_xyz=np.asarray(associated_reference.positions_xyz, dtype=np.float64),
+        estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz, dtype=np.float64),
         stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
         alignment=alignment,
     )
@@ -504,6 +530,37 @@ def _align_estimate_sim3(
 def _method_world_frame(method_id: str | None) -> str:
     token = "slam" if method_id is None else _entity_token(str(method_id))
     return f"{token}_slam_world"
+
+
+def _evaluation_candidates_for(
+    *,
+    selection: SelectionSnapshot,
+    candidate_trajectories: list[ReferenceTrajectoryRef] | None,
+) -> list[_TrajectoryEvaluationCandidate]:
+    candidates = [
+        _TrajectoryEvaluationCandidate(
+            path=selection.run.estimate_path,
+            source=selection.run.method or "vslam",
+            coordinate_status="raw",
+            method_id=selection.run.method,
+            method_label=selection.run.label,
+        )
+    ]
+    if candidate_trajectories is None:
+        return candidates
+    candidates.extend(
+        _TrajectoryEvaluationCandidate(
+            path=reference.path,
+            source=reference.source.value,
+            coordinate_status=(
+                reference.coordinate_status.value if reference.coordinate_status is not None else "source_native"
+            ),
+            method_id=reference.source.value,
+            method_label=reference.source.value,
+        )
+        for reference in candidate_trajectories
+    )
+    return candidates
 
 
 def _write_metric_rows(path: Path, rows: list[TrajectoryMetricResultRow]) -> None:

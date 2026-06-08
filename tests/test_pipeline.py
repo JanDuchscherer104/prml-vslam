@@ -1149,7 +1149,7 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
 
 
-def test_run_coordinator_does_not_route_manifest_only_trajectory_evaluation_payload(
+def test_run_coordinator_routes_trajectory_evaluation_manifest_to_export_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1192,7 +1192,12 @@ def test_run_coordinator_does_not_route_manifest_only_trajectory_evaluation_payl
         ),
     )
 
-    assert submitted == []
+    assert len(submitted) == 1
+    update, payload_resolver, destinations = submitted[0]
+    assert update.stage_key is StageKey.TRAJECTORY_EVALUATION
+    assert update.semantic_events == [artifact]
+    assert payload_resolver is None
+    assert destinations == frozenset(("export",))
 
 
 def test_run_coordinator_routes_source_reference_trajectories_live_without_clouds(
