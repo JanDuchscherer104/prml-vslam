@@ -19,6 +19,7 @@ from prml_vslam.eval.trajectory_contracts import (
     TrajectoryMetricResultRow,
 )
 from prml_vslam.methods.stage.backend_config import MethodId
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.registry import list_sequence_slugs
 from prml_vslam.utils import BaseData, PathConfig
@@ -68,8 +69,8 @@ class TrajectoryEvaluationQueryService:
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
 
-    def discover_runs(self, sequence_slug: str | None) -> list[DiscoveredRun]:
-        """Return all runs under the artifacts root that match one sequence slug."""
+    def discover_runs(self, sequence_slug: str | None, dataset: DatasetId | None = None) -> list[DiscoveredRun]:
+        """Return all metadata-backed runs under the artifacts root that match one sequence slug."""
         if sequence_slug is None:
             return []
         return [
@@ -81,8 +82,9 @@ class TrajectoryEvaluationQueryService:
             )
             for trajectory_path in sorted(self.path_config.artifacts_dir.glob("**/slam/trajectory.tum"))
             for run_root in [trajectory_path.parent.parent]
+            for sequence_manifest in [_load_run_sequence_manifest(run_root)]
+            if _matches_selection(sequence_manifest, sequence_slug, dataset)
             for relative_parts in [run_root.relative_to(self.path_config.artifacts_dir).parts]
-            if any(part == sequence_slug for part in relative_parts)
             for method in [
                 next(
                     (method for part in reversed(relative_parts) for method in MethodId if part == method.value),
@@ -90,11 +92,7 @@ class TrajectoryEvaluationQueryService:
                 )
             ]
             for visible_parts in [
-                [
-                    part
-                    for part in relative_parts
-                    if part not in ({sequence_slug, "slam"} | ({method.value} if method is not None else set()))
-                ]
+                [part for part in relative_parts if part not in ({method.value} if method is not None else set())]
             ]
             for label in [method.display_name if method is not None else relative_parts[-1]]
         ]
@@ -115,7 +113,7 @@ class TrajectoryEvaluationQueryService:
                 artifacts_root=self.path_config.artifacts_dir,
             )
         sequence_slug = preferred_sequence_slug if preferred_sequence_slug in sequence_slugs else sequence_slugs[0]
-        runs = self.discover_runs(sequence_slug)
+        runs = self.discover_runs(sequence_slug, dataset=dataset)
         return EvaluationSelection(
             dataset=dataset,
             dataset_root=dataset_root,
@@ -177,6 +175,26 @@ def _optional_float(value: str | None) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def _load_run_sequence_manifest(run_root: Path) -> SequenceManifest | None:
+    manifest_path = run_root / "input" / "sequence_manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        return SequenceManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _matches_selection(
+    sequence_manifest: SequenceManifest | None,
+    sequence_slug: str,
+    dataset: DatasetId | None,
+) -> bool:
+    if sequence_manifest is None or sequence_manifest.sequence_id != sequence_slug:
+        return False
+    return dataset is None or sequence_manifest.dataset_id is None or sequence_manifest.dataset_id == dataset
 
 
 __all__ = [

@@ -45,7 +45,9 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
 
@@ -955,3 +957,82 @@ def test_trajectory_evaluation_query_loads_pipeline_manifest(tmp_path: Path) -> 
     assert loaded.metric_rows[0].statistic == "rmse"
     assert loaded.metric_rows[0].value == 0.05
     assert loaded.metric_rows[0].pose_relation is metrics.PoseRelation.translation_part
+
+
+def test_trajectory_evaluation_query_discovers_runs_by_sequence_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    assert len(runs) == 1
+    assert runs[0].artifact_root == artifact_root
+    assert runs[0].estimate_path == artifact_root / "slam" / "trajectory.tum"
+    assert runs[0].method == MethodId.VISTA.value
+
+
+def test_trajectory_evaluation_query_excludes_mismatched_dataset(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.ADVIO),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    assert service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD) == []
+
+
+def test_trajectory_evaluation_query_excludes_runs_without_sequence_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    (artifact_root / "slam").mkdir(parents=True)
+    (artifact_root / "slam" / "trajectory.tum").write_text("", encoding="utf-8")
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    assert service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD) == []
+
+
+def test_trajectory_evaluation_query_reports_missing_canonical_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_evaluation(runs[0])
+
+    assert loaded.manifest is None
+    assert loaded.metric_rows == []
+    assert loaded.load_error is None
+
+
+def test_trajectory_evaluation_query_ignores_legacy_metrics_json(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    legacy_path = artifact_root / "evaluation" / "trajectory_metrics.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text('{"rmse": 0.1}', encoding="utf-8")
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_evaluation(runs[0])
+
+    assert loaded.manifest is None
+    assert loaded.metric_rows == []
+
+
+def _write_discoverable_run(artifact_root: Path, sequence_manifest: SequenceManifest) -> None:
+    trajectory_path = artifact_root / "slam" / "trajectory.tum"
+    manifest_path = artifact_root / "input" / "sequence_manifest.json"
+    trajectory_path.parent.mkdir(parents=True)
+    manifest_path.parent.mkdir(parents=True)
+    trajectory_path.write_text("", encoding="utf-8")
+    manifest_path.write_text(sequence_manifest.model_dump_json(), encoding="utf-8")
