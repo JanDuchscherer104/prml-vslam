@@ -49,6 +49,12 @@ dependencies = [
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
     "xformers",
+    # Build backend + compiler used by the no-build-isolation CUDA extensions
+    # (MAST3R-SLAM, curope). With build isolation disabled these must live in
+    # the active environment. See [tool.uv] no-build-isolation-package below.
+    "setuptools>=70.1",
+    "wheel",
+    "ninja",
     "MAST3R-SLAM",
     "MAST3R",
     "in3d",
@@ -112,9 +118,12 @@ constraint-dependencies = [
   "starlette==1.0.0",
 ]
 
+no-build-isolation-package = ["mast3r-slam", "curope"]
+
   [tool.uv.extra-build-dependencies]
-  MAST3R-SLAM = ["torch==2.5.1"]
-  curope = ["torch==2.5.1"]
+  # MAST3R-SLAM and curope build with isolation disabled (see above), so they
+  # use the environment torch directly and need no entries here. xformers still
+  # builds in isolation when no wheel matches, so it keeps its torch pin.
   xformers = ["torch==2.5.1"]
 
   [tool.uv.sources]
