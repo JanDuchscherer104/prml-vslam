@@ -200,6 +200,7 @@ def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest
         model_dtype="float32",
         checkpoint_pos_embed="interpolate",
         camera_num_iterations=1,
+        enable_point_head=True,
     )
 
     monkeypatch.setattr(pipeline_request_editor.st, "columns", lambda *_args, **_kwargs: [FakeColumn(), FakeColumn()])
@@ -229,7 +230,7 @@ def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest
 
     assert rendered.model_dtype == "float32"
     assert rendered.checkpoint_pos_embed == "interpolate"
-    assert rendered.camera_num_iterations == 1
+    assert (rendered.camera_num_iterations, rendered.enable_point_head) == (1, False)
 
 
 def test_lingbot_pose_conversion_uses_benchmark_camera_to_world_convention() -> None:
