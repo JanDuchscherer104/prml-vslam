@@ -49,10 +49,12 @@ Use this file for package-root ownership rules and cross-package contract constr
     materialization, source-stage outputs, and prepared reference identifiers
     and DTOs such as `PreparedBenchmarkInputs`
   - preserves the currently supported dataset modalities and dataset-specific
-    auxiliary/reference assets, including ADVIO Tango data and reference-cloud
-    preparation
+    auxiliary/reference assets, including ADVIO provider trajectories and TUM
+    RGB-D reference-cloud preparation
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
+  - may decimate geometry sent to Rerun observer sinks for viewer performance;
+    this must not alter persisted benchmark point-cloud or mesh artifacts
 - `methods`
   - owns backend-specific execution seams and thin method-wrapper integration
   - `prml_vslam.methods.protocols` owns package-local SLAM behavior seams such as `SlamBackend`
@@ -85,9 +87,14 @@ Use this file for package-root ownership rules and cross-package contract constr
   boundaries. Inverse transforms belong only at call sites whose external APIs
   require world-to-camera matrices.
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
-  are distinct shared geometry contracts. Sparse source clouds such as ADVIO
-  Tango payloads must not be represented as pointmaps without an explicit
-  projection step.
+  are distinct shared geometry contracts.
+- ADVIO does not prepare point-cloud benchmark references and does not expose
+  legacy auxiliary device streams as supported modalities or pose providers.
+- Repository-prepared TUM RGB-D reference clouds must be built from the same
+  persisted RGB-D observation index consumed by the method input path. Any point
+  budget or Rerun decimation must happen after all method frames have
+  contributed candidate points, and the PLY side metadata must record the source
+  observation index plus point sampling policy.
 - Promote a type into `prml_vslam.interfaces.*` only when multiple top-level packages import it and the semantics are truly identical across those packages.
 - Shared repo-wide datamodels belong in `prml_vslam.interfaces.*`.
 - `prml_vslam.sources.replay` owns `ObservationStream`.

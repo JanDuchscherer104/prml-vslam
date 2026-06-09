@@ -41,7 +41,7 @@ def test_create_follow_trajectory_artifact_runs_isolated_blueprint_and_merge(tmp
     result = rerun_follow.create_follow_trajectory_artifact(
         source_path,
         output_path=output_path,
-        tracking_entity_path="world/live/tracking/camera",
+        tracking_entity_path=rerun_follow.TRACKING_CAMERA_ENTITY_PATH,
         uvx_executable="uvx-test",
         keep_blueprint_path=blueprint_path,
         cwd=tmp_path,
@@ -54,7 +54,7 @@ def test_create_follow_trajectory_artifact_runs_isolated_blueprint_and_merge(tmp
         "--application-id",
         "prml-vslam",
         "--tracking-entity",
-        "world/live/tracking/camera",
+        rerun_follow.TRACKING_CAMERA_ENTITY_PATH,
     ]
     assert commands[1] == [
         "uvx-test",

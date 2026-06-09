@@ -69,8 +69,10 @@ class TrajectoryEvaluationRuntime(OfflineStageRuntime[TrajectoryEvaluationStageI
             config_hash=stable_hash({"baseline_source": input_payload.baseline_source.value}),
             input_fingerprint=stable_hash(
                 {
-                    "benchmark_inputs": input_payload.benchmark_inputs,
-                    "slam_trajectory": input_payload.slam.trajectory_tum,
+                    "benchmark_inputs": input_payload.benchmark_inputs.model_dump(mode="json")
+                    if input_payload.benchmark_inputs is not None
+                    else None,
+                    "slam_trajectory": input_payload.slam.trajectory_tum.model_dump(mode="json"),
                 }
             ),
             artifacts=artifacts,
@@ -122,6 +124,9 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
         selection=SelectionSnapshot(
             sequence_slug=input_payload.sequence_manifest.sequence_id,
             reference_path=reference.path,
+            target_frame=reference.target_frame,
+            coordinate_status=reference.coordinate_status.value if reference.coordinate_status is not None else None,
+            reference_source=input_payload.baseline_source.value,
             run=DiscoveredRun(
                 artifact_root=input_payload.artifact_root,
                 estimate_path=input_payload.slam.trajectory_tum.path,
@@ -130,7 +135,7 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
                     if input_payload.slam.dense_points_ply is not None
                     else None
                 ),
-                method=input_payload.method_id,
+                method=input_payload.method_id.value if input_payload.method_id is not None else None,
                 label=input_payload.method_label,
             ),
         )

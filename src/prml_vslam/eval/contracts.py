@@ -36,6 +36,14 @@ class TrajectoryAlignmentMode(StrEnum):
     SIM3_UMEYAMA = "sim3_umeyama"
 
 
+class TrajectoryAlignmentCloudUseStatus(StrEnum):
+    """State whether an alignment may publish a downstream dense cloud."""
+
+    NOT_REQUESTED = "not_requested"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class TrajectoryAlignmentArtifact(BaseData):
     """Persist an explicit trajectory alignment used for diagnostics or metrics."""
 
@@ -49,6 +57,16 @@ class TrajectoryAlignmentArtifact(BaseData):
     rms_error_m: float
     reference_source: str
     sync_max_diff_s: float
+    method_id: str | None = None
+    method_label: str | None = None
+    cloud_input_present: bool = False
+    cloud_use_status: TrajectoryAlignmentCloudUseStatus = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
+    cloud_warning_reasons: list[str] = Field(default_factory=list)
+    cloud_rejection_reasons: list[str] = Field(default_factory=list)
+    cloud_gate_min_matched_pairs: int = 20
+    cloud_gate_max_rms_error_m: float = 2.0
+    cloud_gate_max_up_axis_tilt_deg: float = 15.0
+    up_axis_tilt_deg: float | None = None
 
 
 class MetricStats(BaseData):
@@ -145,8 +163,6 @@ class TrajectoryEvaluationSemantics(BaseData):
     )
 
 
-# TODO(pipeline-refactor/future-eval): Rename or specialize once cloud
-# evaluation artifacts become first-class stage outputs.
 class EvaluationArtifact(BaseData):
     """Represent one loaded or freshly computed trajectory-evaluation artifact.
 
@@ -181,10 +197,13 @@ class EvaluationArtifact(BaseData):
     ) -> EvaluationArtifact:
         """Build the canonical evaluation artifact from one persisted metrics payload."""
         reference_trajectory, estimate_trajectory = trajectories
+        matched_pairs_payload = payload["matched_pairs"]
+        if not isinstance(matched_pairs_payload, int):
+            raise ValueError(f"Expected integer matched_pairs in evaluation payload, got {matched_pairs_payload!r}.")
         return cls(
             path=path,
             title=str(payload["title"]),
-            matched_pairs=int(payload["matched_pairs"]),
+            matched_pairs=matched_pairs_payload,
             stats=MetricStats.model_validate(payload["stats"]),
             semantics=TrajectoryEvaluationSemantics.model_validate(payload["semantics"]),
             reference_path=reference_path,
@@ -219,6 +238,56 @@ class DenseCloudEvaluationSelection(BaseData):
 
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
+
+
+class CloudAlignmentSelection(BaseData):
+    """Describe offline point-cloud alignment inputs for benchmark runs."""
+
+    artifact_root: Path
+    """Artifact root that owns the derived cloud-alignment outputs."""
+
+    reference_cloud_path: Path
+    """Reference cloud in the benchmark target frame."""
+
+    sim3_cloud_path: Path
+    """Trajectory-Sim(3)-aligned SLAM cloud used as the ICP initialization."""
+
+    target_frame: str = "world"
+    """Benchmark target frame for the aligned and ICP-refined clouds."""
+
+    max_correspondence_distance_m: float = Field(default=0.05, gt=0.0)
+    """Maximum ICP correspondence distance in meters."""
+
+
+class CloudAlignmentArtifact(BaseData):
+    """Persist one offline cloud-alignment result."""
+
+    path: Path
+    """Path to the side metadata payload."""
+
+    reference_cloud_path: Path
+    """Reference cloud used by the refinement."""
+
+    sim3_point_cloud_path: Path
+    """Canonical trajectory-Sim(3)-aligned estimate cloud."""
+
+    icp_point_cloud_path: Path
+    """ICP-refined estimate cloud."""
+
+    target_frame: str = "world"
+    """Benchmark target frame for the aligned and ICP-refined clouds."""
+
+    max_correspondence_distance_m: float
+    """Maximum correspondence distance used by ICP."""
+
+    fitness: float
+    """Open3D ICP fitness score."""
+
+    inlier_rmse_m: float
+    """Open3D ICP inlier RMSE in meters."""
+
+    transformation: list[list[float]]
+    """Estimated point-to-point ICP transform applied after Sim(3)."""
 
 
 class DenseCloudEvaluationArtifact(BaseData):
@@ -360,6 +429,15 @@ class SelectionSnapshot(BaseData):
     reference_path: Path | None = None
     """Reference TUM trajectory path when available."""
 
+    target_frame: str | None = None
+    """Target coordinate frame for alignment and metrics."""
+
+    coordinate_status: str | None = None
+    """Native coordinate status of the reference trajectory."""
+
+    reference_source: str | None = None
+    """Reference source key used for persisted alignment provenance."""
+
     run: DiscoveredRun
     """Selected artifact run."""
 
@@ -391,6 +469,8 @@ class EvaluationSelection(BaseData):
 
 __all__ = [
     "BenchmarkReference",
+    "CloudAlignmentArtifact",
+    "CloudAlignmentSelection",
     "DenseCloudEvaluationArtifact",
     "DenseCloudEvaluationSelection",
     "DiscoveredRun",
@@ -403,8 +483,9 @@ __all__ = [
     "IntrinsicsComparisonDiagnostics",
     "MetricStats",
     "SelectionSnapshot",
-    "TrajectoryAlignmentMode",
     "TrajectoryAlignmentArtifact",
+    "TrajectoryAlignmentCloudUseStatus",
+    "TrajectoryAlignmentMode",
     "TrajectoryEvaluationPreview",
     "TrajectoryEvaluationSemantics",
     "TrajectoryMetricId",

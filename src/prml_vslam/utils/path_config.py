@@ -79,7 +79,7 @@ class RunArtifactPaths(BaseData):
     image_metrics_path: Path
     """Path to persisted rendered-image evaluation metrics."""
     reference_cloud_path: Path
-    """Path to the reference reconstruction artifact."""
+    """Path to the reconstruction-stage reference cloud artifact."""
     summary_path: Path
     """Path to the run-level summary artifact."""
     stage_manifests_path: Path
@@ -115,7 +115,7 @@ class RunArtifactPaths(BaseData):
             trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
             image_metrics_path=(resolved_root / "evaluation" / "image_metrics.json").resolve(),
-            reference_cloud_path=(resolved_root / "reference" / "reference_cloud.ply").resolve(),
+            reference_cloud_path=(resolved_root / "reconstruction" / "reconstruction_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
             stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),
         )

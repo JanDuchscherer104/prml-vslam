@@ -16,6 +16,7 @@ from prml_vslam.methods.stage.visualization import (
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
+from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization.rerun_policy import RerunLoggingPolicy
 
 
@@ -99,26 +100,31 @@ def _keyframe_update(source_seq: int) -> StageRuntimeUpdate:
     )
 
 
-def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -> None:
+def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates(monkeypatch) -> None:
     stream = _StrictFakeRecordingStream()
     calls: list[tuple[str, str, int | None, int | None]] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda *args, **kwargs: None,
-        log_pointcloud=lambda *args, **kwargs: None,
-        log_pointcloud_ply=lambda *args, **kwargs: None,
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda stream, *, entity_path, positions_xyz: calls.append(
+    monkeypatch.setattr(rerun_helpers, "log_pinhole", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_pointcloud", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda *args, **kwargs: None,
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda stream, *, entity_path, image_rgb: calls.append(
-            ("rgb", entity_path, *_timeline_state(stream))
-        ),
-        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
+    )
+    policy = RerunLoggingPolicy(
         log_source_rgb=True,
     )
 
@@ -128,38 +134,54 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates() -
 
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
-        ("pose", "world/live/tracking/camera", 7, None),
-        ("trajectory", "world/slam/vista_slam_world/trajectory/raw", 7, None),
+        ("pose", "world/slam/live/tracking/camera", 7, None),
+        ("pose", "world/slam/trajectory/raw/start", 7, None),
+        ("trajectory", "world/slam/trajectory/raw", 7, None),
     ]
 
 
-def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
+def test_policy_logs_live_model_and_keyed_history_on_frame_timeline(monkeypatch) -> None:
     stream = _StrictFakeRecordingStream()
     calls: list[tuple[str, str, int | None, int | None]] = []
-    policy = RerunLoggingPolicy(
-        log_pinhole=lambda stream, *, entity_path, intrinsics: calls.append(
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: calls.append(
             ("pinhole", entity_path, *_timeline_state(stream))
         ),
-        log_pointcloud=lambda stream, *, entity_path, pointmap, colors=None: calls.append(
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
         ),
-        log_pointcloud_ply=lambda *args, **kwargs: None,
-        log_mesh_ply=lambda *args, **kwargs: None,
-        log_line_strip3d=lambda stream, *, entity_path, positions_xyz: calls.append(
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
         ),
-        log_clear=lambda *args, **kwargs: None,
-        log_depth_image=lambda stream, *, entity_path, depth_m: calls.append(
-            ("depth", entity_path, *_timeline_state(stream))
-        ),
-        log_ground_plane_patch=lambda *args, **kwargs: None,
-        log_rgb_image=lambda stream, *, entity_path, image_rgb: calls.append(
-            ("rgb", entity_path, *_timeline_state(stream))
-        ),
-        log_transform=lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_depth_image",
+        lambda stream, *, entity_path, depth_m: calls.append(("depth", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_rgb_image",
+        lambda stream, *, entity_path, image_rgb: calls.append(("rgb", entity_path, *_timeline_state(stream))),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
             ("pose", entity_path, *_timeline_state(stream))
         ),
     )
+    policy = RerunLoggingPolicy()
 
     policy.observe_update(
         stream,
@@ -171,8 +193,8 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline() -> None:
         },
     )
 
-    live_calls = [call for call in calls if call[1].startswith("world/live/model")]
-    history_calls = [call for call in calls if call[1].startswith("world/keyframes/")]
+    live_calls = [call for call in calls if call[1].startswith("world/slam/live/model")]
+    history_calls = [call for call in calls if call[1].startswith("world/slam/keyframes/")]
 
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in live_calls)
     assert all(frame == 13 and keyframe is None for _, _, frame, keyframe in history_calls)

@@ -59,13 +59,6 @@ _IPHONE_MAGNETOMETER = _RelativePathSpec(("iphone",), names=("magnetometer.csv",
 _IPHONE_BAROMETER = _RelativePathSpec(("iphone",), names=("barometer.csv",))
 _IPHONE_ARKIT = _RelativePathSpec(("iphone",), names=("arkit.csv",))
 _PIXEL_ARCORE = _RelativePathSpec(("pixel",), names=("arcore.csv",))
-_TANGO_FRAMES_MOV = _RelativePathSpec(("tango",), names=("frames.mov",))
-_TANGO_FRAMES_CSV = _RelativePathSpec(("tango",), names=("frames.csv",))
-_TANGO_RAW = _RelativePathSpec(("tango",), names=("raw.csv",))
-_TANGO_AREA_LEARNING = _RelativePathSpec(("tango",), names=("area-learning.csv",))
-_TANGO_POINT_CLOUD = _RelativePathSpec(("tango",), glob_pattern="point-cloud*.csv")
-_TANGO_ARCHIVE = _RelativePathSpec(("tango",), recurse=True)
-
 _MODALITY_SPECS = {
     AdvioModality.CALIBRATION: _ModalitySpec(dataset_specs=(_CALIBRATION,)),
     AdvioModality.GROUND_TRUTH: _ModalitySpec(
@@ -94,16 +87,6 @@ _MODALITY_SPECS = {
     ),
     AdvioModality.IPHONE_ARKIT: _ModalitySpec(sequence_specs=(_IPHONE_ARKIT,), archive_specs=(_IPHONE_ARKIT,)),
     AdvioModality.PIXEL_ARCORE: _ModalitySpec(sequence_specs=(_PIXEL_ARCORE,), archive_specs=(_PIXEL_ARCORE,)),
-    AdvioModality.TANGO: _ModalitySpec(
-        sequence_specs=(
-            _TANGO_FRAMES_MOV,
-            _TANGO_FRAMES_CSV,
-            _TANGO_RAW,
-            _TANGO_AREA_LEARNING,
-            _TANGO_POINT_CLOUD,
-        ),
-        archive_specs=(_TANGO_ARCHIVE,),
-    ),
 }
 
 

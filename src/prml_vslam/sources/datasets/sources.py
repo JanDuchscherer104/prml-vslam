@@ -33,7 +33,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         frame_selection: FrameSelectionConfig,
         label: Callable[[SequenceKey], str],
         manifest: Callable[[SequenceKey, Path, FrameSelectionConfig], SequenceManifest],
-        benchmark: Callable[[SequenceKey, Path], PreparedBenchmarkInputs],
+        benchmark: Callable[[SequenceKey, Path, FrameSelectionConfig], PreparedBenchmarkInputs],
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
     ) -> None:
@@ -56,7 +56,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
         """Materialize prepared benchmark inputs for the selected dataset sequence."""
-        return self._benchmark(self._sequence_id, output_dir)
+        return self._benchmark(self._sequence_id, output_dir, self._frame_selection)
 
     def open_stream(self, *, loop: bool) -> ObservationStream:
         """Open the replay stream for the selected dataset sequence."""
@@ -136,10 +136,17 @@ class DatasetServiceBase:
         )
 
     def build_benchmark_inputs(
-        self, *, sequence_id: SequenceKey, output_dir: Path | None = None
+        self,
+        *,
+        sequence_id: SequenceKey,
+        output_dir: Path | None = None,
+        frame_selection: FrameSelectionConfig | None = None,
     ) -> PreparedBenchmarkInputs:
         """Build prepared benchmark inputs for one dataset sequence."""
-        return self._sequence(sequence_id).to_benchmark_inputs(output_dir=output_dir)
+        return self._sequence(sequence_id).to_benchmark_inputs(
+            output_dir=output_dir,
+            frame_selection=frame_selection or FrameSelectionConfig(),
+        )
 
     def resolve_sequence_id(self, sequence_slug: str) -> SequenceKey:
         """Resolve a UI- or CLI-facing slug into the dataset's canonical sequence id."""
@@ -200,7 +207,11 @@ class DatasetServiceBase:
                 output_dir=output_dir,
                 frame_selection=selection,
             ),
-            benchmark=lambda value, output_dir: self.build_benchmark_inputs(sequence_id=value, output_dir=output_dir),
+            benchmark=lambda value, output_dir, selection: self.build_benchmark_inputs(
+                sequence_id=value,
+                output_dir=output_dir,
+                frame_selection=selection,
+            ),
             stream=stream,
             replay_mode=replay_mode,
         )

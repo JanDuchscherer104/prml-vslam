@@ -27,6 +27,7 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.utils import Console, RunArtifactPaths
 from prml_vslam.utils.geometry import (
+    load_point_cloud_ply,
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
     write_point_cloud_ply,
@@ -571,6 +572,62 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
     assert update.pose is not None
     assert np.isclose(np.linalg.norm(update.pose.quaternion_xyzw()), 1.0)
     assert update.pose.translation_xyz().tolist() == [1.0, 2.0, 3.0]
+
+
+def test_vista_session_reports_invalid_live_pose_without_crashing_ingest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+
+        def step(self, value: dict[str, object]) -> None:
+            del value
+
+        def get_view(self, view_index: int, **kwargs: object) -> object:
+            del view_index, kwargs
+            pose = np.eye(4, dtype=np.float64)
+            pose[:3, :3] = np.diag([2.0, 0.5, 0.25])
+            return SimpleNamespace(pose=pose, depth=np.ones((2, 2), dtype=np.float32), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            raise AssertionError("invalid live poses must not emit posed pointmap telemetry")
+
+    session = VistaSlamRuntime(
+        slam=FakeSlam(),
+        flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    session.step(
+        Observation(
+            seq=23,
+            timestamp_ns=123,
+            rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+            provenance=ObservationProvenance(source_id="test"),
+        )
+    )
+    update = session.drain_updates()[0]
+
+    assert update.is_keyframe is True
+    assert update.keyframe_index == 0
+    assert update.pose is None
+    assert update.image_rgb is None
+    assert update.depth_map is None
+    assert update.pointmap is None
+    assert update.camera_intrinsics is None
+    assert update.backend_warnings
+    assert "invalid live pose" in update.backend_warnings[0]
+    assert "source_seq=23" in update.backend_warnings[0]
 
 
 def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
@@ -1149,6 +1206,63 @@ def test_vista_artifact_builder_preserves_point_cloud_colors_and_standardizes_in
         width_px=224,
         height_px=224,
     )
+
+
+def test_vista_artifact_builder_reconstructs_unfiltered_cloud_and_confidences(tmp_path: Path) -> None:
+    from prml_vslam.methods.vista.artifacts import build_vista_artifacts
+
+    native_output_dir = tmp_path / "native"
+    native_output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(native_output_dir / "trajectory.npy", np.eye(4, dtype=np.float64)[None, :, :])
+    np.save(native_output_dir / "depths.npy", np.ones((1, 2, 2), dtype=np.float32))
+    np.save(native_output_dir / "scales.npy", np.asarray([[1.0]], dtype=np.float32))
+    np.save(native_output_dir / "intrinsics.npy", np.eye(3, dtype=np.float32)[None, :, :])
+    np.save(native_output_dir / "images.npy", np.full((1, 2, 2, 3), 0.5, dtype=np.float32))
+    np.savez(
+        native_output_dir / "confs.npz",
+        confs=np.asarray([[[0.1, 0.5], [0.3, 0.8]]], dtype=np.float32),
+        thres=np.asarray(0.4, dtype=np.float32),
+    )
+    native_filtered_cloud = write_point_cloud_ply(
+        native_output_dir / "pointcloud.ply",
+        np.asarray([[0.0, 0.0, 1.0]], dtype=np.float64),
+    )
+
+    artifacts = build_vista_artifacts(
+        native_output_dir=native_output_dir,
+        artifact_root=tmp_path / "artifacts",
+        output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=True),
+        timestamps_s=[0.0],
+    )
+
+    assert artifacts.dense_points_ply is not None
+    assert artifacts.sparse_points_ply is not None
+    assert artifacts.dense_points_ply.path == artifacts.sparse_points_ply.path
+    assert artifacts.dense_points_ply.path.name == "point_cloud.ply"
+    assert artifacts.extras["pointcloud.ply"].path == native_filtered_cloud
+    assert load_point_cloud_ply(native_filtered_cloud).shape == (1, 3)
+    canonical_points = load_point_cloud_ply(artifacts.dense_points_ply.path)
+    assert canonical_points.shape == (4, 3)
+    np.testing.assert_allclose(
+        canonical_points,
+        np.asarray(
+            [
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+            ],
+            dtype=np.float64,
+        ),
+    )
+
+    confidence_ref = artifacts.extras["point_cloud_confidences.npz"]
+    confidence_data = np.load(confidence_ref.path)
+    np.testing.assert_allclose(confidence_data["confidence"], [0.1, 0.5, 0.3, 0.8])
+    assert float(confidence_data["confidence_threshold"]) == pytest.approx(0.4)
+    np.testing.assert_array_equal(confidence_data["source_shape"], [1, 2, 2])
+    assert artifacts.num_dense_points == 4
+    assert artifacts.num_sparse_points == 4
 
 
 def test_mast3r_artifact_builder_writes_dense_cloud_to_dense_path(tmp_path: Path) -> None:

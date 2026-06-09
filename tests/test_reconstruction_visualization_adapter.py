@@ -27,7 +27,7 @@ def test_reconstruction_adapter_maps_cloud_only_artifacts(tmp_path: Path) -> Non
 
     items = ReconstructionVisualizationAdapter().build_items(
         artifacts,
-        {"reference_cloud": _artifact(cloud)},
+        {"reconstruction_cloud": _artifact(cloud)},
     )
 
     assert len(items) == 1
@@ -51,7 +51,7 @@ def test_reconstruction_adapter_maps_cloud_and_mesh_artifacts(tmp_path: Path) ->
     items = ReconstructionVisualizationAdapter().build_items(
         artifacts,
         {
-            "reference_cloud": _artifact(cloud),
+            "reconstruction_cloud": _artifact(cloud),
             "reference_mesh": _artifact(mesh),
         },
         reconstruction_id="reference",

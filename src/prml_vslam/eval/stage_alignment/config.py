@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import ConfigDict
 
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
@@ -28,14 +30,14 @@ class TrajectoryAlignmentStageConfig(StageConfig):
             return False, f"{backend.display_name} does not support trajectory alignment."
         return True, None
 
-    def planned_outputs(self, context: PipelinePlanContext) -> tuple[str, ...]:
+    def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
         """Return deterministic artifacts produced by ``align.trajectory``."""
 
-        return (
-            "evaluation/alignment.json",
-            "evaluation/aligned-estimate.txt",
-            "evaluation/aligned-point-cloud.ply",
-        )
+        return [
+            context.run_paths.artifact_root / "evaluation" / "trajectory_alignment.json",
+            context.run_paths.artifact_root / "evaluation" / "trajectory_sim3_aligned.tum",
+            context.run_paths.artifact_root / "evaluation" / "point_cloud_sim3_aligned.ply",
+        ]
 
 
 __all__ = ["TrajectoryAlignmentStageConfig"]

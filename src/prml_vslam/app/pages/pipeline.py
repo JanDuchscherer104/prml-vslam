@@ -126,6 +126,7 @@ def render(context: AppContext) -> None:
             is_active=is_active,
             start_label="Start run",
             stop_label="Stop run",
+            key="pipeline-run-live-action",
             start_disabled=preview_request is None or start_error is not None,
         )
         action.start_requested = start_requested

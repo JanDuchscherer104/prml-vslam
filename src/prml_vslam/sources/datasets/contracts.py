@@ -35,8 +35,6 @@ class AdvioPoseSource(StrEnum):
     GROUND_TRUTH = "ground_truth"
     ARCORE = "arcore"
     ARKIT = "arkit"
-    TANGO_RAW = "tango_raw"
-    TANGO_AREA_LEARNING = "tango_area_learning"
     NONE = "none"
 
     @property
@@ -45,8 +43,6 @@ class AdvioPoseSource(StrEnum):
             self.GROUND_TRUTH: "Ground Truth",
             self.ARCORE: "ARCore",
             self.ARKIT: "ARKit",
-            self.TANGO_RAW: "Tango Raw",
-            self.TANGO_AREA_LEARNING: "Tango Area-Learning",
             self.NONE: "No Pose Overlay",
         }[self]
 
@@ -59,14 +55,12 @@ class AdvioPoseFrameMode(StrEnum):
     """Coordinate-frame semantics for served ADVIO trajectories."""
 
     PROVIDER_WORLD = "provider_world"
-    REFERENCE_WORLD = "reference_world"
     LOCAL_FIRST_POSE = "local_first_pose"
 
     @property
     def label(self) -> str:
         return {
             self.PROVIDER_WORLD: "Provider World",
-            self.REFERENCE_WORLD: "Aligned Global",
             self.LOCAL_FIRST_POSE: "Local First Pose",
         }[self]
 

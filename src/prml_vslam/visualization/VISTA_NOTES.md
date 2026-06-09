@@ -39,8 +39,10 @@ world semantics instead of remapping ViSTA into a repo-specific viewer basis.
 
 The 3D camera-image entity is only coherent when `Pinhole`, RGB, and depth all
 refer to the same raster. The repo-owned path now keeps a separate
-`world/live/model/diag/rgb` surface for the always-visible 2D model RGB view
-and reserves `world/live/model/camera/image` for coherent 3D camera bundles.
+`world/slam/live/model/diag/rgb` surface for the always-visible
+2D model RGB view and reserves
+`world/slam/live/model/camera/image` for coherent 3D camera
+bundles.
 
 ### `preview_rgb` Is Diagnostic Preview Only
 
@@ -76,8 +78,8 @@ The current repo-owned path makes that unchanged world explicit by logging
 The live sink keeps these surfaces distinct:
 
 - `world/live/source/rgb`: original source-frame raster from ingress
-- `world/live/model/diag/rgb`: model-raster RGB shown in the dedicated 2D tab
-- `world/live/model/camera/image`, `.../depth`, `.../points`, and
+- `world/slam/live/model/diag/rgb`: model-raster RGB shown in the dedicated 2D tab
+- `world/slam/live/model/camera/image`, `.../depth`, `.../points`, and
   `.../diag/preview`: coherent 3D camera bundle on the ViSTA model raster
 
 This is an intentional divergence from a naive “one camera image everywhere”
@@ -104,7 +106,7 @@ parent pose into world coordinates.
 | Repo entity layout vs upstream `world/est/cam_n` layout | Different layout | intentional difference | Path parity is not required if composed world placement is equivalent. |
 | ViSTA-native RDF-like world semantics in repo viewer | Confirmed | expected | Repo path preserves ViSTA-native semantics instead of normalizing to world-up. |
 | Root world declaration | Explicit | intentional difference | Repo path now logs a visible root-world marker via `Transform3D(axis_length=1.0)`. |
-| Keyed point persistence vs frusta eviction | Guarded | expected | Points persist; stale keyed camera branches may be cleared. |
+| Keyed point persistence vs frusta persistence | Guarded | expected | Points and compact keyed camera frusta persist along the trajectory. |
 | Offline preserved native visualization vs repo-owned live `.rrd` | Different product surface | intentional difference | Offline repo-owned `.rrd` synthesis remains out of scope. |
 
 ## Recommended Integration Pattern
@@ -122,7 +124,7 @@ recording.log("world", rr.Transform3D(axis_length=1.0), static=True)
 recording.log("world", rr.ViewCoordinates.RDF, static=True)
 
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}",
+    f"world/slam/keyframes/cameras/{keyframe_index:06d}",
     rr.Transform3D(
         translation=T_world_camera[:3, 3],
         mat3x3=T_world_camera[:3, :3],
@@ -131,20 +133,20 @@ recording.log(
     ),
 )
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}/image",
+    f"world/slam/keyframes/cameras/{keyframe_index:06d}/image",
     rr.Pinhole(
         image_from_camera=K,
         resolution=[width, height],
         camera_xyz=rr.ViewCoordinates.RDF,
     ),
 )
-recording.log(f"world/keyframes/cameras/{keyframe_index:06d}/image", rr.Image(rgb))
+recording.log(f"world/slam/keyframes/cameras/{keyframe_index:06d}/image", rr.Image(rgb))
 recording.log(
-    f"world/keyframes/cameras/{keyframe_index:06d}/image/depth",
+    f"world/slam/keyframes/cameras/{keyframe_index:06d}/image/depth",
     rr.DepthImage(depth_m, meter=1.0),
 )
 recording.log(
-    f"world/keyframes/points/{keyframe_index:06d}",
+    f"world/slam/keyframes/points/{keyframe_index:06d}",
     rr.Transform3D(
         translation=T_world_camera[:3, 3],
         mat3x3=T_world_camera[:3, :3],
@@ -153,7 +155,7 @@ recording.log(
     ),
 )
 recording.log(
-    f"world/keyframes/points/{keyframe_index:06d}/points",
+    f"world/slam/keyframes/points/{keyframe_index:06d}/points",
     rr.Points3D(points_xyz_camera, colors=colors),
 )
 ```

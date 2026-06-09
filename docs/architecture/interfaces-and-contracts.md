@@ -98,8 +98,8 @@ Streaming method startup is intentionally symmetric with offline execution: a
 backend session can receive the normalized `SequenceManifest`, optional
 prepared benchmark inputs, and the selected reference baseline before the first
 `Observation` arrives. That keeps dataset-backed replay logic, such as
-reference-trajectory selection and Tango point-cloud forwarding, inside the
-method layer instead of leaking dataset-specific hooks into the transport path.
+reference-trajectory selection, inside the method layer instead of leaking
+dataset-specific hooks into the transport path.
 
 Derived viewer/world-up alignment remains a separate repo-owned boundary. It
 must produce explicit metadata and derived artifacts without mutating the native

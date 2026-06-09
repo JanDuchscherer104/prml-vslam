@@ -24,9 +24,9 @@ This package contains the canonical ViSTA-SLAM backend integration used by the p
 ## Current Discrepancies
 
 - `intentional difference`: preprocessing preserves upstream crop/resize behavior, so the current RDF-like world semantics are not caused by wrapper-side preprocessing drift
-- `documentation gap`: `world/live/source/rgb` is the original source-frame raster, while `world/live/model/camera/image`, depth, pointmap, preview, and intrinsics all belong to the ViSTA-preprocessed model raster
+- `documentation gap`: `world/live/source/rgb` is the original source-frame raster, while `world/slam/live/model/camera/image`, depth, pointmap, preview, and intrinsics all belong to the ViSTA-preprocessed model raster
 - `documentation gap`: live/session readback exposes scaled camera-local pointmaps, while exported `pointcloud.ply` is a separate fused world-space dense cloud
-- `intentional difference`: the repo-owned Rerun tree uses split branches such as `world/live/model` and `world/keyframes/...` rather than upstream `world/est/cam_n` paths; path parity is not required when composed world placement matches upstream
+- `intentional difference`: the repo-owned Rerun tree uses split branches such as `world/slam/live/model` and `world/slam/keyframes/...` rather than upstream `world/est/cam_n` paths; path parity is not required when composed world placement matches upstream. See [RERUN_SEMANTICS.md](../../visualization/RERUN_SEMANTICS.md) for the canonical entity tree.
 - `documentation gap`: the repo viewer intentionally preserves ViSTA-native RDF-like world semantics instead of normalizing the scene into an operator/world-up basis
 - `intentional difference`: offline runs preserve upstream-native visualization artifacts and do not yet synthesize a repo-owned offline `.rrd`
 
@@ -53,9 +53,9 @@ The wrapper has two postprocessing surfaces: incremental live readback after acc
 - The wrapper converts `view.pose` into a canonical `FrameTransform`, converts `view.intri` into `CameraIntrinsics`, and stores the scaled upstream depth raster as `SlamUpdate.depth_map`.
 - The same live path then calls `get_pointmap_vis(view_index)`. Upstream reuses `get_view(filter_outlier=False)` and `compute_local_pointclouds()` to produce a scaled camera-local pointmap together with a pseudo-colored preview image.
 - The wrapper copies that pointmap into `SlamUpdate.pointmap`, counts valid finite `z > 0` points, and emits a non-fatal backend warning when dense output was requested but no usable pointmap is available.
-- `VistaSlamRuntime.finish()` persists native outputs through `save_data_all(native_output_dir, save_images=False, save_depths=False)`. With those arguments, upstream still writes `view_graph.npz`, `trajectory.npy`, `scales.npy`, `confs.npz`, `intrinsics.npy`, and `pointcloud.ply`; it simply omits `images.npy` and `depths.npy`.
-- When `save_ply=True`, upstream export multiplies each best-node depth map by its Sim(3) scale, unprojects the scaled depth with `compute_local_pointclouds()`, and then applies the corresponding `T_world_camera` pose before writing `pointcloud.ply`.
-- `build_vista_artifacts()` normalizes those native outputs back into repository-owned contracts by converting `trajectory.npy` into canonical `FrameTransform` entries and `slam/trajectory.tum`, optionally re-encoding `pointcloud.ply` into the repo-owned `slam/point_cloud.ply`, and retaining the remaining native files as `extras`.
+- `VistaSlamRuntime.finish()` persists native outputs through `save_data_all(native_output_dir, save_images=True, save_depths=True)` so the normalizer can reconstruct the complete exported model-raster cloud.
+- Native `pointcloud.ply` remains the upstream confidence-filtered diagnostic export.
+- `build_vista_artifacts()` normalizes native outputs back into repository-owned contracts by converting `trajectory.npy` into canonical `FrameTransform` entries and `slam/trajectory.tum`, reconstructing unfiltered `slam/point_cloud.ply` from depth/scale/intrinsics/pose arrays, writing order-aligned `slam/point_cloud_confidences.npz`, and retaining native files as `extras`.
 - The main live/export asymmetry is coordinate frame, not scale handling: the live pointmap path returns scaled camera-local geometry, while the export path returns scaled world-space geometry in ViSTA's SLAM-local world frame.
 
 ## Rerun Logging

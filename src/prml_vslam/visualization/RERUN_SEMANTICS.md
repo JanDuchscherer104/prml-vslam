@@ -17,7 +17,7 @@ Treat the integration as four separate concerns:
      different views of the same event stream.
 2. Entity tree
    - Every payload belongs to one entity path such as
-     `world/keyframes/points/000123/points`.
+     `world/slam/keyframes/points/000123/points`.
    - Transforms compose along the entity tree.
 3. Timelines
    - Use one integer sequence timeline for frame/keyframe order.
@@ -94,30 +94,30 @@ The current repo-owned scene tree should converge on the following shape:
 world
 world/reference/trajectory/ground_truth/aligned
                                          LineStrips3D(reference trajectory)
-world/reference/points/tango_area_learning/aligned/...
+world/reference/points/tum_rgbd/aligned/...
                                          Points3D(reference cloud)
 
 world/live/source/rgb                   Image(source_rgb)
-world/live/tracking/camera              Transform3D(T_world_camera_tracking, axis_length=0)
 
-world/live/model                        Transform3D(T_world_camera_live, axis_length=0)
-world/live/model/diag/rgb               Image(rgb_live_model_raster)        # 2D-only view surface
-world/live/model/camera/image           Pinhole(K_live, resolution, camera_xyz=RDF)
-world/live/model/camera/image           Image(rgb_live_camera_surface)
-world/live/model/camera/image/depth     DepthImage(depth_live_m, meter=1.0)
-world/live/model/diag/preview           Image(debug_preview_live)           # only when enabled
-world/live/model/points                 Points3D(pointmap_xyz_camera_live)  # latest/debug surface
+world/slam/live/tracking/camera  Transform3D(T_world_camera_tracking, axis_length=0)
+world/slam/live/model            Transform3D(T_world_camera_live, axis_length=0)
+world/slam/live/model/diag/rgb   Image(rgb_live_model_raster)  # 2D-only
+world/slam/live/model/camera/image  Pinhole(K_live, resolution, camera_xyz=RDF)
+world/slam/live/model/camera/image  Image(rgb_live_camera_surface)
+world/slam/live/model/camera/image/depth  DepthImage(depth_live_m, meter=1.0)
+world/slam/live/model/diag/preview  Image(debug_preview_live)  # only when enabled
+world/slam/live/model/points     Points3D(pointmap_xyz_camera_live)  # latest/debug
 
-world/keyframes/cameras/000000          Transform3D(T_world_camera_keyframe, axis_length=0)
-world/keyframes/cameras/000000/image    Pinhole(K_keyframe, resolution, camera_xyz=RDF)
-world/keyframes/cameras/000000/image    Image(rgb_keyframe)
-world/keyframes/cameras/000000/image/depth  DepthImage(depth_keyframe_m, meter=1.0)
-world/keyframes/cameras/000000/diag/preview  Image(debug_preview_keyframe)
-world/keyframes/points/000000           Transform3D(T_world_camera_keyframe, axis_length=0)
-world/keyframes/points/000000/points    Points3D(pointmap_xyz_camera_keyframe)
+world/slam/keyframes/cameras/000000  Transform3D(T_world_camera_keyframe, axis_length=0)
+world/slam/keyframes/cameras/000000/image  Pinhole(K_keyframe, resolution, camera_xyz=RDF)
+world/slam/keyframes/cameras/000000/image  Image(rgb_keyframe)
+world/slam/keyframes/cameras/000000/image/depth  DepthImage(depth_keyframe_m, meter=1.0)
+world/slam/keyframes/cameras/000000/diag/preview  Image(debug_preview_keyframe)
+world/slam/keyframes/points/000000  Transform3D(T_world_camera_keyframe, axis_length=0)
+world/slam/keyframes/points/000000/points  Points3D(pointmap_xyz_camera_keyframe)
 
-world/slam/vista_slam_world/trajectory/raw
-world/slam/vista_slam_world/trajectory/raw/poses/000000
+world/slam/trajectory/raw
+world/slam/trajectory/raw/poses/000000
                                          Transform3D(T_world_camera_pose, axis_length=configured)
                                          # only when trajectory_pose_axis_length > 0
 world/global_dense_points               Points3D(world-space fused cloud)
@@ -125,27 +125,31 @@ world/global_dense_points               Points3D(world-space fused cloud)
 
 Important consequences:
 
-- `world/live/model/diag/rgb` is a dedicated 2D-only model RGB surface.
-- `world/live/model/camera/image` is the 3D camera-image entity and should only
+- `world/slam/live/model/diag/rgb` is a dedicated 2D-only model RGB surface.
+- `world/slam/live/model/camera/image` is the 3D camera-image entity and should only
   receive image/depth payloads when a coherent `Pinhole` is also available.
 - `Pinhole` and the image it describes live on the same camera-image entity.
+- The default 3D blueprint includes `world/slam/live/model/camera/image`
+  non-recursively so the live model `Pinhole` is visible as a frustum without
+  broad-including image or depth children.
 - `DepthImage` lives under that same camera-image entity so Rerun can
   back-project it through the camera model.
 - Camera-local pointmaps stay camera-local and inherit world placement from the
   posed parent entity.
-- `world/live/model/points` is mutable latest/debug geometry.
-- `world/keyframes/points/<id>/points` is the persistent keyed-history map
+- `world/slam/live/model/points` is mutable latest/debug geometry.
+- `world/slam/keyframes/points/<id>/points` is the persistent keyed-history map
   surface and should be the default 3D geometry in the viewer.
-- `world/keyframes/cameras/<id>` is a frustum/history surface that may be
-  cleared once it falls outside the configured sliding window.
-- `world/slam/vista_slam_world/trajectory/raw` and its pose children must never
-  be cleared by frusta eviction.
+- `world/slam/keyframes/cameras/<id>` is a persistent compact frustum/history
+  surface along the trajectory.
+- `world/slam/trajectory/raw` and its pose children must never
+  be cleared by keyframe-camera logging.
 - The root `world` entity declares the explicit viewer world basis and keeps the
   only intentionally visible axes marker at the origin.
 - The default 3D blueprint uses a narrow allow-list for aligned references,
-  reconstruction/alignment/overlay branches, live pose branches, keyed frusta,
-  keyed point clouds, and SLAM branches. It does not broadly include raster
-  parents and then hide image/depth children with negative filters.
+  reconstruction/alignment/overlay branches, live pose branches, the live model
+  camera entity, keyed frusta, keyed point clouds, and SLAM branches. It does
+  not broadly include raster parents and then hide image/depth children with
+  negative filters.
 - Source-native references remain logged for provenance, but the default 3D
   view shows only aligned reference branches.
 
