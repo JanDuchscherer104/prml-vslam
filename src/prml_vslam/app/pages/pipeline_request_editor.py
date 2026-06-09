@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig, MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import (
+    LingbotMapSlamBackendConfig,
+    Mast3rSlamBackendConfig,
+    MethodId,
+    VistaSlamBackendConfig,
+)
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
 from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
@@ -145,6 +150,8 @@ def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current execution semantics for the selected method."""
     if method is MethodId.MAST3R:
         return "Real MASt3R-SLAM backend for offline and streaming runs (requires CUDA + upstream checkpoints)."
+    if method is MethodId.LINGBOT_MAP:
+        return "Real LingBot-Map backend for offline and streaming runs (requires upstream checkout and checkpoint)."
     return "Real ViSTA-SLAM backend for offline and streaming runs."
 
 
@@ -375,6 +382,8 @@ def _render_slam_settings(page_state: PipelinePageState) -> tuple[MethodId, int 
             backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
         case MethodId.MAST3R:
             backend_spec = _render_mast3r_backend_settings(backend_spec, max_frames=slam_max_frames)
+        case MethodId.LINGBOT_MAP:
+            backend_spec = _render_lingbot_backend_settings(backend_spec, max_frames=slam_max_frames)
     return method, slam_max_frames, backend_spec, slam_max_frames_error
 
 
@@ -456,9 +465,11 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         st.markdown("**SLAM Outputs**")
         emit_sparse_points = st.toggle(
             "Sparse Geometry",
-            value=False if page_state.method is MethodId.MAST3R else page_state.emit_sparse_points,
-            disabled=page_state.method is MethodId.MAST3R,
-            help="MASt3R-SLAM exports one dense pointmap PLY, not a separate sparse landmark cloud.",
+            value=False
+            if page_state.method in {MethodId.MAST3R, MethodId.LINGBOT_MAP}
+            else page_state.emit_sparse_points,
+            disabled=page_state.method in {MethodId.MAST3R, MethodId.LINGBOT_MAP},
+            help="MASt3R-SLAM and LingBot-Map export dense geometry, not a separate sparse landmark cloud.",
         )
         emit_dense_points = st.toggle("Dense Geometry", value=page_state.emit_dense_points)
         st.markdown("**Derived Stages**")
@@ -559,6 +570,82 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
         use_calib=use_calib,
         backend_poll_interval_s=backend_poll_interval_s,
         backend_join_timeout_s=backend_join_timeout_s,
+    )
+
+
+def _render_lingbot_backend_settings(
+    backend_spec: BackendSpec,
+    *,
+    max_frames: int | None,
+) -> LingbotMapSlamBackendConfig:
+    backend = (
+        backend_spec
+        if isinstance(backend_spec, LingbotMapSlamBackendConfig)
+        else build_backend_spec(method=MethodId.LINGBOT_MAP, max_frames=max_frames)
+    )
+    if not isinstance(backend, LingbotMapSlamBackendConfig):
+        raise TypeError("Expected a LingBot-Map backend config.")
+
+    col_a, col_b = st.columns(2, gap="small")
+    with col_a:
+        device = st.selectbox(
+            "Device", options=["auto", "cuda", "cpu"], index=["auto", "cuda", "cpu"].index(backend.device)
+        )
+        mode = st.selectbox(
+            "Inference Mode", options=["streaming", "windowed"], index=["streaming", "windowed"].index(backend.mode)
+        )
+        image_size = int(st.number_input("Image Size", min_value=224, value=int(backend.image_size), step=14))
+        patch_size = int(st.number_input("Patch Size", min_value=1, value=int(backend.patch_size)))
+    with col_b:
+        num_scale_frames = int(st.number_input("Scale Frames", min_value=1, value=int(backend.num_scale_frames)))
+        point_stride = int(st.number_input("Point Stride", min_value=1, value=int(backend.point_stride)))
+        confidence_threshold = float(
+            st.number_input("Confidence Threshold", min_value=0.0, value=float(backend.confidence_threshold))
+        )
+        auto_keyframes = st.toggle("Auto Keyframes", value=backend.keyframe_interval == "auto")
+        keyframe_interval = "auto"
+        if not auto_keyframes:
+            default_keyframe_interval = 1 if backend.keyframe_interval == "auto" else int(backend.keyframe_interval)
+            keyframe_interval = int(
+                st.number_input("Keyframe Interval", min_value=1, value=max(default_keyframe_interval, 1))
+            )
+        limit_dense_points = st.toggle("Limit Dense Points", value=backend.max_points is not None)
+        max_points = None
+        if limit_dense_points:
+            max_points = int(st.number_input("Max Dense Points", min_value=1, value=backend.max_points or 100_000))
+        limit_depth = st.toggle("Limit Depth", value=backend.max_depth_m is not None)
+        max_depth_m = None
+        if limit_depth:
+            max_depth_m = float(st.number_input("Max Depth M", min_value=0.0, value=backend.max_depth_m or 100.0))
+        use_amp = st.toggle("AMP", value=backend.use_amp)
+        use_sdpa = st.toggle("SDPA", value=backend.use_sdpa)
+        enable_point_head = st.toggle("Point Head", value=backend.enable_point_head)
+
+    with st.expander("LingBot Paths", expanded=False):
+        lingbot_map_dir = _path_input("LingBot-Map Directory", backend.lingbot_map_dir)
+        checkpoint_path = _path_input("Checkpoint Path", backend.checkpoint_path)
+
+    return LingbotMapSlamBackendConfig(
+        method_id=MethodId.LINGBOT_MAP,
+        max_frames=max_frames,
+        lingbot_map_dir=lingbot_map_dir,
+        checkpoint_path=checkpoint_path,
+        device=device,
+        mode=mode,
+        image_size=image_size,
+        patch_size=patch_size,
+        num_scale_frames=num_scale_frames,
+        keyframe_interval=keyframe_interval,
+        use_sdpa=use_sdpa,
+        use_amp=use_amp,
+        model_dtype=backend.model_dtype,
+        checkpoint_pos_embed=backend.checkpoint_pos_embed,
+        camera_num_iterations=backend.camera_num_iterations,
+        enable_point_head=enable_point_head,
+        confidence_threshold=confidence_threshold,
+        point_stride=point_stride,
+        max_points=max_points,
+        max_depth_m=max_depth_m,
     )
 
 

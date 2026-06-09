@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, TypeAlias
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.utils import BaseConfig, FactoryConfig, PathConfig
 
 if TYPE_CHECKING:
+    from prml_vslam.methods.lingbot.adapter import LingbotMapSlamBackend
     from prml_vslam.methods.mast3r.adapter import Mast3rSlamBackend
     from prml_vslam.methods.vista.adapter import VistaSlamBackend
 
@@ -26,6 +27,7 @@ class MethodId(StrEnum):
 
     VISTA = "vista"
     MAST3R = "mast3r"
+    LINGBOT_MAP = "lingbot_map"
 
     @property
     def display_name(self) -> str:
@@ -35,6 +37,8 @@ class MethodId(StrEnum):
                 return "ViSTA-SLAM"
             case MethodId.MAST3R:
                 return "MASt3R-SLAM"
+            case MethodId.LINGBOT_MAP:
+                return "LingBot-Map"
 
 
 class SlamOutputPolicy(BaseConfig):
@@ -296,8 +300,109 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
         return VistaSlamBackend(self, path_config=path_config)
 
 
+class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSlamBackend"]):
+    """Configure the optional LingBot-Map backend."""
+
+    method_id: Literal[MethodId.LINGBOT_MAP] = MethodId.LINGBOT_MAP
+
+    lingbot_map_dir: Path = Path("external/lingbot-map")
+    """Path to a local LingBot-Map checkout containing the ``lingbot_map`` package."""
+
+    checkpoint_path: Path = Path("external/lingbot-map/checkpoints/lingbot-map.pt")
+    """Path to the LingBot-Map checkpoint weights."""
+
+    device: Literal["auto", "cuda", "cpu"] = "auto"
+    """Torch device preference used for model inference."""
+
+    mode: Literal["streaming", "windowed"] = "streaming"
+    """LingBot-Map inference API to use during repository offline execution."""
+
+    image_size: int = Field(default=518, ge=1)
+    patch_size: int = Field(default=14, ge=1)
+    num_scale_frames: int = Field(default=8, ge=1)
+    keyframe_interval: int | Literal["auto"] = "auto"
+    use_sdpa: bool = True
+    use_amp: bool = True
+    model_dtype: Literal["auto", "float32", "float16", "bfloat16"] = "auto"
+    checkpoint_pos_embed: Literal["error", "interpolate", "drop"] = "error"
+    camera_num_iterations: int = Field(default=4, ge=1)
+    enable_point_head: bool = False
+    confidence_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+    point_stride: int = Field(default=8, ge=1)
+    max_points: int | None = Field(default=100_000, ge=1)
+    """Optional output point cap applied after LingBot dense geometry extraction."""
+
+    max_depth_m: float | None = Field(default=100.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_patch_grid(self) -> Self:
+        """Ensure LingBot image dimensions produce an integral patch grid."""
+        if self.image_size % self.patch_size != 0:
+            raise ValueError("LingBot-Map `image_size` must be divisible by `patch_size`.")
+        if self.keyframe_interval != "auto" and self.keyframe_interval < 1:
+            raise ValueError("LingBot-Map `keyframe_interval` must be positive or `auto`.")
+        return self
+
+    @property
+    def supports_offline(self) -> bool:
+        """Whether the backend supports offline execution."""
+        return True
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether the backend supports streaming execution."""
+        return True
+
+    @property
+    def supports_dense_points(self) -> bool:
+        """Whether the backend can expose point-cloud outputs."""
+        return True
+
+    @property
+    def supports_live_preview(self) -> bool:
+        """Whether the backend can emit live preview payloads."""
+        return False
+
+    @property
+    def supports_native_visualization(self) -> bool:
+        """Whether the backend may emit native visualization artifacts."""
+        return False
+
+    @property
+    def supports_trajectory_benchmark(self) -> bool:
+        """Whether the backend supports repository trajectory evaluation."""
+        return True
+
+    @property
+    def default_resources(self) -> dict[str, float]:
+        """Return backend-owned default resource hints."""
+        return {"CPU": 2.0, "GPU": 1.0}
+
+    @property
+    def notes(self) -> list[str]:
+        """Return backend-specific planning notes."""
+        return [
+            "LingBot-Map is wired as an offline and bounded terminal-streaming repository backend.",
+            "Streaming runs buffer RGB frames and emit terminal artifacts at finish, without incremental live preview.",
+            "A local LingBot-Map checkout and checkpoint are required for real runs.",
+        ]
+
+    @property
+    def target_type(self) -> type[LingbotMapSlamBackend]:
+        """Return the backend type instantiated by ``setup_target``."""
+        from prml_vslam.methods.lingbot.adapter import LingbotMapSlamBackend
+
+        return LingbotMapSlamBackend
+
+    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: Any) -> LingbotMapSlamBackend:
+        """Instantiate the LingBot-Map backend in the execution process."""
+        from prml_vslam.methods.lingbot.adapter import LingbotMapSlamBackend
+
+        return LingbotMapSlamBackend(self, path_config=path_config)
+
+
 BackendConfig: TypeAlias = Annotated[
-    VistaSlamBackendConfig | Mast3rSlamBackendConfig,
+    VistaSlamBackendConfig | Mast3rSlamBackendConfig | LingbotMapSlamBackendConfig,
     Field(discriminator="method_id"),
 ]
 
@@ -320,11 +425,14 @@ def build_slam_backend_config(
             return VistaSlamBackendConfig.model_validate({"method_id": MethodId.VISTA, **backend_payload})
         case MethodId.MAST3R:
             return Mast3rSlamBackendConfig.model_validate({"method_id": MethodId.MAST3R, **backend_payload})
+        case MethodId.LINGBOT_MAP:
+            return LingbotMapSlamBackendConfig.model_validate({"method_id": MethodId.LINGBOT_MAP, **backend_payload})
 
 
 __all__ = [
     "BackendConfig",
     "BackendConfigValue",
+    "LingbotMapSlamBackendConfig",
     "Mast3rSlamBackendConfig",
     "MethodId",
     "SlamBackendConfig",

@@ -7,6 +7,7 @@ from typing import Any
 from prml_vslam.methods.stage.backend_config import (
     BackendConfig,
     BackendConfigValue,
+    LingbotMapSlamBackendConfig,
     Mast3rSlamBackendConfig,
     MethodId,
     SlamBackendConfig,
@@ -20,6 +21,7 @@ from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStageO
 __all__ = [
     "BackendConfig",
     "BackendConfigValue",
+    "LingbotMapSlamBackendConfig",
     "Mast3rSlamBackendConfig",
     "MethodId",
     "SlamBackendConfig",
