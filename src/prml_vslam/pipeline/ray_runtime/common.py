@@ -56,6 +56,12 @@ def slam_artifacts_map(slam: SlamArtifacts) -> dict[str, ArtifactRef]:
         artifacts["sparse_points_ply"] = slam.sparse_points_ply
     if slam.dense_points_ply is not None:
         artifacts["dense_points_ply"] = slam.dense_points_ply
+    if slam.depth_maps_npz is not None:
+        artifacts["depth_maps_npz"] = slam.depth_maps_npz
+    if slam.point_maps_npz is not None:
+        artifacts["point_maps_npz"] = slam.point_maps_npz
+    if slam.point_cloud_confidences_npz is not None:
+        artifacts["point_cloud_confidences_npz"] = slam.point_cloud_confidences_npz
     for key, artifact in slam.extras.items():
         artifacts[f"extra:{key}"] = artifact
     return artifacts

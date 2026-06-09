@@ -88,6 +88,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   require world-to-camera matrices.
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
   are distinct shared geometry contracts.
+- Normalized SLAM dense-geometry runs may expose first-class artifact refs for
+  `depth_maps_npz`, `point_maps_npz`, and `point_cloud_confidences_npz` when a
+  backend materializes those processed-raster arrays. These artifacts must
+  record raster space, frame order, timestamps, frame semantics, and filtering
+  policy in side metadata instead of relying on filenames alone.
 - ADVIO does not prepare point-cloud benchmark references and does not expose
   legacy auxiliary device streams as supported modalities or pose providers.
 - Repository-prepared TUM RGB-D reference clouds must be built from the same
