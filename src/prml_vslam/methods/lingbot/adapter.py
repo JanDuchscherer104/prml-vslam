@@ -194,8 +194,6 @@ class _DensePredictionArtifacts:
     points_xyz_world: NDArray[np.float64]
     colors_rgb: NDArray[np.uint8] | None
     stats: dict[str, Any]
-    confidence_source: str
-    geometry_source: str
 
 
 class _LingbotRuntime:
@@ -616,7 +614,7 @@ def _build_lingbot_artifacts(
                 "num_processed_frames": len(observations),
                 "num_keyframes": len(poses),
                 "processed_image_shape_hw": list(_as_numpy(processed_images).shape[-2:]),
-                "dense_point_source": "world_points" if "world_points" in predictions else "depth",
+                "dense_point_source": "depth",
                 "dense_point_stats": dense_point_stats,
                 "confidence_threshold": config.confidence_threshold,
                 "point_stride": config.point_stride,
@@ -676,34 +674,8 @@ def _extract_dense_prediction_artifacts(
     config: LingbotMapSlamBackendConfig,
 ) -> _DensePredictionArtifacts:
     images = _images_chw_to_rgb(_strip_batch(_as_numpy(processed_images)))
-    if "world_points" in predictions:
-        world_points = _strip_batch(_as_numpy(predictions["world_points"])).astype(np.float64)
-        confidence = _optional_prediction_map(
-            predictions,
-            "world_points_conf",
-            world_points.shape[:3],
-            require_if_threshold=config.confidence_threshold,
-        )
-        points, colors, stats = _flatten_world_points(
-            world_points,
-            images=images,
-            confidence=confidence,
-            confidence_threshold=config.confidence_threshold,
-            stride=config.point_stride,
-            geometry_source="world_points",
-            max_depth_m=None,
-        )
-        confidence_source = "none" if confidence is None else "world_points_conf"
-        return _DensePredictionArtifacts(
-            points_xyz_world=points,
-            colors_rgb=colors,
-            stats=stats,
-            confidence_source=confidence_source,
-            geometry_source="world_points",
-        )
-
     if "depth" not in predictions:
-        raise RuntimeError("LingBot-Map predictions did not include `world_points` or `depth`.")
+        raise RuntimeError("LingBot-Map predictions did not include `depth` for dense PLY export.")
     depth = _strip_batch(_as_numpy(predictions["depth"])).astype(np.float32)
     if depth.ndim == 4 and depth.shape[-1] == 1:
         depth = depth[..., 0]
@@ -713,7 +685,6 @@ def _extract_dense_prediction_artifacts(
         depth.shape,
         require_if_threshold=config.confidence_threshold,
     )
-    confidence_source = "none" if confidence is None else "depth_conf"
     points, colors, stats = _flatten_depth_points(
         depth,
         images=images,
@@ -728,8 +699,6 @@ def _extract_dense_prediction_artifacts(
         points_xyz_world=points,
         colors_rgb=colors,
         stats=stats,
-        confidence_source=confidence_source,
-        geometry_source="depth",
     )
 
 
@@ -785,41 +754,6 @@ def _flatten_depth_points(
         {
             "source": "depth",
             "candidate_points": candidate_points,
-            "finite_points": finite_points,
-            "confidence_filter_applied": confidence is not None,
-            "confidence_threshold": confidence_threshold,
-            "max_depth_filter": "camera_depth" if max_depth_m is not None else "none",
-            "world_frame": LINGBOT_WORLD_FRAME,
-        },
-    )
-
-
-def _flatten_world_points(
-    world_points: np.ndarray,
-    *,
-    images: np.ndarray,
-    confidence: np.ndarray | None,
-    confidence_threshold: float,
-    stride: int,
-    geometry_source: str,
-    max_depth_m: float | None,
-) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
-    sampled = world_points[:, ::stride, ::stride, :]
-    valid = np.all(np.isfinite(sampled), axis=-1)
-    finite_points = int(np.count_nonzero(valid))
-    if confidence is not None:
-        sampled_confidence = confidence[:, ::stride, ::stride]
-        valid &= (sampled_confidence >= confidence_threshold) & (sampled_confidence > 1e-5)
-    points = sampled[valid]
-    colors = None
-    if images.shape[0] == world_points.shape[0] and images.shape[1:3] == world_points.shape[1:3]:
-        colors = images[:, ::stride, ::stride, :][valid]
-    return (
-        points.astype(np.float64, copy=False),
-        None if colors is None else colors.astype(np.uint8, copy=False),
-        {
-            "source": geometry_source,
-            "candidate_points": int(np.prod(sampled.shape[:3])),
             "finite_points": finite_points,
             "confidence_filter_applied": confidence is not None,
             "confidence_threshold": confidence_threshold,
