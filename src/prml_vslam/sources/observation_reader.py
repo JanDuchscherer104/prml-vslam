@@ -19,14 +19,7 @@ def iter_sequence_manifest_observations(
     *,
     max_frames: int | None = None,
 ) -> Iterator[Observation]:
-    """Yield RGB observations from a normalized source sequence manifest.
-
-    Each observation carries the source-raster camera intrinsics when the
-    manifest provides a calibration, so calibrated backends (for example
-    MASt3R-SLAM with ``use_calib=True``) can read ``Observation.intrinsics``.
-    Sequences without a calibration yield ``intrinsics=None`` (the uncalibrated
-    case), which estimating backends ignore.
-    """
+    """Yield RGB observations from a normalized source sequence manifest."""
     image_paths, timestamps_ns = _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
     provenance = _manifest_provenance(sequence)
     intrinsics = _resolve_manifest_intrinsics(sequence)

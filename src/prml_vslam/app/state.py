@@ -51,14 +51,7 @@ class SessionStateStore:
             return state
 
     def save(self, state: AppState) -> None:
-        """Persist the app state into in-memory session storage.
-
-        Uses ``mode="python"`` (not ``"json"``) so that nested strict transport
-        models such as ``StageRuntimeStatus`` round-trip: their ``StrEnum`` fields
-        stay as enum instances instead of bare strings, which strict validation
-        rejects on reload. Session storage is in-process memory, so native Python
-        objects are fine here.
-        """
+        """Persist the app state into in-memory session storage."""
         st.session_state[self.state_key] = state.model_dump(mode="python")
 
     def load_record3d_runtime(self) -> Record3DStreamRuntimeController:
