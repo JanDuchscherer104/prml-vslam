@@ -619,7 +619,6 @@ def _render_lingbot_backend_settings(
             max_depth_m = float(st.number_input("Max Depth M", min_value=0.0, value=backend.max_depth_m or 100.0))
         use_amp = st.toggle("AMP", value=backend.use_amp)
         use_sdpa = st.toggle("SDPA", value=backend.use_sdpa)
-        enable_point_head = st.toggle("Point Head", value=backend.enable_point_head)
 
     with st.expander("LingBot Paths", expanded=False):
         lingbot_map_dir = _path_input("LingBot-Map Directory", backend.lingbot_map_dir)
@@ -647,7 +646,6 @@ def _render_lingbot_backend_settings(
         window_size=backend.window_size,
         overlap_size=backend.overlap_size,
         overlap_keyframes=backend.overlap_keyframes,
-        enable_point_head=enable_point_head,
         confidence_threshold=confidence_threshold,
         point_stride=point_stride,
         max_points=max_points,
