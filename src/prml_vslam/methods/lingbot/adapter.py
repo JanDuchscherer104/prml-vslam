@@ -6,6 +6,7 @@ import contextlib
 import importlib
 import io
 import json
+import os
 import sys
 import time
 from collections.abc import Iterable, Mapping
@@ -204,6 +205,7 @@ class _LingbotRuntime:
         self._console = Console(__name__).child("_LingbotRuntime")
 
     def infer(self, images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], Any]:
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         torch = importlib.import_module("torch")
         self._inject_package_path()
         checkpoint = self._resolve_checkpoint()
@@ -676,7 +678,12 @@ def _extract_dense_prediction_artifacts(
     images = _images_chw_to_rgb(_strip_batch(_as_numpy(processed_images)))
     if "world_points" in predictions:
         world_points = _strip_batch(_as_numpy(predictions["world_points"])).astype(np.float64)
-        confidence = _optional_prediction_map(predictions, "world_points_conf", world_points.shape[:3])
+        confidence = _optional_prediction_map(
+            predictions,
+            "world_points_conf",
+            world_points.shape[:3],
+            require_if_threshold=config.confidence_threshold,
+        )
         points, colors, stats = _flatten_world_points(
             world_points,
             images=images,
@@ -700,7 +707,12 @@ def _extract_dense_prediction_artifacts(
     depth = _strip_batch(_as_numpy(predictions["depth"])).astype(np.float32)
     if depth.ndim == 4 and depth.shape[-1] == 1:
         depth = depth[..., 0]
-    confidence = _optional_prediction_map(predictions, "depth_conf", depth.shape)
+    confidence = _optional_prediction_map(
+        predictions,
+        "depth_conf",
+        depth.shape,
+        require_if_threshold=config.confidence_threshold,
+    )
     confidence_source = "none" if confidence is None else "depth_conf"
     points, colors, stats = _flatten_depth_points(
         depth,
@@ -818,12 +830,28 @@ def _flatten_world_points(
 
 
 def _optional_prediction_map(
-    predictions: dict[str, Any], key: str, expected_shape: tuple[int, ...]
+    predictions: dict[str, Any],
+    key: str,
+    expected_shape: tuple[int, ...],
+    *,
+    require_if_threshold: float,
 ) -> np.ndarray | None:
     if key not in predictions:
+        if require_if_threshold > 0.0:
+            raise RuntimeError(
+                f"LingBot-Map confidence filtering requested threshold {require_if_threshold}, "
+                f"but prediction key `{key}` was not present."
+            )
         return None
     values = _strip_batch(_as_numpy(predictions[key])).astype(np.float32)
-    return values if values.shape == expected_shape else None
+    if values.shape != expected_shape:
+        if require_if_threshold > 0.0:
+            raise RuntimeError(
+                f"LingBot-Map confidence map `{key}` shape {values.shape} did not match expected "
+                f"{expected_shape} for threshold {require_if_threshold}."
+            )
+        return None
+    return values
 
 
 def _images_chw_to_rgb(images: np.ndarray) -> np.ndarray:

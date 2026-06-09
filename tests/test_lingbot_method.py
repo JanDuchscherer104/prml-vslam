@@ -134,7 +134,7 @@ def test_lingbot_planned_outputs_use_normalized_geometry_paths(tmp_path: Path) -
 def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     config = load_run_config_toml(
         path_config=PathConfig(),
-        config_path=Path(".configs/pipelines/lingbot-smoke-streaming.toml"),
+        config_path=Path(".configs/pipelines/lingbot-smoke-streaming-gpu.toml"),
     )
 
     assert config.mode is PipelineMode.STREAMING
@@ -463,6 +463,29 @@ def test_lingbot_artifact_builder_rejects_pose_count_mismatch(tmp_path: Path, mo
             artifact_root=tmp_path,
             output_policy=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
             config=LingbotMapSlamBackendConfig(),
+        )
+
+
+def test_lingbot_artifact_builder_rejects_missing_confidence_when_filtering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake_pose_decoder(monkeypatch, num_frames=1)
+    rgb = np.full((2, 2, 3), 128, dtype=np.uint8)
+    observations = [Observation(seq=0, timestamp_ns=0, provenance=ObservationProvenance(), rgb=rgb)]
+    predictions = {
+        "pose_enc": np.zeros((1, 1, 9), dtype=np.float32),
+        "depth": np.ones((1, 1, 2, 2, 1), dtype=np.float32),
+    }
+    processed_images = rgb.transpose(2, 0, 1)[None, ...] / 255.0
+
+    with pytest.raises(RuntimeError, match="confidence filtering requested"):
+        _build_lingbot_artifacts(
+            predictions=predictions,
+            processed_images=processed_images,
+            observations=observations,
+            artifact_root=tmp_path,
+            output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False),
+            config=LingbotMapSlamBackendConfig(confidence_threshold=1.5),
         )
 
 
