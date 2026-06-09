@@ -156,8 +156,6 @@ Activate the same `prml-vslam` conda environment used above (provides
 
 ```bash
 conda activate prml-vslam
-unset LD_LIBRARY_PATH
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 ```
 
 Install MASt3R-SLAM and its two nested Python packages through the optional
@@ -186,6 +184,18 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
   -P external/mast3r-slam/checkpoints/
 wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric_retrieval_codebook.pkl \
   -P external/mast3r-slam/checkpoints/
+```
+
+# Troubleshoot Mast3r
+If a run fails on import torch, run:
+
+```bash
+unset LD_LIBRARY_PATH
+```
+
+If installed modules were not found:
+```bash
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 ```
 
 ## Streamlit Workbench
