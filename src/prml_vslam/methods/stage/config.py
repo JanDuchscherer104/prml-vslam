@@ -35,7 +35,18 @@ class SlamStageConfig(StageConfig):
             if self.outputs.emit_sparse_points or self.outputs.emit_dense_points:
                 artifact_paths.append(run_paths.point_cloud_path)
             return artifact_paths
-        if self.backend.method_id in {MethodId.MAST3R, MethodId.LINGBOT_MAP}:
+        if self.backend.method_id is MethodId.LINGBOT_MAP:
+            if self.outputs.emit_dense_points:
+                artifact_paths.extend(
+                    [
+                        run_paths.point_cloud_path,
+                        run_paths.depth_maps_path,
+                        run_paths.point_maps_path,
+                        run_paths.point_cloud_confidences_path,
+                    ]
+                )
+            return artifact_paths
+        if self.backend.method_id is MethodId.MAST3R:
             if self.outputs.emit_dense_points:
                 artifact_paths.append(run_paths.dense_points_path)
             return artifact_paths

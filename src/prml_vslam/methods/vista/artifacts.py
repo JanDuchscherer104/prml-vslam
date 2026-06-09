@@ -126,6 +126,7 @@ def build_vista_artifacts(
         trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
+        point_cloud_confidences_npz=confidence_ref,
         extras=extras,
         num_processed_frames=num_processed_frames,
         num_keyframes=len(timestamps_s),

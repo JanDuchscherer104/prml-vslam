@@ -9,10 +9,12 @@ import json
 import sys
 import time
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform, Observation
@@ -182,6 +184,19 @@ def _expect_lingbot_config(backend_config: SlamBackendConfig) -> LingbotMapSlamB
 def _validate_output_policy(output_policy: SlamOutputPolicy) -> None:
     if output_policy.emit_sparse_points:
         raise ValueError("LingBot-Map does not expose a separate sparse point-cloud artifact.")
+
+
+@dataclass(frozen=True, slots=True)
+class _DensePredictionArtifacts:
+    points_xyz_world: NDArray[np.float64]
+    colors_rgb: NDArray[np.uint8] | None
+    stats: dict[str, Any]
+    depth_maps_m: NDArray[np.float32] | None
+    point_maps_xyz: NDArray[np.float32] | None
+    point_map_frame: str | None
+    confidence_maps: NDArray[np.float32] | None
+    confidence_source: str
+    geometry_source: str
 
 
 class _LingbotRuntime:
@@ -557,22 +572,37 @@ def _build_lingbot_artifacts(
     trajectory_path = write_tum_trajectory(run_paths.trajectory_path, poses, timestamps_s)
 
     dense_ref: ArtifactRef | None = None
+    depth_ref: ArtifactRef | None = None
+    point_maps_ref: ArtifactRef | None = None
+    confidence_ref: ArtifactRef | None = None
     num_dense_points = 0
     dense_point_stats: dict[str, Any] = {}
     if output_policy.emit_dense_points:
-        points, colors, dense_point_stats = _extract_dense_points(
+        dense_artifacts = _extract_dense_prediction_artifacts(
             predictions=predictions,
             processed_images=processed_images,
             intrinsics=intrinsics,
+            extrinsics_camera_from_world=extrinsics_camera_from_world,
             poses=poses,
             config=config,
         )
+        points = dense_artifacts.points_xyz_world
+        colors = dense_artifacts.colors_rgb
+        dense_point_stats = dense_artifacts.stats
         dense_point_stats["num_points_before_sampling"] = len(points)
         points, colors = sample_point_cloud_random(points, colors, max_points=config.max_points, seed=17)
         dense_point_stats["num_points_after_sampling"] = len(points)
-        dense_path = write_point_cloud_ply(run_paths.dense_points_path, points, colors_rgb=colors)
+        dense_path = write_point_cloud_ply(run_paths.point_cloud_path, points, colors_rgb=colors)
         dense_ref = artifact_ref(dense_path, kind="ply")
         num_dense_points = len(points)
+        depth_ref, point_maps_ref, confidence_ref = _write_lingbot_geometry_artifacts(
+            run_paths=run_paths,
+            dense_artifacts=dense_artifacts,
+            timestamps_s=timestamps_s,
+            observations=observations,
+            processed_image_shape_hw=tuple(int(value) for value in _as_numpy(processed_images).shape[-2:]),
+            config=config,
+        )
 
     npz_path = native_dir / "predictions_normalized.npz"
     np.savez_compressed(
@@ -613,6 +643,9 @@ def _build_lingbot_artifacts(
         trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=None,
         dense_points_ply=dense_ref,
+        depth_maps_npz=depth_ref,
+        point_maps_npz=point_maps_ref,
+        point_cloud_confidences_npz=confidence_ref,
         extras=extras,
         num_processed_frames=len(observations),
         num_keyframes=len(poses),
@@ -652,24 +685,41 @@ def _invert_camera_from_world_extrinsic(extrinsic_camera_from_world: np.ndarray)
     return np.linalg.inv(matrix)
 
 
-def _extract_dense_points(
+def _extract_dense_prediction_artifacts(
     *,
     predictions: dict[str, Any],
     processed_images: Any,
     intrinsics: np.ndarray,
+    extrinsics_camera_from_world: np.ndarray,
     poses: list[FrameTransform],
     config: LingbotMapSlamBackendConfig,
-) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
+) -> _DensePredictionArtifacts:
     images = _images_chw_to_rgb(_strip_batch(_as_numpy(processed_images)))
     if "world_points" in predictions:
         world_points = _strip_batch(_as_numpy(predictions["world_points"])).astype(np.float64)
         confidence = _optional_prediction_map(predictions, "world_points_conf", world_points.shape[:3])
-        return _flatten_world_points(
+        points, colors, stats = _flatten_world_points(
             world_points,
             images=images,
             confidence=confidence,
             confidence_threshold=config.confidence_threshold,
             stride=config.point_stride,
+        )
+        if confidence is None:
+            confidence = np.ones(world_points.shape[:3], dtype=np.float32)
+            confidence_source = "synthetic_all_ones"
+        else:
+            confidence_source = "world_points_conf"
+        return _DensePredictionArtifacts(
+            points_xyz_world=points,
+            colors_rgb=colors,
+            stats=stats,
+            depth_maps_m=_world_points_depth_maps(world_points, extrinsics_camera_from_world),
+            point_maps_xyz=world_points.astype(np.float32, copy=False),
+            point_map_frame="world",
+            confidence_maps=confidence,
+            confidence_source=confidence_source,
+            geometry_source="world_points",
         )
 
     if "depth" not in predictions:
@@ -678,8 +728,13 @@ def _extract_dense_points(
     if depth.ndim == 4 and depth.shape[-1] == 1:
         depth = depth[..., 0]
     confidence = _optional_prediction_map(predictions, "depth_conf", depth.shape)
+    confidence_source = "depth_conf"
+    if confidence is None:
+        confidence = np.ones(depth.shape, dtype=np.float32)
+        confidence_source = "synthetic_all_ones"
     all_points: list[np.ndarray] = []
     all_colors: list[np.ndarray] = []
+    point_maps: list[np.ndarray] = []
     candidate_points = 0
     for index, depth_map in enumerate(depth):
         if index >= len(poses):
@@ -692,12 +747,10 @@ def _extract_dense_points(
         valid_depth = np.asarray(depth_map, dtype=np.float32)
         if config.max_depth_m is not None:
             valid_depth = np.where(valid_depth <= config.max_depth_m, valid_depth, 0.0).astype(np.float32)
-        if confidence is not None:
-            valid_depth = np.where(confidence[index] >= config.confidence_threshold, valid_depth, 0.0).astype(
-                np.float32
-            )
+        valid_depth = np.where(confidence[index] >= config.confidence_threshold, valid_depth, 0.0).astype(np.float32)
         candidate_points += int(np.count_nonzero(valid_depth[:: config.point_stride, :: config.point_stride]))
         rgb = images[index] if index < len(images) and images[index].shape[:2] == valid_depth.shape else None
+        point_maps.append(_depth_map_to_camera_point_map(valid_depth, intrinsics=frame_intrinsics))
         points, colors = depth_map_to_world_points(
             valid_depth,
             frame_intrinsics,
@@ -709,27 +762,150 @@ def _extract_dense_points(
         if colors is not None:
             all_colors.append(colors)
     if not all_points:
-        return (
-            np.empty((0, 3), dtype=np.float64),
-            None,
-            {
+        return _DensePredictionArtifacts(
+            points_xyz_world=np.empty((0, 3), dtype=np.float64),
+            colors_rgb=None,
+            stats={
                 "source": "depth",
                 "candidate_points": 0,
-                "confidence_filter_applied": confidence is not None,
+                "confidence_filter_applied": True,
                 "max_depth_filter": "camera_depth" if config.max_depth_m is not None else "none",
             },
+            depth_maps_m=depth,
+            point_maps_xyz=np.empty((0, 0, 0, 3), dtype=np.float32),
+            point_map_frame=CAMERA_RDF_FRAME,
+            confidence_maps=confidence,
+            confidence_source=confidence_source,
+            geometry_source="depth",
         )
     colors_out = np.concatenate(all_colors, axis=0) if len(all_colors) == len(all_points) else None
-    return (
-        np.concatenate(all_points, axis=0),
-        colors_out,
-        {
+    return _DensePredictionArtifacts(
+        points_xyz_world=np.concatenate(all_points, axis=0),
+        colors_rgb=colors_out,
+        stats={
             "source": "depth",
             "candidate_points": candidate_points,
-            "confidence_filter_applied": confidence is not None,
+            "confidence_filter_applied": True,
             "max_depth_filter": "camera_depth" if config.max_depth_m is not None else "none",
         },
+        depth_maps_m=depth,
+        point_maps_xyz=np.stack(point_maps, axis=0),
+        point_map_frame=CAMERA_RDF_FRAME,
+        confidence_maps=confidence,
+        confidence_source=confidence_source,
+        geometry_source="depth",
     )
+
+
+def _write_lingbot_geometry_artifacts(
+    *,
+    run_paths: RunArtifactPaths,
+    dense_artifacts: _DensePredictionArtifacts,
+    timestamps_s: list[float],
+    observations: list[Observation],
+    processed_image_shape_hw: tuple[int, int],
+    config: LingbotMapSlamBackendConfig,
+) -> tuple[ArtifactRef | None, ArtifactRef | None, ArtifactRef | None]:
+    source_seq = [frame.seq for frame in observations]
+    source_timestamp_ns = [frame.timestamp_ns for frame in observations]
+    metadata = {
+        "method_id": MethodId.LINGBOT_MAP.value,
+        "raster_space": "lingbot_processed_model",
+        "processed_image_shape_hw": list(processed_image_shape_hw),
+        "processed_raster_shape": list(processed_image_shape_hw),
+        "frame_count": len(observations),
+        "source_seq": source_seq,
+        "source_frame_order": source_seq,
+        "source_timestamp_ns": source_timestamp_ns,
+        "timestamps_s": timestamps_s,
+        "camera_frame": CAMERA_RDF_FRAME,
+        "world_frame": "world",
+        "frame_semantics": {
+            "camera_frame": CAMERA_RDF_FRAME,
+            "world_frame": "world",
+            "point_map_frame": dense_artifacts.point_map_frame,
+        },
+        "point_map_frame": dense_artifacts.point_map_frame,
+        "geometry_source": dense_artifacts.geometry_source,
+        "confidence_source": dense_artifacts.confidence_source,
+        "confidence_threshold": config.confidence_threshold,
+        "point_stride": config.point_stride,
+        "max_depth_m": config.max_depth_m,
+        "stride_filter_policy": {
+            "confidence_threshold": config.confidence_threshold,
+            "point_stride": config.point_stride,
+            "max_depth_m": config.max_depth_m,
+        },
+    }
+    source_seq_array = np.asarray(source_seq, dtype=np.int64)
+    timestamps_array = np.asarray(timestamps_s, dtype=np.float64)
+
+    depth_ref = None
+    if dense_artifacts.depth_maps_m is not None:
+        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "depth_maps_npz"}, sort_keys=True))
+        run_paths.depth_maps_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            run_paths.depth_maps_path,
+            depth_m=np.asarray(dense_artifacts.depth_maps_m, dtype=np.float32),
+            timestamps_s=timestamps_array,
+            source_seq=source_seq_array,
+            metadata_json=metadata_json,
+        )
+        depth_ref = artifact_ref(run_paths.depth_maps_path, kind="npz")
+
+    point_maps_ref = None
+    if dense_artifacts.point_maps_xyz is not None:
+        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "point_maps_npz"}, sort_keys=True))
+        run_paths.point_maps_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            run_paths.point_maps_path,
+            point_maps_xyz=np.asarray(dense_artifacts.point_maps_xyz, dtype=np.float32),
+            timestamps_s=timestamps_array,
+            source_seq=source_seq_array,
+            metadata_json=metadata_json,
+        )
+        point_maps_ref = artifact_ref(run_paths.point_maps_path, kind="npz")
+
+    confidence_ref = None
+    if dense_artifacts.confidence_maps is not None:
+        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "point_cloud_confidences_npz"}, sort_keys=True))
+        confidence = np.asarray(dense_artifacts.confidence_maps, dtype=np.float32)
+        run_paths.point_cloud_confidences_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            run_paths.point_cloud_confidences_path,
+            confidence=confidence.reshape(-1),
+            confidence_maps=confidence,
+            confidence_threshold=np.asarray(config.confidence_threshold, dtype=np.float32),
+            source_shape=np.asarray(confidence.shape, dtype=np.int64),
+            timestamps_s=timestamps_array,
+            source_seq=source_seq_array,
+            metadata_json=metadata_json,
+        )
+        confidence_ref = artifact_ref(run_paths.point_cloud_confidences_path, kind="npz")
+
+    return depth_ref, point_maps_ref, confidence_ref
+
+
+def _depth_map_to_camera_point_map(depth_map_m: np.ndarray, *, intrinsics: CameraIntrinsics) -> np.ndarray:
+    height, width = depth_map_m.shape
+    pixel_x, pixel_y = np.meshgrid(np.arange(width, dtype=np.float32), np.arange(height, dtype=np.float32))
+    z = np.asarray(depth_map_m, dtype=np.float32)
+    x = (pixel_x - np.float32(intrinsics.cx)) / np.float32(intrinsics.fx) * z
+    y = (pixel_y - np.float32(intrinsics.cy)) / np.float32(intrinsics.fy) * z
+    return np.stack([x, y, z], axis=-1).astype(np.float32, copy=False)
+
+
+def _world_points_depth_maps(world_points: np.ndarray, extrinsics_camera_from_world: np.ndarray) -> np.ndarray:
+    frame_count, height, width, _ = world_points.shape
+    world_points_hom = np.concatenate(
+        [
+            world_points.reshape(frame_count, height * width, 3),
+            np.ones((frame_count, height * width, 1), dtype=np.float64),
+        ],
+        axis=-1,
+    )
+    camera_points = np.einsum("nij,npj->npi", extrinsics_camera_from_world, world_points_hom)
+    return camera_points[..., 2].reshape(frame_count, height, width).astype(np.float32, copy=False)
 
 
 def _flatten_world_points(

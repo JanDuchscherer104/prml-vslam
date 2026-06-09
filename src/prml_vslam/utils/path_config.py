@@ -58,6 +58,12 @@ class RunArtifactPaths(BaseData):
     """Path to the exported trajectory."""
     point_cloud_path: Path
     """Path to the canonical exported point cloud."""
+    depth_maps_path: Path
+    """Path to normalized processed-raster depth maps."""
+    point_maps_path: Path
+    """Path to normalized processed-raster point maps."""
+    point_cloud_confidences_path: Path
+    """Path to normalized per-point or per-raster confidence values."""
     estimated_intrinsics_path: Path
     """Path to the canonical estimated camera-intrinsics series."""
     sparse_points_path: Path
@@ -105,6 +111,9 @@ class RunArtifactPaths(BaseData):
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
+            depth_maps_path=(resolved_root / "slam" / "depth_maps.npz").resolve(),
+            point_maps_path=(resolved_root / "slam" / "point_maps.npz").resolve(),
+            point_cloud_confidences_path=(resolved_root / "slam" / "point_cloud_confidences.npz").resolve(),
             estimated_intrinsics_path=(resolved_root / "slam" / "estimated_intrinsics.json").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "slam" / "dense_points.ply").resolve(),

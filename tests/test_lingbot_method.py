@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import types
 from pathlib import Path
@@ -111,6 +112,27 @@ def test_lingbot_full_toml_parses_through_run_config() -> None:
     assert config.stages.reconstruction.enabled is True
     assert config.visualization.export_viewer_rrd is True
     assert config.visualization.connect_live_viewer is False
+
+
+def test_lingbot_planned_outputs_use_normalized_geometry_paths(tmp_path: Path) -> None:
+    config = build_run_config(
+        experiment_name="lingbot-plan",
+        mode=PipelineMode.OFFLINE,
+        output_dir=tmp_path,
+        source_backend=TumRgbdSourceConfig(sequence_id="freiburg3_large_cabinet"),
+        method=MethodId.LINGBOT_MAP,
+    )
+
+    plan = config.compile_plan(PathConfig(root=tmp_path), fail_on_unavailable=True)
+    slam_stage = next(stage for stage in plan.stages if stage.key.value == "slam")
+
+    assert [path.name for path in slam_stage.outputs] == [
+        "trajectory.tum",
+        "point_cloud.ply",
+        "depth_maps.npz",
+        "point_maps.npz",
+        "point_cloud_confidences.npz",
+    ]
 
 
 def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
@@ -401,10 +423,39 @@ def test_lingbot_artifact_builder_writes_normalized_outputs(tmp_path: Path, monk
     trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
     np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [-1.0, -2.0])
     assert artifacts.dense_points_ply is not None
-    assert artifacts.dense_points_ply.path == run_paths.dense_points_path
+    assert artifacts.dense_points_ply.path == run_paths.point_cloud_path
     cloud = load_point_cloud_ply(artifacts.dense_points_ply.path)
     assert len(cloud) == 8
     np.testing.assert_allclose(np.unique(cloud[:, 0]), [-3.0, -2.0, -1.0])
+    assert artifacts.depth_maps_npz is not None
+    assert artifacts.depth_maps_npz.path == run_paths.depth_maps_path
+    assert artifacts.point_maps_npz is not None
+    assert artifacts.point_maps_npz.path == run_paths.point_maps_path
+    assert artifacts.point_cloud_confidences_npz is not None
+    assert artifacts.point_cloud_confidences_npz.path == run_paths.point_cloud_confidences_path
+    with np.load(artifacts.depth_maps_npz.path) as depth_maps:
+        np.testing.assert_allclose(depth_maps["depth_m"], np.ones((2, 2, 2), dtype=np.float32))
+        assert depth_maps["source_seq"].tolist() == [0, 1]
+        depth_metadata = json.loads(depth_maps["metadata_json"].item())
+        assert depth_metadata["artifact"] == "depth_maps_npz"
+        assert depth_metadata["processed_raster_shape"] == [2, 2]
+        assert depth_metadata["frame_count"] == 2
+        assert depth_metadata["source_frame_order"] == [0, 1]
+        assert depth_metadata["raster_space"] == "lingbot_processed_model"
+        assert depth_metadata["frame_semantics"]["camera_frame"] == CAMERA_RDF_FRAME
+        assert depth_metadata["frame_semantics"]["world_frame"] == "world"
+        assert depth_metadata["point_map_frame"] == CAMERA_RDF_FRAME
+        assert depth_metadata["stride_filter_policy"]["point_stride"] == 1
+    with np.load(artifacts.point_maps_npz.path) as point_maps:
+        assert point_maps["point_maps_xyz"].shape == (2, 2, 2, 3)
+        np.testing.assert_allclose(point_maps["point_maps_xyz"][0, :, :, 2], np.ones((2, 2)))
+        point_maps_metadata = json.loads(point_maps["metadata_json"].item())
+        assert point_maps_metadata["artifact"] == "point_maps_npz"
+    with np.load(artifacts.point_cloud_confidences_npz.path) as confidences:
+        np.testing.assert_allclose(confidences["confidence_maps"], np.ones((2, 2, 2), dtype=np.float32))
+        np.testing.assert_array_equal(confidences["source_shape"], [2, 2, 2])
+        confidence_metadata = json.loads(confidences["metadata_json"].item())
+        assert confidence_metadata["artifact"] == "point_cloud_confidences_npz"
     assert "predictions_normalized.npz" in artifacts.extras
     with np.load(artifacts.extras["predictions_normalized.npz"].path) as native_predictions:
         assert "extrinsics_camera_to_world" in native_predictions

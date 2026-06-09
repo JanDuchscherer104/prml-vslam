@@ -96,7 +96,9 @@ repo-owned artifacts.
   `lingbot_map_dir`/`checkpoint_path` in the backend config and provision the
   upstream Python environment explicitly. The adapter normalizes upstream
   camera-from-world extrinsics into repo `T_world_camera` trajectories and
-  terminal dense-point artifacts.
+  terminal dense-point artifacts. Dense LingBot runs write the canonical
+  `slam/point_cloud.ply` plus first-class processed-raster depth, point-map,
+  and confidence NPZ artifacts when predictions expose that geometry.
 
 Methods must not own stage order, persisted run config beyond backend variant
 fields, resource placement, pipeline events, app state, viewer orchestration, or

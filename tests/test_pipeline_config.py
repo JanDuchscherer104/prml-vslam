@@ -511,12 +511,21 @@ def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path
     write_json(run_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
     run_paths.trajectory_path.parent.mkdir(parents=True)
     run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    run_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_paths.point_cloud_path.write_text("ply\n", encoding="utf-8")
+    run_paths.depth_maps_path.write_text("depth\n", encoding="utf-8")
+    run_paths.point_maps_path.write_text("points\n", encoding="utf-8")
+    run_paths.point_cloud_confidences_path.write_text("conf\n", encoding="utf-8")
 
     results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
 
     assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
-    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.dense_points_path
+    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.point_cloud_path
+    assert results[StageKey.SLAM].outcome.artifacts["depth_maps_npz"].path == run_paths.depth_maps_path
+    assert results[StageKey.SLAM].outcome.artifacts["point_maps_npz"].path == run_paths.point_maps_path
+    assert (
+        results[StageKey.SLAM].outcome.artifacts["point_cloud_confidences_npz"].path
+        == run_paths.point_cloud_confidences_path
+    )
     missing_paths = RunArtifactPaths.build(tmp_path / "missing-benchmark")
     write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
     with pytest.raises(FileNotFoundError, match="benchmark inputs"):
