@@ -436,7 +436,8 @@ def build_run_config(
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
     trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=trajectory_baseline)
-    resolved_emit_sparse_points = method is not MethodId.MAST3R if emit_sparse_points is None else emit_sparse_points
+    dense_only_methods = {MethodId.MAST3R, MethodId.LINGBOT_MAP}
+    resolved_emit_sparse_points = method not in dense_only_methods if emit_sparse_points is None else emit_sparse_points
     return RunConfig(
         experiment_name=experiment_name,
         mode=mode,
