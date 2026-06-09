@@ -90,15 +90,13 @@ repo-owned artifacts.
   environments after installing the `mast3r` extra and upstream checkpoints.
   The adapter exposes the upstream dense pointmap export as `dense_points_ply`;
   separate sparse landmark artifacts are not supported.
-- [`lingbot/`](./lingbot/): operator-managed LingBot-Map wrapper that runs
-  against a local `Robbyant/lingbot-map` checkout plus checkpoint. The repo does
-  not vendor LingBot-Map or expose a pip extra for it; set
-  `lingbot_map_dir`/`checkpoint_path` in the backend config and provision the
-  upstream Python environment explicitly. The adapter normalizes upstream
-  camera-from-world extrinsics into repo `T_world_camera` trajectories and
-  terminal dense-point artifacts. Dense LingBot runs write the canonical
-  `slam/point_cloud.ply` plus first-class processed-raster depth, point-map,
-  and confidence NPZ artifacts when predictions expose that geometry.
+- [`lingbot/`](./lingbot/): LingBot-Map wrapper for operator-provisioned
+  upstream runtimes. See the root `SETUP.md` for checkout, checkpoint, and
+  environment setup. The adapter normalizes upstream camera-from-world
+  extrinsics into repo `T_world_camera` trajectories and terminal dense-point
+  artifacts. Dense LingBot runs write the canonical `slam/point_cloud.ply` plus
+  first-class processed-raster depth, point-map, and confidence NPZ artifacts
+  when predictions expose that geometry.
 
 Methods must not own stage order, persisted run config beyond backend variant
 fields, resource placement, pipeline events, app state, viewer orchestration, or
