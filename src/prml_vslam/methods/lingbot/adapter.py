@@ -37,6 +37,8 @@ from prml_vslam.utils.geometry import (
     write_tum_trajectory,
 )
 
+LINGBOT_WORLD_FRAME = "lingbot_world"
+
 
 class LingbotMapSlamBackend(SlamBackend):
     """Run LingBot-Map over normalized repository observations."""
@@ -191,10 +193,6 @@ class _DensePredictionArtifacts:
     points_xyz_world: NDArray[np.float64]
     colors_rgb: NDArray[np.uint8] | None
     stats: dict[str, Any]
-    depth_maps_m: NDArray[np.float32] | None
-    point_maps_xyz: NDArray[np.float32] | None
-    point_map_frame: str | None
-    confidence_maps: NDArray[np.float32] | None
     confidence_source: str
     geometry_source: str
 
@@ -258,6 +256,12 @@ class _LingbotRuntime:
             model = gct_stream(
                 img_size=self._cfg.image_size,
                 patch_size=self._cfg.patch_size,
+                enable_3d_rope=self._cfg.enable_3d_rope,
+                max_frame_num=self._cfg.max_frame_num,
+                kv_cache_sliding_window=self._cfg.kv_cache_sliding_window,
+                kv_cache_scale_frames=self._cfg.num_scale_frames,
+                kv_cache_cross_frame_special=True,
+                kv_cache_include_scale_frames=True,
                 enable_point=self._cfg.enable_point_head,
                 use_sdpa=self._cfg.use_sdpa or device == "cpu",
                 camera_num_iterations=self._cfg.camera_num_iterations,
@@ -285,7 +289,8 @@ class _LingbotRuntime:
             )
         if device.startswith("cuda"):
             self._console.info("Moving LingBot-Map model to %s.", device)
-            model = model.to(device=device, dtype=_resolve_model_dtype(torch, self._cfg.model_dtype)).eval()
+            model = model.to(device=device).eval()
+            _cast_aggregator_for_inference(torch, model, dtype=_resolve_model_dtype(torch, self._cfg.model_dtype))
         else:
             model = model.to(device).eval()
 
@@ -297,8 +302,6 @@ class _LingbotRuntime:
             image_size=self._cfg.image_size,
             patch_size=self._cfg.patch_size,
         )
-        if device.startswith("cuda"):
-            image_tensor = image_tensor.to(dtype=_resolve_model_dtype(torch, self._cfg.model_dtype))
         self._console.info(
             "Starting LingBot-Map inference on tensor shape %s.",
             tuple(int(dim) for dim in image_tensor.shape),
@@ -332,6 +335,9 @@ class _LingbotRuntime:
             )
         return model.inference_windowed(
             image_tensor,
+            window_size=self._cfg.window_size,
+            overlap_size=self._cfg.overlap_size,
+            overlap_keyframes=self._cfg.overlap_keyframes,
             num_scale_frames=self._cfg.num_scale_frames,
             keyframe_interval=keyframe_interval,
             output_device=torch.device("cpu"),
@@ -479,6 +485,14 @@ def _resolve_model_dtype(torch: Any, value: str) -> Any:
     return torch.bfloat16 if capability[0] >= 8 else torch.float16
 
 
+def _cast_aggregator_for_inference(torch: Any, model: Any, *, dtype: Any) -> None:
+    if dtype == torch.float32:
+        return
+    aggregator = getattr(model, "aggregator", None)
+    if aggregator is not None:
+        model.aggregator = aggregator.to(dtype=dtype)
+
+
 def _images_to_tensor(
     torch: Any,
     images_rgb: list[np.ndarray],
@@ -528,16 +542,10 @@ def _resolve_keyframe_interval(
     num_frames: int,
     num_scale_frames: int,
 ) -> int:
+    del num_scale_frames
     if value != "auto":
         return max(int(value), 1)
-    phase_two_frames = max(num_frames - min(num_scale_frames, num_frames), 0)
-    if phase_two_frames >= 1200:
-        return 8
-    if phase_two_frames >= 600:
-        return 4
-    if phase_two_frames >= 240:
-        return 2
-    return 1
+    return 1 if num_frames <= 320 else (num_frames + 319) // 320
 
 
 def _build_lingbot_artifacts(
@@ -553,28 +561,21 @@ def _build_lingbot_artifacts(
     native_dir = run_paths.native_output_dir
     native_dir.mkdir(parents=True, exist_ok=True)
 
-    extrinsics_camera_from_world, intrinsics = _decode_pose_predictions(predictions, processed_images=processed_images)
+    extrinsics_camera_to_world, intrinsics = _decode_pose_predictions(predictions, processed_images=processed_images)
     observation_count = len(observations)
     if observation_count == 0:
         raise RuntimeError("LingBot-Map did not produce any pose predictions.")
-    if len(extrinsics_camera_from_world) != observation_count or len(intrinsics) != observation_count:
+    if len(extrinsics_camera_to_world) != observation_count or len(intrinsics) != observation_count:
         raise RuntimeError(
             "LingBot-Map pose prediction count did not match processed observations: "
-            f"observations={observation_count}, extrinsics={len(extrinsics_camera_from_world)}, "
+            f"observations={observation_count}, extrinsics={len(extrinsics_camera_to_world)}, "
             f"intrinsics={len(intrinsics)}."
         )
-    extrinsics_camera_to_world = np.stack(
-        [_invert_camera_from_world_extrinsic(extrinsic)[:3, :] for extrinsic in extrinsics_camera_from_world],
-        axis=0,
-    )
     poses = [_pose_camera_to_world_to_frame_transform(extrinsic) for extrinsic in extrinsics_camera_to_world]
     timestamps_s = [frame.timestamp_ns / 1e9 for frame in observations]
     trajectory_path = write_tum_trajectory(run_paths.trajectory_path, poses, timestamps_s)
 
     dense_ref: ArtifactRef | None = None
-    depth_ref: ArtifactRef | None = None
-    point_maps_ref: ArtifactRef | None = None
-    confidence_ref: ArtifactRef | None = None
     num_dense_points = 0
     dense_point_stats: dict[str, Any] = {}
     if output_policy.emit_dense_points:
@@ -582,7 +583,6 @@ def _build_lingbot_artifacts(
             predictions=predictions,
             processed_images=processed_images,
             intrinsics=intrinsics,
-            extrinsics_camera_from_world=extrinsics_camera_from_world,
             poses=poses,
             config=config,
         )
@@ -595,20 +595,11 @@ def _build_lingbot_artifacts(
         dense_path = write_point_cloud_ply(run_paths.point_cloud_path, points, colors_rgb=colors)
         dense_ref = artifact_ref(dense_path, kind="ply")
         num_dense_points = len(points)
-        depth_ref, point_maps_ref, confidence_ref = _write_lingbot_geometry_artifacts(
-            run_paths=run_paths,
-            dense_artifacts=dense_artifacts,
-            timestamps_s=timestamps_s,
-            observations=observations,
-            processed_image_shape_hw=tuple(int(value) for value in _as_numpy(processed_images).shape[-2:]),
-            config=config,
-        )
 
     npz_path = native_dir / "predictions_normalized.npz"
     np.savez_compressed(
         npz_path,
         extrinsics_camera_to_world=extrinsics_camera_to_world,
-        extrinsics_camera_from_world=extrinsics_camera_from_world,
         intrinsics=intrinsics,
         timestamps_s=np.asarray(timestamps_s, dtype=np.float64),
     )
@@ -617,8 +608,8 @@ def _build_lingbot_artifacts(
         json.dumps(
             {
                 "method_id": MethodId.LINGBOT_MAP.value,
-                "pose_convention": "T_world_camera = inverse(pose_encoding_to_extri_intri camera-from-world extrinsic)",
-                "native_pose_convention": "T_camera_world = pose_encoding_to_extri_intri extrinsic",
+                "pose_convention": "T_world_camera = pose_encoding_to_extri_intri extrinsic",
+                "native_pose_convention": "pose_encoding_to_extri_intri extrinsic is treated as C2W per upstream benchmark adapter",
                 "camera_frame": CAMERA_RDF_FRAME,
                 "num_processed_frames": len(observations),
                 "num_keyframes": len(poses),
@@ -628,6 +619,7 @@ def _build_lingbot_artifacts(
                 "confidence_threshold": config.confidence_threshold,
                 "point_stride": config.point_stride,
                 "max_depth_m": config.max_depth_m,
+                "world_frame": LINGBOT_WORLD_FRAME,
             },
             indent=2,
             sort_keys=True,
@@ -643,9 +635,6 @@ def _build_lingbot_artifacts(
         trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=None,
         dense_points_ply=dense_ref,
-        depth_maps_npz=depth_ref,
-        point_maps_npz=point_maps_ref,
-        point_cloud_confidences_npz=confidence_ref,
         extras=extras,
         num_processed_frames=len(observations),
         num_keyframes=len(poses),
@@ -671,18 +660,9 @@ def _pose_camera_to_world_to_frame_transform(extrinsic_camera_to_world: np.ndarr
     matrix[:3, :] = extrinsic
     return FrameTransform.from_matrix(
         matrix,
-        target_frame="world",
+        target_frame=LINGBOT_WORLD_FRAME,
         source_frame=CAMERA_RDF_FRAME,
     )
-
-
-def _invert_camera_from_world_extrinsic(extrinsic_camera_from_world: np.ndarray) -> np.ndarray:
-    extrinsic = np.asarray(extrinsic_camera_from_world, dtype=np.float64)
-    if extrinsic.shape != (3, 4):
-        raise ValueError(f"Expected LingBot extrinsic shape (3, 4), got {extrinsic.shape}.")
-    matrix = np.eye(4, dtype=np.float64)
-    matrix[:3, :] = extrinsic
-    return np.linalg.inv(matrix)
 
 
 def _extract_dense_prediction_artifacts(
@@ -690,7 +670,6 @@ def _extract_dense_prediction_artifacts(
     predictions: dict[str, Any],
     processed_images: Any,
     intrinsics: np.ndarray,
-    extrinsics_camera_from_world: np.ndarray,
     poses: list[FrameTransform],
     config: LingbotMapSlamBackendConfig,
 ) -> _DensePredictionArtifacts:
@@ -704,20 +683,14 @@ def _extract_dense_prediction_artifacts(
             confidence=confidence,
             confidence_threshold=config.confidence_threshold,
             stride=config.point_stride,
+            geometry_source="world_points",
+            max_depth_m=None,
         )
-        if confidence is None:
-            confidence = np.ones(world_points.shape[:3], dtype=np.float32)
-            confidence_source = "synthetic_all_ones"
-        else:
-            confidence_source = "world_points_conf"
+        confidence_source = "none" if confidence is None else "world_points_conf"
         return _DensePredictionArtifacts(
             points_xyz_world=points,
             colors_rgb=colors,
             stats=stats,
-            depth_maps_m=_world_points_depth_maps(world_points, extrinsics_camera_from_world),
-            point_maps_xyz=world_points.astype(np.float32, copy=False),
-            point_map_frame="world",
-            confidence_maps=confidence,
             confidence_source=confidence_source,
             geometry_source="world_points",
         )
@@ -728,184 +701,85 @@ def _extract_dense_prediction_artifacts(
     if depth.ndim == 4 and depth.shape[-1] == 1:
         depth = depth[..., 0]
     confidence = _optional_prediction_map(predictions, "depth_conf", depth.shape)
-    confidence_source = "depth_conf"
-    if confidence is None:
-        confidence = np.ones(depth.shape, dtype=np.float32)
-        confidence_source = "synthetic_all_ones"
-    all_points: list[np.ndarray] = []
-    all_colors: list[np.ndarray] = []
-    point_maps: list[np.ndarray] = []
-    candidate_points = 0
-    for index, depth_map in enumerate(depth):
-        if index >= len(poses):
-            break
-        frame_intrinsics = CameraIntrinsics.from_matrix(
-            intrinsics[index],
-            width_px=int(depth_map.shape[1]),
-            height_px=int(depth_map.shape[0]),
-        )
-        valid_depth = np.asarray(depth_map, dtype=np.float32)
-        if config.max_depth_m is not None:
-            valid_depth = np.where(valid_depth <= config.max_depth_m, valid_depth, 0.0).astype(np.float32)
-        valid_depth = np.where(confidence[index] >= config.confidence_threshold, valid_depth, 0.0).astype(np.float32)
-        candidate_points += int(np.count_nonzero(valid_depth[:: config.point_stride, :: config.point_stride]))
-        rgb = images[index] if index < len(images) and images[index].shape[:2] == valid_depth.shape else None
-        point_maps.append(_depth_map_to_camera_point_map(valid_depth, intrinsics=frame_intrinsics))
-        points, colors = depth_map_to_world_points(
-            valid_depth,
-            frame_intrinsics,
-            poses[index],
-            rgb=rgb,
-            depth_stride_px=config.point_stride,
-        )
-        all_points.append(points)
-        if colors is not None:
-            all_colors.append(colors)
-    if not all_points:
-        return _DensePredictionArtifacts(
-            points_xyz_world=np.empty((0, 3), dtype=np.float64),
-            colors_rgb=None,
-            stats={
-                "source": "depth",
-                "candidate_points": 0,
-                "confidence_filter_applied": True,
-                "max_depth_filter": "camera_depth" if config.max_depth_m is not None else "none",
-            },
-            depth_maps_m=depth,
-            point_maps_xyz=np.empty((0, 0, 0, 3), dtype=np.float32),
-            point_map_frame=CAMERA_RDF_FRAME,
-            confidence_maps=confidence,
-            confidence_source=confidence_source,
-            geometry_source="depth",
-        )
-    colors_out = np.concatenate(all_colors, axis=0) if len(all_colors) == len(all_points) else None
+    confidence_source = "none" if confidence is None else "depth_conf"
+    points, colors, stats = _flatten_depth_points(
+        depth,
+        images=images,
+        intrinsics=intrinsics,
+        poses=poses,
+        confidence=confidence,
+        confidence_threshold=config.confidence_threshold,
+        stride=config.point_stride,
+        max_depth_m=config.max_depth_m,
+    )
     return _DensePredictionArtifacts(
-        points_xyz_world=np.concatenate(all_points, axis=0),
-        colors_rgb=colors_out,
-        stats={
-            "source": "depth",
-            "candidate_points": candidate_points,
-            "confidence_filter_applied": True,
-            "max_depth_filter": "camera_depth" if config.max_depth_m is not None else "none",
-        },
-        depth_maps_m=depth,
-        point_maps_xyz=np.stack(point_maps, axis=0),
-        point_map_frame=CAMERA_RDF_FRAME,
-        confidence_maps=confidence,
+        points_xyz_world=points,
+        colors_rgb=colors,
+        stats=stats,
         confidence_source=confidence_source,
         geometry_source="depth",
     )
 
 
-def _write_lingbot_geometry_artifacts(
+def _flatten_depth_points(
+    depth: np.ndarray,
     *,
-    run_paths: RunArtifactPaths,
-    dense_artifacts: _DensePredictionArtifacts,
-    timestamps_s: list[float],
-    observations: list[Observation],
-    processed_image_shape_hw: tuple[int, int],
-    config: LingbotMapSlamBackendConfig,
-) -> tuple[ArtifactRef | None, ArtifactRef | None, ArtifactRef | None]:
-    source_seq = [frame.seq for frame in observations]
-    source_timestamp_ns = [frame.timestamp_ns for frame in observations]
-    metadata = {
-        "method_id": MethodId.LINGBOT_MAP.value,
-        "raster_space": "lingbot_processed_model",
-        "processed_image_shape_hw": list(processed_image_shape_hw),
-        "processed_raster_shape": list(processed_image_shape_hw),
-        "frame_count": len(observations),
-        "source_seq": source_seq,
-        "source_frame_order": source_seq,
-        "source_timestamp_ns": source_timestamp_ns,
-        "timestamps_s": timestamps_s,
-        "camera_frame": CAMERA_RDF_FRAME,
-        "world_frame": "world",
-        "frame_semantics": {
-            "camera_frame": CAMERA_RDF_FRAME,
-            "world_frame": "world",
-            "point_map_frame": dense_artifacts.point_map_frame,
+    images: np.ndarray,
+    intrinsics: np.ndarray,
+    poses: list[FrameTransform],
+    confidence: np.ndarray | None,
+    confidence_threshold: float,
+    stride: int,
+    max_depth_m: float | None,
+) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
+    all_points: list[np.ndarray] = []
+    all_colors: list[np.ndarray] = []
+    candidate_points = 0
+    finite_points = 0
+    for index, depth_map in enumerate(depth[: len(poses)]):
+        valid_depth = np.asarray(depth_map, dtype=np.float32)
+        valid_mask = np.isfinite(valid_depth) & (valid_depth > 0.0)
+        if max_depth_m is not None:
+            valid_mask &= valid_depth <= max_depth_m
+        if confidence is not None:
+            valid_mask &= confidence[index] >= confidence_threshold
+        finite_points += int(np.count_nonzero(valid_mask))
+        valid_depth = np.where(valid_mask, valid_depth, 0.0).astype(np.float32, copy=False)
+        candidate_points += int(np.count_nonzero(valid_depth[::stride, ::stride]))
+        frame_intrinsics = CameraIntrinsics.from_matrix(
+            intrinsics[index],
+            width_px=int(valid_depth.shape[1]),
+            height_px=int(valid_depth.shape[0]),
+        )
+        rgb = images[index] if index < len(images) and images[index].shape[:2] == valid_depth.shape else None
+        points, colors = depth_map_to_world_points(
+            valid_depth,
+            frame_intrinsics,
+            poses[index],
+            rgb=rgb,
+            depth_stride_px=stride,
+        )
+        if len(points) == 0:
+            continue
+        all_points.append(points)
+        if colors is not None:
+            all_colors.append(colors)
+    colors_out = np.concatenate(all_colors, axis=0) if len(all_colors) == len(all_points) else None
+    return (
+        np.concatenate(all_points, axis=0).astype(np.float64, copy=False)
+        if all_points
+        else np.empty((0, 3), dtype=np.float64),
+        None if colors_out is None else colors_out.astype(np.uint8, copy=False),
+        {
+            "source": "depth",
+            "candidate_points": candidate_points,
+            "finite_points": finite_points,
+            "confidence_filter_applied": confidence is not None,
+            "confidence_threshold": confidence_threshold,
+            "max_depth_filter": "camera_depth" if max_depth_m is not None else "none",
+            "world_frame": LINGBOT_WORLD_FRAME,
         },
-        "point_map_frame": dense_artifacts.point_map_frame,
-        "geometry_source": dense_artifacts.geometry_source,
-        "confidence_source": dense_artifacts.confidence_source,
-        "confidence_threshold": config.confidence_threshold,
-        "point_stride": config.point_stride,
-        "max_depth_m": config.max_depth_m,
-        "stride_filter_policy": {
-            "confidence_threshold": config.confidence_threshold,
-            "point_stride": config.point_stride,
-            "max_depth_m": config.max_depth_m,
-        },
-    }
-    source_seq_array = np.asarray(source_seq, dtype=np.int64)
-    timestamps_array = np.asarray(timestamps_s, dtype=np.float64)
-
-    depth_ref = None
-    if dense_artifacts.depth_maps_m is not None:
-        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "depth_maps_npz"}, sort_keys=True))
-        run_paths.depth_maps_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            run_paths.depth_maps_path,
-            depth_m=np.asarray(dense_artifacts.depth_maps_m, dtype=np.float32),
-            timestamps_s=timestamps_array,
-            source_seq=source_seq_array,
-            metadata_json=metadata_json,
-        )
-        depth_ref = artifact_ref(run_paths.depth_maps_path, kind="npz")
-
-    point_maps_ref = None
-    if dense_artifacts.point_maps_xyz is not None:
-        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "point_maps_npz"}, sort_keys=True))
-        run_paths.point_maps_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            run_paths.point_maps_path,
-            point_maps_xyz=np.asarray(dense_artifacts.point_maps_xyz, dtype=np.float32),
-            timestamps_s=timestamps_array,
-            source_seq=source_seq_array,
-            metadata_json=metadata_json,
-        )
-        point_maps_ref = artifact_ref(run_paths.point_maps_path, kind="npz")
-
-    confidence_ref = None
-    if dense_artifacts.confidence_maps is not None:
-        metadata_json = np.asarray(json.dumps({**metadata, "artifact": "point_cloud_confidences_npz"}, sort_keys=True))
-        confidence = np.asarray(dense_artifacts.confidence_maps, dtype=np.float32)
-        run_paths.point_cloud_confidences_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            run_paths.point_cloud_confidences_path,
-            confidence=confidence.reshape(-1),
-            confidence_maps=confidence,
-            confidence_threshold=np.asarray(config.confidence_threshold, dtype=np.float32),
-            source_shape=np.asarray(confidence.shape, dtype=np.int64),
-            timestamps_s=timestamps_array,
-            source_seq=source_seq_array,
-            metadata_json=metadata_json,
-        )
-        confidence_ref = artifact_ref(run_paths.point_cloud_confidences_path, kind="npz")
-
-    return depth_ref, point_maps_ref, confidence_ref
-
-
-def _depth_map_to_camera_point_map(depth_map_m: np.ndarray, *, intrinsics: CameraIntrinsics) -> np.ndarray:
-    height, width = depth_map_m.shape
-    pixel_x, pixel_y = np.meshgrid(np.arange(width, dtype=np.float32), np.arange(height, dtype=np.float32))
-    z = np.asarray(depth_map_m, dtype=np.float32)
-    x = (pixel_x - np.float32(intrinsics.cx)) / np.float32(intrinsics.fx) * z
-    y = (pixel_y - np.float32(intrinsics.cy)) / np.float32(intrinsics.fy) * z
-    return np.stack([x, y, z], axis=-1).astype(np.float32, copy=False)
-
-
-def _world_points_depth_maps(world_points: np.ndarray, extrinsics_camera_from_world: np.ndarray) -> np.ndarray:
-    frame_count, height, width, _ = world_points.shape
-    world_points_hom = np.concatenate(
-        [
-            world_points.reshape(frame_count, height * width, 3),
-            np.ones((frame_count, height * width, 1), dtype=np.float64),
-        ],
-        axis=-1,
     )
-    camera_points = np.einsum("nij,npj->npi", extrinsics_camera_from_world, world_points_hom)
-    return camera_points[..., 2].reshape(frame_count, height, width).astype(np.float32, copy=False)
 
 
 def _flatten_world_points(
@@ -915,12 +789,15 @@ def _flatten_world_points(
     confidence: np.ndarray | None,
     confidence_threshold: float,
     stride: int,
+    geometry_source: str,
+    max_depth_m: float | None,
 ) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
     sampled = world_points[:, ::stride, ::stride, :]
     valid = np.all(np.isfinite(sampled), axis=-1)
     finite_points = int(np.count_nonzero(valid))
     if confidence is not None:
-        valid &= confidence[:, ::stride, ::stride] >= confidence_threshold
+        sampled_confidence = confidence[:, ::stride, ::stride]
+        valid &= (sampled_confidence >= confidence_threshold) & (sampled_confidence > 1e-5)
     points = sampled[valid]
     colors = None
     if images.shape[0] == world_points.shape[0] and images.shape[1:3] == world_points.shape[1:3]:
@@ -929,11 +806,13 @@ def _flatten_world_points(
         points.astype(np.float64, copy=False),
         None if colors is None else colors.astype(np.uint8, copy=False),
         {
-            "source": "world_points",
+            "source": geometry_source,
             "candidate_points": int(np.prod(sampled.shape[:3])),
             "finite_points": finite_points,
             "confidence_filter_applied": confidence is not None,
-            "max_depth_filter": "not_applied_to_world_points",
+            "confidence_threshold": confidence_threshold,
+            "max_depth_filter": "camera_depth" if max_depth_m is not None else "none",
+            "world_frame": LINGBOT_WORLD_FRAME,
         },
     )
 
