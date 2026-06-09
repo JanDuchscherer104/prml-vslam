@@ -105,6 +105,8 @@ def test_lingbot_full_toml_parses_through_run_config() -> None:
 
     assert config.mode is PipelineMode.OFFLINE
     assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
+    assert config.stages.slam.backend.enable_point_head is False
+    assert config.stages.slam.backend.confidence_threshold == 1.5
     assert config.stages.slam.outputs.emit_dense_points is True
     assert config.stages.slam.outputs.emit_sparse_points is False
     assert config.stages.align_ground.enabled is True
@@ -401,6 +403,7 @@ def test_lingbot_artifact_builder_writes_mandatory_outputs(tmp_path: Path, monke
         "pose_enc": np.zeros((1, 2, 9), dtype=np.float32),
         "depth": np.ones((1, 2, 2, 2, 1), dtype=np.float32),
         "depth_conf": np.ones((1, 2, 2, 2), dtype=np.float32),
+        "world_points": np.full((1, 2, 2, 2, 3), 99.0, dtype=np.float32),
     }
     processed_images = np.stack([rgb.transpose(2, 0, 1), rgb.transpose(2, 0, 1)], axis=0) / 255.0
 
@@ -479,6 +482,16 @@ def test_lingbot_artifact_builder_rejects_missing_confidence_when_filtering(
     processed_images = rgb.transpose(2, 0, 1)[None, ...] / 255.0
 
     with pytest.raises(RuntimeError, match="confidence filtering requested"):
+        _build_lingbot_artifacts(
+            predictions=predictions,
+            processed_images=processed_images,
+            observations=observations,
+            artifact_root=tmp_path,
+            output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False),
+            config=LingbotMapSlamBackendConfig(confidence_threshold=1.5),
+        )
+    predictions["depth_conf"] = np.ones((1, 1, 1, 1), dtype=np.float32)
+    with pytest.raises(RuntimeError, match="confidence map `depth_conf` shape"):
         _build_lingbot_artifacts(
             predictions=predictions,
             processed_images=processed_images,
