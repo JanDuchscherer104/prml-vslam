@@ -11,7 +11,6 @@ from prml_vslam.sources.datasets.advio import (
     AdvioLocalSceneStatus,
     AdvioPeopleLevel,
     AdvioPoseFrameMode,
-    AdvioPoseSource,
 )
 from prml_vslam.sources.datasets.advio.advio_replay_adapter import serve_loaded_advio_trajectory
 
@@ -171,8 +170,6 @@ def build_advio_comparison_trajectories(
             "ARCore",
             serve_loaded_advio_trajectory(
                 trajectory=arcore,
-                ground_truth_trajectory=ground_truth,
-                pose_source=AdvioPoseSource.ARCORE,
                 pose_frame_mode=pose_frame_mode,
             ),
         )
@@ -183,8 +180,6 @@ def build_advio_comparison_trajectories(
                 "ARKit",
                 serve_loaded_advio_trajectory(
                     trajectory=arkit,
-                    ground_truth_trajectory=ground_truth,
-                    pose_source=AdvioPoseSource.ARKIT,
                     pose_frame_mode=pose_frame_mode,
                 ),
             )

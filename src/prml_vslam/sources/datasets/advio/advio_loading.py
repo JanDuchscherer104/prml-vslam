@@ -36,10 +36,7 @@ def load_advio_frame_timestamps_ns(path: Path) -> NDArray[np.int64]:
 
 def load_advio_trajectory(path: Path) -> PoseTrajectory3D:
     """Load an ADVIO trajectory CSV into an `evo` pose trajectory."""
-    rows = _read_numeric_csv(path, min_columns=8)
-    if rows.ndim != 2 or rows.shape[1] < 8:
-        msg = f"Expected at least 8 columns in ADVIO pose CSV: {path}"
-        raise ValueError(msg)
+    rows = load_advio_trajectory_rows(path)
     trajectory = PoseTrajectory3D(
         positions_xyz=rows[:, 1:4].astype(np.float64, copy=True),
         orientations_quat_wxyz=rows[:, 4:8].astype(np.float64, copy=True),
@@ -49,6 +46,15 @@ def load_advio_trajectory(path: Path) -> PoseTrajectory3D:
     if not valid:
         raise ValueError(f"Invalid ADVIO trajectory '{path}': {details}")
     return trajectory
+
+
+def load_advio_trajectory_rows(path: Path) -> NDArray[np.float64]:
+    """Load raw numeric ADVIO trajectory rows with timestamp, XYZ, and WXYZ fields."""
+    rows = _read_numeric_csv(path, min_columns=8)
+    if rows.ndim != 2 or rows.shape[1] < 8:
+        msg = f"Expected at least 8 columns in ADVIO pose CSV: {path}"
+        raise ValueError(msg)
+    return rows[:, :8].astype(np.float64, copy=False)
 
 
 def load_advio_calibration(path: Path) -> AdvioCalibration:

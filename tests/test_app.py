@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
 import numpy as np
 
 from prml_vslam.app.bootstrap import _PAGE_SPECS
+from prml_vslam.app.live_session import render_live_action_slot
 from prml_vslam.app.models import (
     AppPageId,
     AppState,
@@ -90,6 +92,88 @@ def test_session_state_persists_strict_telemetry_history_round_trip() -> None:
     except ValidationError:
         json_round_trips = False
     assert json_round_trips is False
+
+
+def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_button(label: str, **kwargs: object) -> bool:
+        calls.append({"label": label, **kwargs})
+        return label.startswith("Start")
+
+    monkeypatch.setattr("prml_vslam.app.live_session.st.button", fake_button)
+
+    assert render_live_action_slot(
+        is_active=False,
+        start_label="Start demo",
+        stop_label="Stop demo",
+        key="demo-slot",
+        start_disabled=True,
+    ) == (True, False)
+    assert calls[-1] == {
+        "label": "Start demo",
+        "key": "demo-slot:start",
+        "type": "primary",
+        "disabled": True,
+        "width": "stretch",
+    }
+
+    assert render_live_action_slot(
+        is_active=True,
+        start_label="Start demo",
+        stop_label="Stop demo",
+        key="demo-slot",
+    ) == (False, False)
+    assert calls[-1] == {
+        "label": "Stop demo",
+        "key": "demo-slot:stop",
+        "width": "stretch",
+    }
+
+
+def test_live_action_slot_call_sites_define_unique_stable_keys() -> None:
+    page_paths = (
+        Path("src/prml_vslam/app/pages/datasets.py"),
+        Path("src/prml_vslam/app/pages/pipeline.py"),
+        Path("src/prml_vslam/app/pages/record3d.py"),
+    )
+    keys: list[str] = []
+
+    for page_path in page_paths:
+        tree = ast.parse(page_path.read_text(encoding="utf-8"), filename=str(page_path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "render_live_action_slot":
+                continue
+            key_keywords = [keyword for keyword in node.keywords if keyword.arg == "key"]
+            assert len(key_keywords) == 1, f"{page_path}:{node.lineno} must pass one key="
+            key_value = key_keywords[0].value
+            if isinstance(key_value, ast.Constant) and isinstance(key_value.value, str):
+                keys.append(key_value.value)
+                continue
+            if isinstance(key_value, ast.Name) and key_value.id == "action_key_prefix":
+                keys.extend(_literal_keywords_for_calls(tree, "_render_loop_preview_impl", "action_key_prefix"))
+                continue
+            raise AssertionError(f"{page_path}:{node.lineno} must use a stable literal key prefix")
+
+    assert keys
+    assert len(keys) == len(set(keys))
+
+
+def _literal_keywords_for_calls(tree: ast.AST, function_name: str, keyword_name: str) -> list[str]:
+    values: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != function_name:
+            continue
+        keyword_values = [keyword.value for keyword in node.keywords if keyword.arg == keyword_name]
+        assert len(keyword_values) == 1, f"{function_name}() must pass one {keyword_name}="
+        keyword_value = keyword_values[0]
+        assert isinstance(keyword_value, ast.Constant) and isinstance(keyword_value.value, str)
+        values.append(keyword_value.value)
+    return values
 
 
 def test_artifact_page_is_registered_and_state_round_trips() -> None:
@@ -307,7 +391,6 @@ def test_build_run_config_from_action_round_trips_console_stage_visualization_an
         grpc_url="rerun+http://127.0.0.1:9876/proxy",
         viewer_blueprint_path=Path(".configs/visualization/vista_blueprint.rbl"),
         preserve_native_rerun=False,
-        frusta_history_window_streaming=7,
         frusta_history_window_offline=12,
         show_tracking_trajectory=False,
         log_source_rgb=True,
@@ -331,7 +414,6 @@ def test_build_run_config_from_action_round_trips_console_stage_visualization_an
     assert run_config.visualization.export_viewer_rrd is True
     assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
     assert run_config.visualization.preserve_native_rerun is False
-    assert run_config.visualization.frusta_history_window_streaming == 7
     assert run_config.visualization.frusta_history_window_offline == 12
     assert run_config.visualization.show_tracking_trajectory is False
     assert run_config.visualization.log_source_rgb is True
@@ -539,7 +621,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
             RunPlanStage(
                 key=StageKey.CLOUD_EVALUATION,
                 available=False,
-                availability_reason="no runtime is registered yet",
+                availability_reason="Dense-cloud evaluation is planned but no runtime is registered yet.",
             ),
         ],
     )
@@ -605,7 +687,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
     assert rows["source"]["Updated"] == "1 s"
     assert rows["slam"]["State"] == "completed"
     assert rows["evaluate.cloud"]["State"] == "unavailable"
-    assert rows["evaluate.cloud"]["Message"] == "no runtime is registered yet"
+    assert rows["evaluate.cloud"]["Message"] == "Dense-cloud evaluation is planned but no runtime is registered yet."
 
 
 def test_pipeline_telemetry_history_resets_deduplicates_and_trims() -> None:

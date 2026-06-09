@@ -137,16 +137,10 @@ def test_advio_plotting_supports_dataset_specific_axes() -> None:
     assert np.array_equal(np.asarray(height.data[0].y), np.asarray([1.0, 2.0, 3.0]))
 
 
-def test_advio_comparison_trajectories_align_and_rebase_provider_tracks() -> None:
+def test_advio_comparison_trajectories_rebase_provider_tracks() -> None:
     ground_truth = _pose_trajectory([(1.0, 2.0, 3.0), (1.5, 2.5, 3.5), (2.0, 3.0, 4.0)])
     arcore = _pose_trajectory([(10.0, 20.0, 30.0), (10.5, 20.5, 30.5), (11.0, 21.0, 31.0)])
 
-    aligned = build_advio_comparison_trajectories(
-        ground_truth=ground_truth,
-        arcore=arcore,
-        arkit=None,
-        pose_frame_mode=AdvioPoseFrameMode.REFERENCE_WORLD,
-    )
     rebased = build_advio_comparison_trajectories(
         ground_truth=ground_truth,
         arcore=arcore,
@@ -154,7 +148,6 @@ def test_advio_comparison_trajectories_align_and_rebase_provider_tracks() -> Non
         pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE,
     )
 
-    assert aligned[1][1].positions_xyz[0, 0] == pytest.approx(1.0, abs=1e-3)
     assert rebased[1][1].positions_xyz[0, 0] == pytest.approx(0.0, abs=1e-6)
 
 

@@ -13,8 +13,9 @@ class StageKey(StrEnum):
     GRAVITY_ALIGNMENT = "gravity.align"
     TRAJECTORY_ALIGNMENT = "align.trajectory"
     TRAJECTORY_EVALUATION = "evaluate.trajectory"
-    RECONSTRUCTION = "reconstruction"
+    CLOUD_ALIGNMENT = "align.cloud"
     CLOUD_EVALUATION = "evaluate.cloud"
+    RECONSTRUCTION = "reconstruction"
     IMAGE_EVALUATION = "evaluate.image"
     SUMMARY = "summary"
 
@@ -27,8 +28,9 @@ class StageKey(StrEnum):
             StageKey.GRAVITY_ALIGNMENT: "Detect Ground Plane",
             StageKey.TRAJECTORY_ALIGNMENT: "Align Trajectory (Sim3)",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
-            StageKey.RECONSTRUCTION: "Build Reconstruction",
+            StageKey.CLOUD_ALIGNMENT: "Align Dense Cloud",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
+            StageKey.RECONSTRUCTION: "Build Reconstruction",
             StageKey.IMAGE_EVALUATION: "Evaluate Image Quality",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]

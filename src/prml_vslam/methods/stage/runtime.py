@@ -116,6 +116,7 @@ class SlamStageRuntime(
         self._failed_frames = 0
         self._last_warning: str | None = None
         self._last_error: str | None = None
+        self._last_latency_ms: float | None = None
         self._frame_timestamps = deque(maxlen=FPS_WINDOW)
         self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
         self._stopped = False
@@ -134,6 +135,7 @@ class SlamStageRuntime(
             fps=rolling_fps(self._frame_timestamps),
             throughput=rolling_fps(self._keyframe_timestamps),
             throughput_unit="keyframes/s",
+            latency_ms=self._last_latency_ms,
             last_warning=self._last_warning,
             last_error=self._last_error,
             updated_at_ns=time.time_ns(),
@@ -204,6 +206,7 @@ class SlamStageRuntime(
             return
         try:
             self._streaming_backend.step_streaming(item)
+            self._last_latency_ms = _latency_ms_from_arrival(item.arrival_timestamp_s, completed_at_s=time.time())
             self._processed_frames += 1
             self._frame_timestamps.append(time.monotonic())
             self._drain_backend_updates()
@@ -361,6 +364,12 @@ def _semantic_update(update: SlamUpdate) -> SlamUpdate:
             "pointmap": None,
         }
     )
+
+
+def _latency_ms_from_arrival(arrival_timestamp_s: float | None, *, completed_at_s: float) -> float | None:
+    if arrival_timestamp_s is None:
+        return None
+    return max(0.0, (completed_at_s - arrival_timestamp_s) * 1000.0)
 
 
 __all__ = [

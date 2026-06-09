@@ -17,6 +17,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - Runtime execution flows through domain-owned stage configs plus lazy local
   runtime-handle construction. Ray is the pipeline backend infrastructure, not
   the semantic owner of stage behavior.
+- `RunConfig` owns launch-time Ray policy such as local-head lifecycle and
+  worker log forwarding.
 
 ## Responsibilities
 

@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from prml_vslam.interfaces import Observation
+from prml_vslam.reconstruction.stage.contracts import ReconstructionStageInput
 from prml_vslam.utils.geometry import write_point_cloud_ply
 
 from .config import Open3dTsdfBackendConfig
@@ -36,8 +37,9 @@ class Open3dTsdfBackend:
 
     method_id = ReconstructionMethodId.OPEN3D_TSDF
 
-    def __init__(self, config: Open3dTsdfBackendConfig) -> None:
+    def __init__(self, config: Open3dTsdfBackendConfig, input_payload: ReconstructionStageInput | None = None) -> None:
         self._config = config
+        self._input_payload = input_payload
 
     def run_sequence(
         self,
@@ -48,7 +50,7 @@ class Open3dTsdfBackend:
         """Integrate one offline RGB-D sequence into a fused world-space cloud.
 
         The output point cloud is extracted in the observation world frame and
-        persisted as ``reference_cloud.ply`` alongside typed side metadata.
+        persisted as ``reconstruction_cloud.ply`` alongside typed side metadata.
         """
         config = self._config
         ordered_observations = list(observations)
@@ -68,7 +70,53 @@ class Open3dTsdfBackend:
             depth_sampling_stride=config.depth_sampling_stride,
         )
 
+        traj_timestamps = None
+        traj_poses = None
+        if self._input_payload is not None and self._input_payload.aligned_trajectory is not None:
+            # Parse TUM trajectory
+            traj_timestamps_list = []
+            traj_poses_list = []
+            from scipy.spatial.transform import Rotation
+
+            with open(self._input_payload.aligned_trajectory.path) as f:
+                for line in f:
+                    if line.startswith("#"):
+                        continue
+                    parts = line.strip().split()
+                    if len(parts) != 8:
+                        continue
+                    ts = float(parts[0])
+                    tx, ty, tz = float(parts[1]), float(parts[2]), float(parts[3])
+                    qx, qy, qz, qw = float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])
+
+                    rot = Rotation.from_quat([qx, qy, qz, qw]).as_matrix()
+                    pose = np.eye(4, dtype=np.float64)
+                    pose[:3, :3] = rot
+                    pose[:3, 3] = [tx, ty, tz]
+
+                    traj_timestamps_list.append(ts)
+                    traj_poses_list.append(pose)
+
+            if traj_timestamps_list:
+                traj_timestamps = np.asarray(traj_timestamps_list, dtype=np.float64)
+                traj_poses = np.asarray(traj_poses_list, dtype=np.float64)
+
+        matched_observations = 0
         for observation in ordered_observations:
+            if traj_timestamps is not None and traj_poses is not None:
+                # Match timestamp to trajectory
+                diffs = np.abs(traj_timestamps - (observation.timestamp_ns / 1e9))
+                min_idx = int(np.argmin(diffs))
+                if diffs[min_idx] > 0.01:
+                    continue
+                pose_matrix = traj_poses[min_idx]
+            else:
+                if observation.T_world_camera is None:
+                    continue
+                pose_matrix = observation.T_world_camera.as_matrix()
+
+            matched_observations += 1
+
             rgbd_image, intrinsic = _rgbd_image_and_intrinsic(
                 o3d,
                 observation,
@@ -77,8 +125,11 @@ class Open3dTsdfBackend:
                 convert_rgb_to_intensity=config.convert_rgb_to_intensity,
                 integrate_color=config.integrate_color,
             )
-            extrinsic_world_to_camera = np.linalg.inv(observation.T_world_camera.as_matrix())
+            extrinsic_world_to_camera = np.linalg.inv(pose_matrix)
             volume.integrate(rgbd_image, intrinsic, extrinsic_world_to_camera)
+
+        if matched_observations == 0:
+            raise RuntimeError("No observations matched the trajectory for TSDF integration.")
 
         point_cloud = volume.extract_point_cloud()
         points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
@@ -86,28 +137,39 @@ class Open3dTsdfBackend:
             raise RuntimeError("Open3D TSDF reconstruction produced an empty point cloud.")
 
         artifact_root.mkdir(parents=True, exist_ok=True)
-        reference_cloud_path = write_point_cloud_ply(artifact_root / "reference_cloud.ply", points_xyz)
+        colors_rgb = np.asarray(point_cloud.colors, dtype=np.float64) if point_cloud.has_colors() else None
+        reference_cloud_path = write_point_cloud_ply(
+            artifact_root / "reconstruction_cloud.ply", points_xyz, colors_rgb=colors_rgb
+        )
 
         mesh_path: Path | None = None
         if config.extract_mesh:
             mesh = volume.extract_triangle_mesh()
-            mesh_path = (artifact_root / "reference_mesh.ply").resolve()
-            if not o3d.io.write_triangle_mesh(mesh_path, mesh, write_ascii=True):
+            mesh_path = (artifact_root / "reconstruction_mesh.ply").resolve()
+            if not o3d.io.write_triangle_mesh(mesh_path.as_posix(), mesh, write_ascii=True):
                 raise RuntimeError(f"Failed to write Open3D TSDF mesh to '{mesh_path}'.")
 
         metadata = ReconstructionMetadata(
             method_id=self.method_id,
-            observation_count=len(ordered_observations),
+            observation_count=matched_observations,
             point_count=int(points_xyz.shape[0]),
-            target_frame=ordered_observations[0].T_world_camera.target_frame,
+            target_frame=ordered_observations[0].T_world_camera.target_frame
+            if ordered_observations[0].T_world_camera
+            else "world",
             voxel_length_m=config.voxel_length_m,
             sdf_trunc_m=config.sdf_trunc_m,
             depth_trunc_m=config.depth_trunc_m,
             depth_scale=config.depth_scale,
             integrate_color=config.integrate_color,
         )
+        metadata_dict = metadata.model_dump(mode="json")
+        if self._input_payload is not None and self._input_payload.cloud_alignment is not None:
+            metadata_dict["cloud_alignment"] = json.loads(
+                self._input_payload.cloud_alignment.path.read_text(encoding="utf-8")
+            )
+
         metadata_path = (artifact_root / "reconstruction_metadata.json").resolve()
-        metadata_path.write_text(json.dumps(metadata.model_dump(mode="json"), indent=2), encoding="utf-8")
+        metadata_path.write_text(json.dumps(metadata_dict, indent=2), encoding="utf-8")
 
         return ReconstructionArtifacts(
             reference_cloud_path=reference_cloud_path,

@@ -132,6 +132,8 @@ def test_reconstruction_config_runs_minimal_open3d_tsdf_sequence(tmp_path: Path)
     )
 
     assert artifacts.reference_cloud_path.exists()
+    assert artifacts.reference_cloud_path.name == "reconstruction_cloud.ply"
+    assert not (tmp_path / "reference" / "reference_cloud.ply").exists()
     assert artifacts.metadata_path.exists()
     assert artifacts.mesh_path is None
 

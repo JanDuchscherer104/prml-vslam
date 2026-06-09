@@ -47,7 +47,7 @@ class ReconstructionVisualizationAdapter:
             corresponding durable artifacts exist.
         """
         items: list[VisualizationItem] = []
-        point_cloud_ref = artifact_refs.get("reference_cloud")
+        point_cloud_ref = artifact_refs.get("reconstruction_cloud")
         if point_cloud_ref is not None:
             items.append(
                 VisualizationItem(

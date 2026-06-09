@@ -18,10 +18,10 @@ from prml_vslam.utils import BaseData
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-_LIVE_MODEL_POINTS_ENTITY = "/world/live/model/points"
-_TRACKING_CAMERA_ENTITY = "/world/live/tracking/camera"
-_KEYED_POINTS_PREFIX = "/world/keyframes/points/"
-_KEYED_CAMERAS_PREFIX = "/world/keyframes/cameras/"
+_LIVE_MODEL_POINTS_ENTITY = "/world/slam/live/model/points"
+_TRACKING_CAMERA_ENTITY = "/world/slam/live/tracking/camera"
+_KEYED_POINTS_PREFIX = "/world/slam/keyframes/points/"
+_KEYED_CAMERAS_PREFIX = "/world/slam/keyframes/cameras/"
 _RECONSTRUCTION_PREFIX = "/world/reconstruction/"
 _REFERENCE_PREFIX = "/world/reference/"
 
@@ -322,7 +322,7 @@ def _world_points_for_row(
 def _latest_live_model_snapshot(
     recording: rdf.Recording,
 ) -> tuple[RerunPointCloudSnapshot | None, np.ndarray | None]:
-    rows = _rows_for_index(recording, index_name="frame", contents="/world/live/model/**")
+    rows = _rows_for_index(recording, index_name="frame", contents="/world/slam/live/model/**")
     latest_snapshot: RerunPointCloudSnapshot | None = None
     latest_world_points: np.ndarray | None = None
     for row in rows:

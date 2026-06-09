@@ -446,9 +446,6 @@ class PipelinePageState(BaseData):
     preserve_native_rerun: bool = True
     """Whether native upstream `.rrd` files should be preserved."""
 
-    frusta_history_window_streaming: int = 20
-    """Bounded frusta history window for streaming viewer output."""
-
     frusta_history_window_offline: int | None = None
     """Optional frusta history window for offline viewer output."""
 
