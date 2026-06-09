@@ -319,7 +319,10 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
 
     image_size: int = Field(default=518, ge=1)
     patch_size: int = Field(default=14, ge=1)
+    enable_3d_rope: bool = True
+    max_frame_num: int = Field(default=1024, ge=1)
     num_scale_frames: int = Field(default=8, ge=1)
+    kv_cache_sliding_window: int = Field(default=64, ge=1)
     keyframe_interval: int | Literal["auto"] = "auto"
     use_sdpa: bool = True
     use_amp: bool = True
@@ -327,7 +330,10 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
     checkpoint_pos_embed: Literal["error", "interpolate", "drop"] = "error"
     camera_num_iterations: int = Field(default=4, ge=1)
     enable_point_head: bool = False
-    confidence_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+    window_size: int = Field(default=64, ge=1)
+    overlap_size: int | None = Field(default=None, ge=1)
+    overlap_keyframes: int | None = Field(default=None, ge=1)
+    confidence_threshold: float = Field(default=0.0, ge=0.0)
     point_stride: int = Field(default=8, ge=1)
     max_points: int | None = Field(default=100_000, ge=1)
     """Optional output point cap applied after LingBot dense geometry extraction."""

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 import types
 from pathlib import Path
@@ -109,7 +108,7 @@ def test_lingbot_full_toml_parses_through_run_config() -> None:
     assert config.stages.slam.outputs.emit_dense_points is True
     assert config.stages.slam.outputs.emit_sparse_points is False
     assert config.stages.align_ground.enabled is True
-    assert config.stages.reconstruction.enabled is True
+    assert config.stages.reconstruction.enabled is False
     assert config.visualization.export_viewer_rrd is True
     assert config.visualization.connect_live_viewer is False
 
@@ -129,9 +128,6 @@ def test_lingbot_planned_outputs_use_normalized_geometry_paths(tmp_path: Path) -
     assert [path.name for path in slam_stage.outputs] == [
         "trajectory.tum",
         "point_cloud.ply",
-        "depth_maps.npz",
-        "point_maps.npz",
-        "point_cloud_confidences.npz",
     ]
 
 
@@ -155,10 +151,9 @@ def test_lingbot_config_rejects_invalid_runtime_values() -> None:
         LingbotMapSlamBackendConfig(point_stride=0)
     with pytest.raises(ValueError, match="max_points"):
         LingbotMapSlamBackendConfig(max_points=0)
-    with pytest.raises(ValueError, match="confidence_threshold"):
-        LingbotMapSlamBackendConfig(confidence_threshold=1.5)
     with pytest.raises(ValueError, match="keyframe_interval"):
         LingbotMapSlamBackendConfig(keyframe_interval=0)
+    assert LingbotMapSlamBackendConfig(confidence_threshold=1.5).confidence_threshold == 1.5
 
 
 def test_lingbot_app_action_coerces_sparse_output(tmp_path: Path) -> None:
@@ -241,14 +236,15 @@ def test_lingbot_pose_conversion_uses_benchmark_camera_to_world_convention() -> 
 
     transform = _pose_camera_to_world_to_frame_transform(T_world_camera[:3])
 
-    assert transform.target_frame == "world"
+    assert transform.target_frame == "lingbot_world"
     assert transform.source_frame == CAMERA_RDF_FRAME
     np.testing.assert_allclose(transform.as_matrix(), T_world_camera)
 
 
 def test_lingbot_auto_keyframe_interval_resolves_to_upstream_int() -> None:
     assert _resolve_keyframe_interval("auto", num_frames=20, num_scale_frames=8) == 1
-    assert _resolve_keyframe_interval("auto", num_frames=700, num_scale_frames=8) == 4
+    assert _resolve_keyframe_interval("auto", num_frames=700, num_scale_frames=8) == 3
+    assert _resolve_keyframe_interval("auto", num_frames=1011, num_scale_frames=8) == 4
     assert _resolve_keyframe_interval(0, num_frames=700, num_scale_frames=8) == 1
     assert _resolve_keyframe_interval(3, num_frames=700, num_scale_frames=8) == 3
 
@@ -391,11 +387,11 @@ def test_lingbot_streaming_buffers_frames_and_writes_terminal_artifacts(
     assert artifacts.num_keyframes == 2
 
 
-def test_lingbot_artifact_builder_writes_normalized_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    extrinsics_camera_from_world = np.tile(np.eye(4, dtype=np.float32)[:3], (1, 2, 1, 1))
-    extrinsics_camera_from_world[0, 0, 0, 3] = 1.0
-    extrinsics_camera_from_world[0, 1, 0, 3] = 2.0
-    _install_fake_pose_decoder(monkeypatch, extrinsics_camera_from_world=extrinsics_camera_from_world)
+def test_lingbot_artifact_builder_writes_mandatory_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    extrinsics_camera_to_world = np.tile(np.eye(4, dtype=np.float32)[:3], (1, 2, 1, 1))
+    extrinsics_camera_to_world[0, 0, 0, 3] = 1.0
+    extrinsics_camera_to_world[0, 1, 0, 3] = 2.0
+    _install_fake_pose_decoder(monkeypatch, extrinsics_camera_to_world=extrinsics_camera_to_world)
     rgb = np.full((2, 2, 3), 128, dtype=np.uint8)
     observations = [
         Observation(seq=idx, timestamp_ns=idx * 1_000_000_000, provenance=ObservationProvenance(), rgb=rgb)
@@ -414,54 +410,32 @@ def test_lingbot_artifact_builder_writes_normalized_outputs(tmp_path: Path, monk
         observations=observations,
         artifact_root=tmp_path,
         output_policy=SlamOutputPolicy(emit_dense_points=True, emit_sparse_points=False),
-        config=LingbotMapSlamBackendConfig(point_stride=1, max_points=None, max_depth_m=None),
+        config=LingbotMapSlamBackendConfig(
+            point_stride=1,
+            max_points=None,
+            max_depth_m=None,
+            confidence_threshold=0.5,
+        ),
     )
 
     run_paths = RunArtifactPaths.build(tmp_path)
     assert artifacts.trajectory_tum.path == run_paths.trajectory_path
     assert artifacts.trajectory_tum.path.read_text(encoding="utf-8").count("\n") == 2
     trajectory = load_tum_trajectory(artifacts.trajectory_tum.path)
-    np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [-1.0, -2.0])
+    np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [1.0, 2.0])
     assert artifacts.dense_points_ply is not None
     assert artifacts.dense_points_ply.path == run_paths.point_cloud_path
     cloud = load_point_cloud_ply(artifacts.dense_points_ply.path)
     assert len(cloud) == 8
-    np.testing.assert_allclose(np.unique(cloud[:, 0]), [-3.0, -2.0, -1.0])
-    assert artifacts.depth_maps_npz is not None
-    assert artifacts.depth_maps_npz.path == run_paths.depth_maps_path
-    assert artifacts.point_maps_npz is not None
-    assert artifacts.point_maps_npz.path == run_paths.point_maps_path
-    assert artifacts.point_cloud_confidences_npz is not None
-    assert artifacts.point_cloud_confidences_npz.path == run_paths.point_cloud_confidences_path
-    with np.load(artifacts.depth_maps_npz.path) as depth_maps:
-        np.testing.assert_allclose(depth_maps["depth_m"], np.ones((2, 2, 2), dtype=np.float32))
-        assert depth_maps["source_seq"].tolist() == [0, 1]
-        depth_metadata = json.loads(depth_maps["metadata_json"].item())
-        assert depth_metadata["artifact"] == "depth_maps_npz"
-        assert depth_metadata["processed_raster_shape"] == [2, 2]
-        assert depth_metadata["frame_count"] == 2
-        assert depth_metadata["source_frame_order"] == [0, 1]
-        assert depth_metadata["raster_space"] == "lingbot_processed_model"
-        assert depth_metadata["frame_semantics"]["camera_frame"] == CAMERA_RDF_FRAME
-        assert depth_metadata["frame_semantics"]["world_frame"] == "world"
-        assert depth_metadata["point_map_frame"] == CAMERA_RDF_FRAME
-        assert depth_metadata["stride_filter_policy"]["point_stride"] == 1
-    with np.load(artifacts.point_maps_npz.path) as point_maps:
-        assert point_maps["point_maps_xyz"].shape == (2, 2, 2, 3)
-        np.testing.assert_allclose(point_maps["point_maps_xyz"][0, :, :, 2], np.ones((2, 2)))
-        point_maps_metadata = json.loads(point_maps["metadata_json"].item())
-        assert point_maps_metadata["artifact"] == "point_maps_npz"
-    with np.load(artifacts.point_cloud_confidences_npz.path) as confidences:
-        np.testing.assert_allclose(confidences["confidence_maps"], np.ones((2, 2, 2), dtype=np.float32))
-        np.testing.assert_array_equal(confidences["source_shape"], [2, 2, 2])
-        confidence_metadata = json.loads(confidences["metadata_json"].item())
-        assert confidence_metadata["artifact"] == "point_cloud_confidences_npz"
+    np.testing.assert_allclose(np.unique(cloud[:, 0]), [0.0, 1.0, 2.0])
+    assert artifacts.depth_maps_npz is None
+    assert artifacts.point_maps_npz is None
+    assert artifacts.point_cloud_confidences_npz is None
     assert "predictions_normalized.npz" in artifacts.extras
     with np.load(artifacts.extras["predictions_normalized.npz"].path) as native_predictions:
         assert "extrinsics_camera_to_world" in native_predictions
-        assert "extrinsics_camera_from_world" in native_predictions
-        np.testing.assert_allclose(native_predictions["extrinsics_camera_to_world"][:, 0, 3], [-1.0, -2.0])
-        np.testing.assert_allclose(native_predictions["extrinsics_camera_from_world"][:, 0, 3], [1.0, 2.0])
+        assert "extrinsics_camera_from_world" not in native_predictions
+        np.testing.assert_allclose(native_predictions["extrinsics_camera_to_world"][:, 0, 3], [1.0, 2.0])
     assert "lingbot_metadata.json" in artifacts.extras
     assert artifacts.num_processed_frames == 2
     assert artifacts.num_keyframes == 2
@@ -523,7 +497,7 @@ def _install_fake_pose_decoder(
     monkeypatch: pytest.MonkeyPatch,
     *,
     num_frames: int = 2,
-    extrinsics_camera_from_world: np.ndarray | None = None,
+    extrinsics_camera_to_world: np.ndarray | None = None,
 ) -> None:
     package = types.ModuleType("lingbot_map")
     utils = types.ModuleType("lingbot_map.utils")
@@ -534,8 +508,8 @@ def _install_fake_pose_decoder(
     ) -> tuple[np.ndarray, np.ndarray]:
         height, width = image_size_hw
         extrinsics = (
-            np.asarray(extrinsics_camera_from_world, dtype=np.float32)
-            if extrinsics_camera_from_world is not None
+            np.asarray(extrinsics_camera_to_world, dtype=np.float32)
+            if extrinsics_camera_to_world is not None
             else np.tile(np.eye(4, dtype=np.float32)[:3], (1, num_frames, 1, 1))
         )
         intrinsics = np.tile(

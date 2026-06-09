@@ -92,11 +92,12 @@ repo-owned artifacts.
   separate sparse landmark artifacts are not supported.
 - [`lingbot/`](./lingbot/): LingBot-Map wrapper for operator-provisioned
   upstream runtimes. See the root `SETUP.md` for checkout, checkpoint, and
-  environment setup. The adapter normalizes upstream camera-from-world
-  extrinsics into repo `T_world_camera` trajectories and terminal dense-point
-  artifacts. Dense LingBot runs write the canonical `slam/point_cloud.ply` plus
-  first-class processed-raster depth, point-map, and confidence NPZ artifacts
-  when predictions expose that geometry.
+  environment setup. The adapter treats upstream decoded extrinsics as
+  `T_world_camera`, matching the upstream benchmark adapter, and writes repo
+  `slam/trajectory.tum` plus terminal dense-point artifacts. Dense LingBot runs
+  write the canonical `slam/point_cloud.ply`; model-raster depth, point-map,
+  and confidence arrays are not exported as first-class artifacts by this
+  wrapper.
 
 Methods must not own stage order, persisted run config beyond backend variant
 fields, resource placement, pipeline events, app state, viewer orchestration, or

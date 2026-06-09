@@ -12,10 +12,10 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
-    frame_stride = 1
-    replay_mode  = "fast_as_possible"
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
+    # frame_stride = 5
+    replay_mode = "fast_as_possible"
 
 [stages.slam]
 enabled  = true
@@ -36,24 +36,27 @@ sampling_interval_ms    = 1000
     method_id = "lingbot_map"
     # max_frames = 1500
 
-    lingbot_map_dir       = "external/lingbot-map"
-    checkpoint_path       = "external/lingbot-map/checkpoints/lingbot-map.pt"
-    device                = "cuda"
-    mode                  = "streaming"
-    image_size            = 224
-    patch_size            = 14
-    num_scale_frames      = 1
-    keyframe_interval     = "auto"
-    use_sdpa              = true
-    use_amp               = true
-    model_dtype           = "float16"
-    checkpoint_pos_embed  = "interpolate"
-    camera_num_iterations = 1
-    enable_point_head     = false
-    confidence_threshold  = 0.0
-    point_stride          = 8
-    max_points            = 100000
-    max_depth_m           = 100.0
+    lingbot_map_dir         = "external/lingbot-map"
+    checkpoint_path         = "external/lingbot-map/checkpoints/lingbot-map.pt"
+    device                  = "cuda"
+    mode                    = "streaming"
+    image_size              = 336
+    patch_size              = 14
+    enable_3d_rope          = true
+    max_frame_num           = 1024
+    num_scale_frames        = 2
+    kv_cache_sliding_window = 64
+    keyframe_interval       = 4
+    use_sdpa                = true
+    use_amp                 = true
+    model_dtype             = "auto"
+    checkpoint_pos_embed    = "interpolate"
+    camera_num_iterations   = 4
+    enable_point_head       = false
+    confidence_threshold    = 0.0
+    point_stride            = 4
+    max_points              = 100000
+    max_depth_m             = 100.0
 
 [stages.align_ground]
 enabled = true
@@ -65,14 +68,15 @@ enabled = true
 [stages.evaluate_trajectory]
 enabled = true
 
-[stages.reconstruction]
-# This mirrors vista-full's downstream stage layout. The current reconstruction
-# runtime uses source/reference RGB-D geometry, not LingBot-predicted points.
+[stages.align_trajectory]
 enabled = true
 
-    [stages.reconstruction.backend]
-    method_id    = "open3d_tsdf"
-    extract_mesh = true
+[stages.align_cloud]
+enabled                       = true
+max_correspondence_distance_m = 0.1
+
+[stages.reconstruction]
+enabled = false
 
 [stages.evaluate_cloud]
 enabled = false

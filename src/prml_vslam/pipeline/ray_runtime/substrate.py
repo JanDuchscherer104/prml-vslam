@@ -32,6 +32,7 @@ _RAY_NATIVE_THREAD_ENV = {
     "OPENBLAS_NUM_THREADS": "1",
     "UV_NUM_THREADS": "1",
 }
+_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES = 1_073_741_824
 
 RayRuntimeEnvValue = list[str] | dict[str, str] | str
 
@@ -86,6 +87,9 @@ class LocalRayHead:
         logs_dir = self._path_config.resolve_logs_dir(create=True)
         self._log_path = logs_dir / "ray-local-head.log"
         log_handle = self._log_path.open("a", encoding="utf-8")
+        object_store_memory = int(
+            os.getenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", str(_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES))
+        )
         try:
             self._process = subprocess.Popen(
                 [
@@ -94,6 +98,7 @@ class LocalRayHead:
                     "--head",
                     f"--node-ip-address={address.rsplit(':', maxsplit=1)[0]}",
                     f"--port={address.rsplit(':', maxsplit=1)[1]}",
+                    f"--object-store-memory={object_store_memory}",
                     "--include-dashboard=false",
                     "--disable-usage-stats",
                     "--block",
