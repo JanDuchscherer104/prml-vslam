@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Protocol
 
 import numpy as np
 import plotly.graph_objects as go
 
+from prml_vslam.eval.dataset_aggregation import CoverageMatrix, HeatmapData, PerSequenceRow
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 
 from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
@@ -109,5 +111,118 @@ def build_trajectory_error_box(series_by_label: dict[str, np.ndarray]) -> go.Fig
         title="Absolute Position Error Distribution",
         yaxis_title="Error (m)",
         margin={"l": 48, "r": 24, "t": 48, "b": 96},
+    )
+    return figure
+
+
+def build_dataset_heatmap(data: HeatmapData) -> go.Figure:
+    """Build a Plotly heatmap of metric values indexed by sequence × estimate source."""
+    figure = go.Figure(
+        go.Heatmap(
+            z=data.values,
+            x=data.estimate_sources,
+            y=data.sequence_ids,
+            colorscale="RdYlGn_r",
+            colorbar={"title": data.metric_name},
+            hoverongaps=False,
+        )
+    )
+    figure.update_layout(
+        title=data.metric_name,
+        xaxis_title="Estimate Source",
+        yaxis_title="Sequence",
+        margin={"l": 120, "r": 24, "t": 64, "b": 80},
+    )
+    return figure
+
+
+def build_grouped_bar_per_sequence(rows: list[PerSequenceRow]) -> go.Figure:
+    """Build a grouped bar chart of metric values by sequence and estimate source."""
+    groups: dict[str, dict[str, float]] = defaultdict(dict)
+    for row in rows:
+        source_label = f"{row.estimate_source_base}/{row.coordinate_status}"
+        groups[source_label][row.sequence_id] = row.value
+
+    all_sequences = sorted({row.sequence_id for row in rows})
+    colors = DEFAULT_COLORS[np.arange(len(groups), dtype=np.intp) % DEFAULT_COLORS.size]
+    figure = go.Figure()
+    for (source_label, seq_map), color in zip(groups.items(), colors, strict=False):
+        figure.add_trace(
+            go.Bar(
+                name=source_label,
+                x=all_sequences,
+                y=[seq_map.get(seq) for seq in all_sequences],
+                marker_color=str(color),
+            )
+        )
+    unit = rows[0].unit if rows else ""
+    figure.update_layout(
+        title="Metric by Sequence",
+        xaxis_title="Sequence",
+        yaxis_title=f"Value ({unit})" if unit else "Value",
+        barmode="group",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        margin={"l": 48, "r": 24, "t": 96, "b": 80},
+    )
+    return figure
+
+
+def build_coverage_chart(matrix: CoverageMatrix) -> go.Figure:
+    """Build a heatmap showing manifest coverage for each sequence × method cell."""
+    method_labels = [m if m is not None else "(unknown)" for m in matrix.methods]
+    cell_map = {(cell.sequence_id, cell.method): cell for cell in matrix.cells}
+    z_values = [
+        [
+            1 if cell_map.get((seq_id, method), None) is not None and cell_map[(seq_id, method)].manifest_present else 0
+            for method in matrix.methods
+        ]
+        for seq_id in matrix.sequence_ids
+    ]
+    figure = go.Figure(
+        go.Heatmap(
+            z=z_values,
+            x=method_labels,
+            y=matrix.sequence_ids,
+            colorscale=[[0, "#f5f5f5"], [1, BLUE]],
+            showscale=False,
+            zmin=0,
+            zmax=1,
+        )
+    )
+    figure.update_layout(
+        title="Evaluation Coverage",
+        xaxis_title="Method",
+        yaxis_title="Sequence",
+        margin={"l": 120, "r": 24, "t": 64, "b": 80},
+    )
+    return figure
+
+
+def build_violin_by_method(rows: list[PerSequenceRow]) -> go.Figure:
+    """Build a violin plot of metric values grouped by estimate source."""
+    groups: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        source_label = f"{row.estimate_source_base}/{row.coordinate_status}"
+        groups[source_label].append(row.value)
+
+    colors = DEFAULT_COLORS[np.arange(len(groups), dtype=np.intp) % DEFAULT_COLORS.size]
+    figure = go.Figure()
+    for (source_label, values), color in zip(groups.items(), colors, strict=False):
+        figure.add_trace(
+            go.Violin(
+                y=values,
+                name=source_label,
+                box_visible=True,
+                meanline_visible=True,
+                line_color=str(color),
+            )
+        )
+    unit = rows[0].unit if rows else ""
+    figure.update_layout(
+        title="Value Distribution by Method",
+        yaxis_title=f"Value ({unit})" if unit else "Value",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        margin={"l": 48, "r": 24, "t": 96, "b": 48},
+        violingap=0.3,
     )
     return figure

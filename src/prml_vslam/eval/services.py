@@ -50,6 +50,8 @@ from prml_vslam.utils.path_config import PathConfig
 __all__ = [
     "CloudAlignmentService",
     "TrajectoryEvaluationService",
+    "compute_trajectory_ape_preview",
+    "compute_trajectory_rpe_preview",
 ]
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
@@ -57,6 +59,28 @@ _SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
 _SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
 _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
 _RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+
+
+@dataclass(frozen=True, slots=True)
+class _MetricSpec:
+    family: str
+    pose_relation: metrics.PoseRelation
+    delta: float | None = None
+    delta_unit_enum: metrics.Unit | None = None
+    delta_unit: str | None = None
+
+
+_METRIC_SPECS: list[_MetricSpec] = [
+    _MetricSpec("ape", metrics.PoseRelation.translation_part),
+    _MetricSpec("ape", metrics.PoseRelation.rotation_angle_deg),
+    _MetricSpec("rpe", metrics.PoseRelation.translation_part, 1.0, metrics.Unit.meters, "meters"),
+    _MetricSpec("rpe", metrics.PoseRelation.rotation_angle_deg, 1.0, metrics.Unit.meters, "meters"),
+]
+
+_POSE_RELATION_UNIT: dict[metrics.PoseRelation, str] = {
+    metrics.PoseRelation.translation_part: "m",
+    metrics.PoseRelation.rotation_angle_deg: "deg",
+}
 
 if TYPE_CHECKING:
     from prml_vslam.pipeline.config import RunConfig
@@ -270,58 +294,82 @@ class TrajectoryEvaluationService:
         rows: list[TrajectoryMetricResultRow] = []
         cases: list[TrajectoryEvaluationCase] = []
         for candidate in candidates:
-            preview = compute_trajectory_ape_preview(
-                reference_path=reference_path,
-                estimate_path=candidate.path,
-                alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
-                target_frame=selection.target_frame or "world",
-                source_frame=_method_world_frame(candidate.method_id),
-                reference_source=reference_source,
-                method_id=candidate.method_id,
-                method_label=candidate.method_label,
-            )
-            matched_pairs = int(len(preview.error_values))
-            error_series_path = error_series_dir / (
-                f"{_entity_token(reference_source)}__{_entity_token(candidate.source)}__"
-                f"{_entity_token(candidate.coordinate_status)}__ape_translation_part.npz"
-            )
-            np.savez(
-                error_series_path,
-                values=preview.error_values,
-                timestamps_s=preview.error_timestamps_s,
-                pair_index=np.arange(matched_pairs, dtype=np.int64),
-                reference_positions_xyz=preview.reference_positions_xyz,
-                estimate_positions_xyz=preview.estimate_positions_xyz,
-            )
-            cases.append(
-                TrajectoryEvaluationCase(
-                    reference_path=reference_path,
-                    candidate_path=candidate.path,
-                    reference_source=reference_source,
-                    candidate_source=candidate.source,
-                    candidate_coordinate_status=candidate.coordinate_status,
-                    metric_family="ape",
-                    pose_relation=metrics.PoseRelation.translation_part,
-                    error_series_path=error_series_path,
-                    matched_pairs=matched_pairs,
+            for spec in _METRIC_SPECS:
+                try:
+                    if spec.family == "ape":
+                        preview = compute_trajectory_ape_preview(
+                            reference_path=reference_path,
+                            estimate_path=candidate.path,
+                            pose_relation=spec.pose_relation,
+                            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
+                            target_frame=selection.target_frame or "world",
+                            source_frame=_method_world_frame(candidate.method_id),
+                            reference_source=reference_source,
+                            method_id=candidate.method_id,
+                            method_label=candidate.method_label,
+                        )
+                    else:
+                        preview = compute_trajectory_rpe_preview(
+                            reference_path=reference_path,
+                            estimate_path=candidate.path,
+                            pose_relation=spec.pose_relation,
+                            delta=spec.delta or 1.0,
+                            delta_unit=spec.delta_unit_enum or metrics.Unit.meters,
+                        )
+                except ValueError:
+                    if spec.family == "ape" and spec.pose_relation is metrics.PoseRelation.translation_part:
+                        raise
+                    continue
+                matched_pairs = int(len(preview.error_values))
+                relation_token = _entity_token(spec.pose_relation.value)
+                error_series_filename = (
+                    f"{_entity_token(reference_source)}__{_entity_token(candidate.source)}__"
+                    f"{_entity_token(candidate.coordinate_status)}__{spec.family}_{relation_token}.npz"
                 )
-            )
-            rows.extend(
-                TrajectoryMetricResultRow(
-                    run_id=run_root.name,
-                    sequence_id=selection.sequence_slug,
-                    reference_source=reference_source,
-                    estimate_source=f"{candidate.source}/{candidate.coordinate_status}",
-                    metric_family="ape",
-                    pose_relation=metrics.PoseRelation.translation_part,
-                    statistic=statistic,
-                    value=value,
-                    unit="m",
-                    matched_pairs=matched_pairs,
-                    error_series_path=error_series_path,
+                error_series_path = error_series_dir / error_series_filename
+                np.savez(
+                    error_series_path,
+                    values=preview.error_values,
+                    timestamps_s=preview.error_timestamps_s,
+                    pair_index=np.arange(matched_pairs, dtype=np.int64),
+                    reference_positions_xyz=preview.reference_positions_xyz,
+                    estimate_positions_xyz=preview.estimate_positions_xyz,
                 )
-                for statistic, value in preview.stats.model_dump(mode="python").items()
-            )
+                cases.append(
+                    TrajectoryEvaluationCase(
+                        reference_path=reference_path,
+                        candidate_path=candidate.path,
+                        reference_source=reference_source,
+                        candidate_source=candidate.source,
+                        candidate_coordinate_status=candidate.coordinate_status,
+                        metric_family=spec.family,
+                        pose_relation=spec.pose_relation,
+                        error_series_path=error_series_path,
+                        matched_pairs=matched_pairs,
+                        delta=spec.delta,
+                        delta_unit=spec.delta_unit,
+                    )
+                )
+                # Store a relative path in the CSV so the artifact is portable across machines.
+                error_series_relative = Path("error_series") / error_series_filename
+                rows.extend(
+                    TrajectoryMetricResultRow(
+                        run_id=run_root.name,
+                        sequence_id=selection.sequence_slug,
+                        reference_source=reference_source,
+                        estimate_source=f"{candidate.source}/{candidate.coordinate_status}",
+                        metric_family=spec.family,
+                        pose_relation=spec.pose_relation,
+                        statistic=statistic,
+                        value=value,
+                        unit=_POSE_RELATION_UNIT.get(spec.pose_relation, ""),
+                        matched_pairs=matched_pairs,
+                        delta=spec.delta,
+                        delta_unit=spec.delta_unit,
+                        error_series_path=error_series_relative,
+                    )
+                    for statistic, value in preview.stats.model_dump(mode="python").items()
+                )
 
         _write_metric_rows(metrics_long_path, rows)
         manifest = TrajectoryEvaluationManifest(
@@ -420,6 +468,7 @@ def compute_trajectory_ape_preview(
     *,
     reference_path: Path,
     estimate_path: Path,
+    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
     alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
     target_frame: str = "world",
@@ -428,7 +477,7 @@ def compute_trajectory_ape_preview(
     method_id: str | None = None,
     method_label: str | None = None,
 ) -> _TrajectoryMetricPreview:
-    """Compute in-memory translation APE for two normalized TUM trajectory artifacts.
+    """Compute in-memory APE for two normalized TUM trajectory artifacts.
 
     Uses evo's timestamp association and APE implementation over
     :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns an
@@ -464,7 +513,7 @@ def compute_trajectory_ape_preview(
     elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
         raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
 
-    metric = metrics.APE(metrics.PoseRelation.translation_part)
+    metric = metrics.APE(pose_relation)
     metric.process_data((associated_reference, evaluation_estimate))
     error_values = np.asarray(metric.error, dtype=np.float64)
     if error_values.size == 0:
@@ -476,6 +525,53 @@ def compute_trajectory_ape_preview(
         estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz, dtype=np.float64),
         stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
         alignment=alignment,
+    )
+
+
+def compute_trajectory_rpe_preview(
+    *,
+    reference_path: Path,
+    estimate_path: Path,
+    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
+    delta: float = 1.0,
+    delta_unit: metrics.Unit = metrics.Unit.meters,
+    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
+) -> _TrajectoryMetricPreview:
+    """Compute in-memory RPE for two normalized TUM trajectory artifacts.
+
+    No alignment is applied — RPE measures relative motion between fixed-distance
+    pose pairs, so the global alignment cancels in the subtraction.
+    """
+    reference_trajectory = load_tum_trajectory(reference_path)
+    estimate_trajectory = load_tum_trajectory(estimate_path)
+    try:
+        associated_reference, associated_estimate = sync.associate_trajectories(
+            reference_trajectory,
+            estimate_trajectory,
+            max_diff=max_diff_s,
+        )
+    except sync.SyncException as exc:
+        raise ValueError(
+            f"No matching trajectory timestamps were found for evo RPE (max_diff={max_diff_s:.3f}s)."
+        ) from exc
+
+    metric = metrics.RPE(pose_relation, delta=delta, delta_unit=delta_unit, all_pairs=False)
+    try:
+        metric.process_data((associated_reference, associated_estimate))
+    except Exception as exc:
+        raise ValueError(f"evo RPE computation failed: {exc}") from exc
+
+    error_values = np.asarray(metric.error, dtype=np.float64)
+    if error_values.size == 0:
+        raise ValueError("evo RPE produced zero matched trajectory pairs.")
+    n = error_values.size
+    return _TrajectoryMetricPreview(
+        error_timestamps_s=np.asarray(associated_reference.timestamps[:n], dtype=np.float64),
+        error_values=error_values,
+        reference_positions_xyz=np.asarray(associated_reference.positions_xyz[:n], dtype=np.float64),
+        estimate_positions_xyz=np.asarray(associated_estimate.positions_xyz[:n], dtype=np.float64),
+        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
+        alignment=None,
     )
 
 

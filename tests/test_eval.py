@@ -212,28 +212,27 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     manifest_path = artifact_root / "evaluation" / "trajectory" / "manifest.json"
     assert manifest_path.exists()
     manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert {case["pose_relation"] for case in manifest_payload["evaluation_cases"]} == {"translation_part"}
+    # Multi-metric loop now emits both translation and rotation APE (and RPE when tractable)
+    pose_relations_in_manifest = {case["pose_relation"] for case in manifest_payload["evaluation_cases"]}
+    assert "translation_part" in pose_relations_in_manifest
+    assert "rotation_angle_deg" in pose_relations_in_manifest
     metrics_long_path = artifact_root / "evaluation" / "trajectory" / "metrics_long.csv"
     assert metrics_long_path.exists()
-    assert [case.candidate_source for case in artifact.evaluation_cases] == [
-        "vista",
-        "arcore",
-        "arcore",
-        "arkit",
-        "arkit",
-    ]
-    assert [case.candidate_coordinate_status for case in artifact.evaluation_cases] == [
+    # All 5 candidate sources are still represented (one entry per candidate per spec)
+    assert set(case.candidate_source for case in artifact.evaluation_cases) == {"vista", "arcore", "arkit"}
+    assert set(case.candidate_coordinate_status for case in artifact.evaluation_cases) == {
         "raw",
         "source_native",
         "aligned",
-        "source_native",
-        "aligned",
-    ]
+    }
     assert artifact.error_series_paths == [case.error_series_path for case in artifact.evaluation_cases]
-    assert len(artifact.error_series_paths) == 5
+    # At minimum 5 candidates × 2 APE specs = 10 paths; RPE paths may additionally appear
+    assert len(artifact.error_series_paths) >= 10
     assert all(path.exists() for path in artifact.error_series_paths)
+    # vista is always the first candidate; APE translation then APE rotation are specs 0 and 1
+    # Note: PoseRelation.rotation_angle_deg.value == "rotation_angle_in_degrees" in evo
     assert artifact.error_series_paths[0].name == "ground_truth__vista__raw__ape_translation_part.npz"
-    assert artifact.error_series_paths[1].name == "ground_truth__arcore__source_native__ape_translation_part.npz"
+    assert artifact.error_series_paths[1].name == "ground_truth__vista__raw__ape_rotation_angle_in_degrees.npz"
     with metrics_long_path.open("r", encoding="utf-8", newline="") as handle:
         estimate_sources = {row["estimate_source"] for row in csv.DictReader(handle)}
     assert estimate_sources == {
