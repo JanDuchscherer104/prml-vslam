@@ -129,6 +129,12 @@ class TrajectoryEvaluationCase(BaseData):
 
     matched_pairs: int
 
+    delta: float | None = None
+    """RPE delta value; ``None`` for APE cases."""
+
+    delta_unit: str | None = None
+    """RPE delta unit string, e.g. ``"meters"``; ``None`` for APE cases."""
+
     @field_validator("pose_relation", mode="before")
     @classmethod
     def _validate_pose_relation(cls, value: object) -> object:

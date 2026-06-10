@@ -186,6 +186,12 @@ class MetricsPageState(BaseData):
     sequence_slug: str | None = None
     """Selected dataset sequence, for example `advio-15`."""
 
+    scope: str = "sequence"
+    """View scope: ``sequence`` for single-sequence review, ``dataset`` for dataset-wide summary."""
+
+    dataset_primary_metric: str = "ape/translation_part/rmse"
+    """Primary metric shown in the dataset-wide leaderboard, encoded as ``family/pose_relation/statistic``."""
+
 
 class ArtifactInspectorPageState(BaseData):
     """Persisted selector state for the artifact inspector page."""
