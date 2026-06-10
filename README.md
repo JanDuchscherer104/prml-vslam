@@ -51,7 +51,7 @@ Launch the Streamlit workbench:
 
 ```bash
 uv sync --extra streaming
-uv run streamlit run streamlit_app.py
+uv run prml-vslam app
 ```
 
 Plan or run a persisted pipeline request:
