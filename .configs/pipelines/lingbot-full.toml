@@ -20,8 +20,8 @@ enabled = true
     # views. The cabinet subset has about 1000 RGB frames, so stride 5 keeps
     # this benchmark near 200 processed frames while preserving
     # the same dataset and normalized source artifacts.
-    # frame_stride = 1
-    replay_mode = "fast_as_possible"
+    frame_stride = 5
+    replay_mode  = "fast_as_possible"
 
 [stages.slam]
 enabled  = true
@@ -92,7 +92,7 @@ sampling_interval_ms    = 1000
     use_sdpa = true
 
     # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
-    # matching the paper's default precision.
+    # matching the paper's default precision. TODO:
     use_amp = true
 
     # Cast the transformer trunk to the best CUDA inference dtype while keeping
