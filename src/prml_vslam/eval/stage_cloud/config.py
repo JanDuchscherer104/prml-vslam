@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.eval.contracts import CloudMetricId
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.utils import BaseConfig
-
-
-class CloudMetricId(StrEnum):
-    """Planned dense-cloud metric identifiers."""
-
-    CHAMFER_DISTANCE = "chamfer.distance"
-    F_SCORE = "f_score"
 
 
 class DenseCloudSelectionConfig(BaseConfig):
@@ -30,18 +23,24 @@ class DenseCloudSelectionConfig(BaseConfig):
 
 
 class CloudEvaluationStageConfig(StageConfig):
-    """Diagnostic cloud-evaluation stage skeleton.
-
-    The binding declares planned metrics and inputs, but no runtime is
-    registered until dense-cloud evaluation is implemented.
-    """
+    """Dense-cloud evaluation stage policy."""
 
     model_config = ConfigDict(extra="ignore")
 
     stage_key: StageKey | None = StageKey.CLOUD_EVALUATION
     selection: DenseCloudSelectionConfig = Field(default_factory=DenseCloudSelectionConfig)
+    f1_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Distance threshold used for precision, recall, and F1, in meters."""
+
     planned_metrics: list[CloudMetricId] = Field(
-        default_factory=lambda: [CloudMetricId.CHAMFER_DISTANCE, CloudMetricId.F_SCORE]
+        default_factory=lambda: [
+            CloudMetricId.ACCURACY,
+            CloudMetricId.COMPLETENESS,
+            CloudMetricId.CHAMFER,
+            CloudMetricId.F1,
+            CloudMetricId.ICP_RMSE,
+            CloudMetricId.ICP_FITNESS,
+        ]
     )
 
     def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
@@ -49,7 +48,7 @@ class CloudEvaluationStageConfig(StageConfig):
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         del context
-        return False, "Dense-cloud evaluation is planned but no runtime is registered yet."
+        return True, None
 
 
 __all__ = ["CloudEvaluationStageConfig", "CloudMetricId", "DenseCloudSelectionConfig"]

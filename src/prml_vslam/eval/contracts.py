@@ -28,6 +28,25 @@ class TrajectoryMetricId(StrEnum):
     RPE_TRANSLATION = "rpe.translation"
 
 
+class CloudMetricId(StrEnum):
+    """Name dense-cloud metrics persisted by the Open3D evaluation seam."""
+
+    ACCURACY = "accuracy"
+    COMPLETENESS = "completeness"
+    CHAMFER = "chamfer"
+    F1 = "f1"
+    ICP_RMSE = "icp_rmse"
+    ICP_FITNESS = "icp_fitness"
+
+
+class CloudEstimateKind(StrEnum):
+    """Describe which benchmark cloud artifact one metric row evaluates."""
+
+    SIM3 = "sim3"
+    SIM3_ICP = "sim3_icp"
+    RECONSTRUCTION = "reconstruction"
+
+
 class TrajectoryAlignmentMode(StrEnum):
     """Describe how trajectories are aligned before metric computation."""
 
@@ -239,6 +258,31 @@ class DenseCloudEvaluationSelection(BaseData):
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
 
+    estimate_kind: CloudEstimateKind = CloudEstimateKind.SIM3_ICP
+    """Semantic role of the estimated dense geometry artifact."""
+
+    f1_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Distance threshold used for precision, recall, and F1, in meters."""
+
+
+class DenseCloudEstimateEvaluation(BaseData):
+    """Metrics for one evaluated dense-cloud estimate artifact."""
+
+    estimate_kind: CloudEstimateKind
+    """Semantic role of the evaluated estimate cloud."""
+
+    estimate_cloud_path: Path
+    """Estimated dense geometry path compared against the reference cloud."""
+
+    reference_point_count: int
+    """Number of points loaded from the reference cloud."""
+
+    estimate_point_count: int
+    """Number of points loaded from the estimate cloud."""
+
+    metrics: dict[CloudMetricId, float] = Field(default_factory=dict)
+    """Scalar dense-cloud metrics keyed by canonical metric id."""
+
 
 class CloudAlignmentSelection(BaseData):
     """Describe offline point-cloud alignment inputs for benchmark runs."""
@@ -302,11 +346,23 @@ class DenseCloudEvaluationArtifact(BaseData):
     reference_cloud_path: Path
     """Reference dense geometry path."""
 
-    estimate_cloud_path: Path
-    """Estimated dense geometry path."""
+    f1_threshold_m: float = 0.05
+    """Distance threshold used for precision, recall, and F1, in meters."""
 
-    metrics: dict[str, float] = Field(default_factory=dict)
-    """Scalar dense-cloud metrics keyed by metric name."""
+    estimates: list[DenseCloudEstimateEvaluation] = Field(default_factory=list)
+    """Per-estimate metric payloads for Sim3, ICP-refined, or reconstruction clouds."""
+
+    cloud_alignment_path: Path | None = None
+    """Optional point-cloud alignment metadata used to attach ICP diagnostics."""
+
+    @property
+    def metrics(self) -> dict[str, float]:
+        """Return flattened metric keys for legacy table-style consumers."""
+        return {
+            f"{estimate.estimate_kind.value}.{metric_id.value}": value
+            for estimate in self.estimates
+            for metric_id, value in estimate.metrics.items()
+        }
 
 
 class BenchmarkReference(BaseData):
@@ -390,9 +446,12 @@ class EvaluationSelection(BaseData):
 
 __all__ = [
     "BenchmarkReference",
+    "CloudEstimateKind",
     "CloudAlignmentArtifact",
     "CloudAlignmentSelection",
+    "CloudMetricId",
     "DenseCloudEvaluationArtifact",
+    "DenseCloudEstimateEvaluation",
     "DenseCloudEvaluationSelection",
     "DiscoveredRun",
     "ErrorSeries",
