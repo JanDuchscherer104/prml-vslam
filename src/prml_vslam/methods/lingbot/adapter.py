@@ -609,7 +609,10 @@ def _build_lingbot_artifacts(
             {
                 "method_id": MethodId.LINGBOT_MAP.value,
                 "pose_convention": "T_world_camera = pose_encoding_to_extri_intri extrinsic",
-                "native_pose_convention": "pose_encoding_to_extri_intri extrinsic is treated as C2W per upstream benchmark adapter",
+                "native_pose_convention": (
+                    "LingBot-Map streaming/benchmark output treats pose_encoding_to_extri_intri extrinsic as "
+                    "camera_to_world (C2W)."
+                ),
                 "camera_frame": CAMERA_RDF_FRAME,
                 "num_processed_frames": len(observations),
                 "num_keyframes": len(poses),

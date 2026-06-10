@@ -279,7 +279,7 @@ class PathConfig(BaseConfig):
         target run configs. It enforces the ``.toml`` suffix and can optionally
         create the parent directory without creating the config file itself.
         """
-        resolved = self.resolve_repo_path(path, base_dir=base_dir)
+        resolved = self.resolve_repo_path(path, base_dir=None if base_dir is None else Path(base_dir))
         if resolved.suffix != ".toml":
             raise ValueError(f"Config path must be a .toml file, got {resolved}")
         if create_parent:

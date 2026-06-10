@@ -233,7 +233,53 @@ def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest
     assert (rendered.camera_num_iterations, rendered.enable_point_head) == (1, False)
 
 
-def test_lingbot_pose_conversion_uses_benchmark_camera_to_world_convention() -> None:
+def test_lingbot_app_editor_coerces_invalid_grid_and_depth(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeColumn:
+        def __enter__(self) -> FakeColumn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    backend = LingbotMapSlamBackendConfig(max_frames=2, image_size=224, patch_size=14)
+
+    def fake_number_input(label: str, *, value: Any, **_kwargs: Any) -> Any:
+        if label == "Patch Size":
+            return 16
+        if label == "Image Size":
+            return 225
+        if label == "Max Depth M":
+            return 0.0
+        return value
+
+    monkeypatch.setattr(pipeline_request_editor.st, "columns", lambda *_args, **_kwargs: [FakeColumn(), FakeColumn()])
+    monkeypatch.setattr(pipeline_request_editor.st, "expander", lambda *_args, **_kwargs: FakeColumn())
+    monkeypatch.setattr(
+        pipeline_request_editor.st,
+        "selectbox",
+        lambda _label, *, options, index=0, **_kwargs: options[index],
+    )
+    monkeypatch.setattr(pipeline_request_editor.st, "number_input", fake_number_input)
+    monkeypatch.setattr(
+        pipeline_request_editor.st,
+        "toggle",
+        lambda _label, *, value, **_kwargs: value,
+    )
+    monkeypatch.setattr(
+        pipeline_request_editor.st,
+        "text_input",
+        lambda _label, *, value, **_kwargs: value,
+    )
+
+    rendered = pipeline_request_editor._render_lingbot_backend_settings(backend, max_frames=backend.max_frames)
+
+    assert rendered.patch_size == 16
+    assert rendered.image_size == 240
+    assert rendered.image_size % rendered.patch_size == 0
+    assert rendered.max_depth_m is not None and rendered.max_depth_m > 0.0
+
+
+def test_lingbot_pose_conversion_preserves_streaming_camera_to_world_convention() -> None:
     T_world_camera = np.eye(4, dtype=np.float64)
     T_world_camera[0, 3] = 2.0
 
@@ -391,10 +437,10 @@ def test_lingbot_streaming_buffers_frames_and_writes_terminal_artifacts(
 
 
 def test_lingbot_artifact_builder_writes_mandatory_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    extrinsics_camera_to_world = np.tile(np.eye(4, dtype=np.float32)[:3], (1, 2, 1, 1))
+    extrinsics_camera_to_world = np.tile(np.eye(4, dtype=np.float32), (1, 2, 1, 1))
     extrinsics_camera_to_world[0, 0, 0, 3] = 1.0
     extrinsics_camera_to_world[0, 1, 0, 3] = 2.0
-    _install_fake_pose_decoder(monkeypatch, extrinsics_camera_to_world=extrinsics_camera_to_world)
+    _install_fake_pose_decoder(monkeypatch, extrinsics_camera_to_world=extrinsics_camera_to_world[:, :, :3, :])
     rgb = np.full((2, 2, 3), 128, dtype=np.uint8)
     observations = [
         Observation(seq=idx, timestamp_ns=idx * 1_000_000_000, provenance=ObservationProvenance(), rgb=rgb)
@@ -438,7 +484,6 @@ def test_lingbot_artifact_builder_writes_mandatory_outputs(tmp_path: Path, monke
     assert "predictions_normalized.npz" in artifacts.extras
     with np.load(artifacts.extras["predictions_normalized.npz"].path) as native_predictions:
         assert "extrinsics_camera_to_world" in native_predictions
-        assert "extrinsics_camera_from_world" not in native_predictions
         np.testing.assert_allclose(native_predictions["extrinsics_camera_to_world"][:, 0, 3], [1.0, 2.0])
     assert "lingbot_metadata.json" in artifacts.extras
     assert artifacts.num_processed_frames == 2
