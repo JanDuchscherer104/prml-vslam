@@ -6,7 +6,15 @@ import numpy as np
 import pytest
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.eval.contracts import ErrorSeries, IntrinsicsComparisonDiagnostics, TrajectorySeries
+from prml_vslam.eval.contracts import (
+    CloudEstimateKind,
+    CloudMetricId,
+    DenseCloudEstimateEvaluation,
+    DenseCloudEvaluationArtifact,
+    ErrorSeries,
+    IntrinsicsComparisonDiagnostics,
+    TrajectorySeries,
+)
 from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.methods.vista.diagnostics import VistaNativeSlamDiagnostics, VistaViewGraphDiagnostics
 from prml_vslam.plotting.advio import build_advio_comparison_trajectories
@@ -18,7 +26,12 @@ from prml_vslam.plotting.artifact_diagnostics import (
     build_native_timing_figure,
     build_view_graph_figure,
 )
-from prml_vslam.plotting.metrics import build_trajectory_figure
+from prml_vslam.plotting.metrics import (
+    build_cloud_distance_metrics_figure,
+    build_cloud_point_count_figure,
+    build_cloud_quality_metrics_figure,
+    build_trajectory_figure,
+)
 from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure, pointmap_preview_image
 from prml_vslam.plotting.record3d import build_live_trajectory_figure
 from prml_vslam.plotting.trajectories import build_bev_trajectory_figure, build_height_profile_figure
@@ -89,6 +102,52 @@ def test_metrics_trajectory_figure_uses_standard_xy_axes() -> None:
     assert [trace.name for trace in figure.data] == ["Estimate"]
     assert figure.layout.xaxis.title.text == "X (m)"
     assert figure.layout.yaxis.scaleanchor == "x"
+
+
+def test_cloud_metric_figures_expose_distance_quality_and_count_traces(tmp_path) -> None:
+    artifact = DenseCloudEvaluationArtifact(
+        path=tmp_path / "cloud_metrics.json",
+        title="Dense Cloud Evaluation (Open3D)",
+        reference_cloud_path=tmp_path / "reference.ply",
+        f1_threshold_m=0.05,
+        estimates=[
+            DenseCloudEstimateEvaluation(
+                estimate_kind=CloudEstimateKind.SIM3,
+                estimate_cloud_path=tmp_path / "sim3.ply",
+                reference_point_count=10,
+                estimate_point_count=20,
+                metrics={
+                    CloudMetricId.ACCURACY: 0.1,
+                    CloudMetricId.COMPLETENESS: 0.2,
+                    CloudMetricId.CHAMFER: 0.3,
+                    CloudMetricId.F1: 0.4,
+                },
+            ),
+            DenseCloudEstimateEvaluation(
+                estimate_kind=CloudEstimateKind.SIM3_ICP,
+                estimate_cloud_path=tmp_path / "icp.ply",
+                reference_point_count=10,
+                estimate_point_count=18,
+                metrics={
+                    CloudMetricId.ACCURACY: 0.05,
+                    CloudMetricId.COMPLETENESS: 0.15,
+                    CloudMetricId.CHAMFER: 0.2,
+                    CloudMetricId.F1: 0.8,
+                    CloudMetricId.ICP_FITNESS: 0.9,
+                },
+            ),
+        ],
+    )
+
+    distance = build_cloud_distance_metrics_figure(artifact)
+    quality = build_cloud_quality_metrics_figure(artifact)
+    counts = build_cloud_point_count_figure(artifact)
+
+    assert [trace.name for trace in distance.data] == ["Accuracy", "Completeness", "Chamfer"]
+    assert [trace.name for trace in quality.data] == ["F1 @ 0.05 m", "ICP fitness"]
+    assert [trace.name for trace in counts.data] == ["Estimate points", "Reference points"]
+    assert distance.layout.barmode == "group"
+    assert quality.layout.yaxis.range == (0.0, 1.0)
 
 
 def test_pipeline_evo_figure_uses_shared_3d_layout() -> None:
