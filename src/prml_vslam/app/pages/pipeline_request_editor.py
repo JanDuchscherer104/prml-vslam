@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 import streamlit as st
 
@@ -24,6 +24,21 @@ from ..record3d_controls import render_record3d_transport_controls, render_recor
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
+
+_DEVICE_OPTIONS: tuple[Literal["auto", "cuda", "cpu"], ...] = ("auto", "cuda", "cpu")
+_LINGBOT_MODE_OPTIONS: tuple[Literal["streaming", "windowed"], ...] = ("streaming", "windowed")
+_LINGBOT_MIN_IMAGE_SIZE = 224
+_LINGBOT_MIN_DEPTH_M = 1e-6
+
+
+def _coerce_lingbot_image_size_to_patch_grid(image_size: int, patch_size: int) -> int:
+    """Return the smallest valid LingBot image size for the selected patch grid."""
+    patch_size = max(int(patch_size), 1)
+    image_size = max(int(image_size), _LINGBOT_MIN_IMAGE_SIZE)
+    remainder = image_size % patch_size
+    if remainder:
+        image_size += patch_size - remainder
+    return image_size
 
 
 def render_request_editor(
@@ -407,11 +422,13 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     if not isinstance(backend, VistaSlamBackendConfig):
         raise TypeError("Expected a ViSTA backend config.")
 
-    device_options = ["auto", "cuda", "cpu"]
-    device = st.selectbox(
-        "Device",
-        options=device_options,
-        index=device_options.index(backend.device),
+    device = cast(
+        Literal["auto", "cuda", "cpu"],
+        st.selectbox(
+            "Device",
+            options=_DEVICE_OPTIONS,
+            index=_DEVICE_OPTIONS.index(backend.device),
+        ),
     )
     col_a, col_b, col_c = st.columns(3, gap="small")
     with col_a:
@@ -588,14 +605,27 @@ def _render_lingbot_backend_settings(
 
     col_a, col_b = st.columns(2, gap="small")
     with col_a:
-        device = st.selectbox(
-            "Device", options=["auto", "cuda", "cpu"], index=["auto", "cuda", "cpu"].index(backend.device)
+        device = cast(
+            Literal["auto", "cuda", "cpu"],
+            st.selectbox("Device", options=_DEVICE_OPTIONS, index=_DEVICE_OPTIONS.index(backend.device)),
         )
-        mode = st.selectbox(
-            "Inference Mode", options=["streaming", "windowed"], index=["streaming", "windowed"].index(backend.mode)
+        mode = cast(
+            Literal["streaming", "windowed"],
+            st.selectbox(
+                "Inference Mode", options=_LINGBOT_MODE_OPTIONS, index=_LINGBOT_MODE_OPTIONS.index(backend.mode)
+            ),
         )
-        image_size = int(st.number_input("Image Size", min_value=224, value=int(backend.image_size), step=14))
         patch_size = int(st.number_input("Patch Size", min_value=1, value=int(backend.patch_size)))
+        image_size_min = _coerce_lingbot_image_size_to_patch_grid(_LINGBOT_MIN_IMAGE_SIZE, patch_size)
+        image_size = int(
+            st.number_input(
+                "Image Size",
+                min_value=image_size_min,
+                value=_coerce_lingbot_image_size_to_patch_grid(int(backend.image_size), patch_size),
+                step=patch_size,
+            )
+        )
+        image_size = _coerce_lingbot_image_size_to_patch_grid(image_size, patch_size)
     with col_b:
         num_scale_frames = int(st.number_input("Scale Frames", min_value=1, value=int(backend.num_scale_frames)))
         point_stride = int(st.number_input("Point Stride", min_value=1, value=int(backend.point_stride)))
@@ -603,7 +633,7 @@ def _render_lingbot_backend_settings(
             st.number_input("Confidence Threshold", min_value=0.0, value=float(backend.confidence_threshold))
         )
         auto_keyframes = st.toggle("Auto Keyframes", value=backend.keyframe_interval == "auto")
-        keyframe_interval = "auto"
+        keyframe_interval: int | Literal["auto"] = "auto"
         if not auto_keyframes:
             default_keyframe_interval = 1 if backend.keyframe_interval == "auto" else int(backend.keyframe_interval)
             keyframe_interval = int(
@@ -616,7 +646,16 @@ def _render_lingbot_backend_settings(
         limit_depth = st.toggle("Limit Depth", value=backend.max_depth_m is not None)
         max_depth_m = None
         if limit_depth:
-            max_depth_m = float(st.number_input("Max Depth M", min_value=0.0, value=backend.max_depth_m or 100.0))
+            max_depth_m = max(
+                _LINGBOT_MIN_DEPTH_M,
+                float(
+                    st.number_input(
+                        "Max Depth M",
+                        min_value=_LINGBOT_MIN_DEPTH_M,
+                        value=backend.max_depth_m or 100.0,
+                    )
+                ),
+            )
         use_amp = st.toggle("AMP", value=backend.use_amp)
         use_sdpa = st.toggle("SDPA", value=backend.use_sdpa)
 

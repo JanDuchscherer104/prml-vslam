@@ -37,6 +37,29 @@ _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES = 1_073_741_824
 RayRuntimeEnvValue = list[str] | dict[str, str] | str
 
 
+def _local_object_store_memory_bytes(console: Console) -> int:
+    raw_value = os.getenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES")
+    if raw_value is None:
+        return _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    try:
+        object_store_memory = int(raw_value)
+    except ValueError:
+        console.warning(
+            "Ignoring invalid PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES=%r; using %d.",
+            raw_value,
+            _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES,
+        )
+        return _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    if object_store_memory <= 0:
+        console.warning(
+            "Ignoring non-positive PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES=%d; using %d.",
+            object_store_memory,
+            _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES,
+        )
+        return _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    return object_store_memory
+
+
 def prepare_ray_environment() -> None:
     """Set environment flags that Ray snapshots at import and init time."""
     os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
@@ -87,9 +110,7 @@ class LocalRayHead:
         logs_dir = self._path_config.resolve_logs_dir(create=True)
         self._log_path = logs_dir / "ray-local-head.log"
         log_handle = self._log_path.open("a", encoding="utf-8")
-        object_store_memory = int(
-            os.getenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", str(_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES))
-        )
+        object_store_memory = _local_object_store_memory_bytes(self._console)
         try:
             self._process = subprocess.Popen(
                 [
