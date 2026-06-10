@@ -25,6 +25,8 @@ from rich.panel import Panel
 from rich.table import Table
 from typer.core import TyperCommand
 
+from prml_vslam.experiments.config import load_experiment_config
+from prml_vslam.experiments.execution import expand_experiment_items, run_experiment
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -689,6 +691,44 @@ def _run_config_loaded(*, run_cfg: RunConfig, path_config: PathConfig) -> None:
     _wait_for_rerun_viewer_close(viewer)
     _shutdown_rerun_viewer(viewer)
     if snapshot.state is RunState.FAILED:
+        raise typer.Exit(code=1)
+
+
+@app.command("plan-experiment-config")
+def plan_experiment_config(
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="Path to an experiment config TOML file."),
+    ],
+) -> None:
+    """Plan every offline run referenced by an experiment config."""
+    path_config = get_path_config()
+    try:
+        experiment_config = load_experiment_config(config_path, path_config=path_config)
+        specs = expand_experiment_items(experiment_config, path_config=path_config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    console.plog([spec.model_dump(mode="json") for spec in specs])
+
+
+@app.command("run-experiment-config")
+def run_experiment_config(
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="Path to an experiment config TOML file."),
+    ],
+) -> None:
+    """Run a group of offline pipeline configs and write tidy experiment reports."""
+    path_config = get_path_config()
+    try:
+        experiment_config = load_experiment_config(config_path, path_config=path_config)
+        report = run_experiment(experiment_config, path_config=path_config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    console.plog(report.model_dump(mode="json"))
+    if not report.success:
         raise typer.Exit(code=1)
 
 
