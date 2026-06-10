@@ -645,6 +645,7 @@ class RunCoordinatorActor:
         enabled_stage_keys = {stage.key for stage in plan.stages}
         for result in load_reused_stage_results(reuse_root):
             if result.stage_key not in enabled_stage_keys:
+                self._result_store.put(result)
                 self._record_stage_result(result.stage_key, result)
 
     def _run_streaming(
