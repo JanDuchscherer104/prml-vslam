@@ -8,13 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from evo.core import metrics
 
 from prml_vslam.eval.query import TrajectoryEvaluationQueryService
+from prml_vslam.interfaces import FrameTransform
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import write_tum_trajectory
-from prml_vslam.interfaces import FrameTransform
 
 
 def _write_sequence_manifest(path: Path, *, sequence_id: str, dataset_id: str) -> None:

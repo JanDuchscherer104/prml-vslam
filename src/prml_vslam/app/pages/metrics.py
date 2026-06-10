@@ -21,11 +21,13 @@ from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 from prml_vslam.plotting.metrics import (
     build_coverage_chart,
     build_dataset_heatmap,
-    build_grouped_bar_per_sequence as _plot_grouped_bar,
     build_trajectory_error_box,
     build_trajectory_error_cdf,
     build_trajectory_rmse_bar,
     build_violin_by_method,
+)
+from prml_vslam.plotting.metrics import (
+    build_grouped_bar_per_sequence as _plot_grouped_bar,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId
 
