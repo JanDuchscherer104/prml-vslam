@@ -24,16 +24,31 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def venv_python() -> Path:
-    return repo_root() / ".venv" / "bin" / "python"
+def shared_repo_root() -> Path:
+    result = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=repo_root(),
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    common_dir = Path(result.stdout.strip()).resolve()
+    return common_dir.parent if common_dir.name == ".git" else repo_root()
+
+
+def mempalace_root() -> Path:
+    local_root = repo_root() / ".artifacts" / "mempalace"
+    if (local_root / "palace").exists():
+        return local_root
+    return shared_repo_root() / ".artifacts" / "mempalace"
 
 
 def palace_path() -> Path:
-    return repo_root() / ".artifacts" / "mempalace" / "palace"
+    return mempalace_root() / "palace"
 
 
 def sources_root() -> Path:
-    return repo_root() / ".artifacts" / "mempalace" / "sources"
+    return mempalace_root() / "sources"
 
 
 def docs_source_root() -> Path:
@@ -46,10 +61,6 @@ def chats_source_root() -> Path:
 
 def exports_source_root() -> Path:
     return sources_root() / "exports"
-
-
-def windows_codex_home() -> Path:
-    return Path("/mnt/c/Users/jandu/.codex")
 
 
 def _load_codex_history_module():
@@ -65,9 +76,6 @@ def _load_codex_history_module():
 
 def _candidate_codex_homes(history) -> list[Path]:
     candidates = list(history._candidate_codex_homes())
-    windows_home = windows_codex_home()
-    if windows_home.exists():
-        candidates.append(windows_home)
     unique: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:
@@ -119,8 +127,22 @@ def _mempalace_env() -> dict[str, str]:
     return env
 
 
-def run_python_module(module: str, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
-    command = [str(venv_python()), "-m", module, *args]
+def mempalace_executable() -> str:
+    executable = os.environ.get("MEMPALACE_BIN") or shutil.which("mempalace")
+    if executable is None:
+        raise RuntimeError("Missing mempalace executable on PATH")
+    return executable
+
+
+def mempalace_mcp_executable() -> str:
+    executable = os.environ.get("MEMPALACE_MCP_BIN") or shutil.which("mempalace-mcp")
+    if executable is None:
+        raise RuntimeError("Missing mempalace-mcp executable on PATH")
+    return executable
+
+
+def run_mempalace(*args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+    command = [mempalace_executable(), "--palace", str(palace_path()), *args]
     return subprocess.run(
         command,
         cwd=repo_root(),
@@ -132,10 +154,14 @@ def run_python_module(module: str, *args: str, capture_output: bool = False) -> 
 
 
 def ensure_runtime() -> None:
-    if not venv_python().exists():
-        raise RuntimeError(f"Missing repo venv python at {venv_python()}")
-    command = [str(venv_python()), "-c", "import mempalace"]
-    subprocess.run(command, cwd=repo_root(), env=_mempalace_env(), text=True, check=True)
+    subprocess.run(
+        [mempalace_executable(), "--version"],
+        cwd=repo_root(),
+        env=_mempalace_env(),
+        text=True,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
 
 
 def _clear_directory(path: Path) -> None:
@@ -224,12 +250,11 @@ def initialize_docs_source() -> None:
     docs_root = docs_source_root()
     if (docs_root / "mempalace.yaml").exists():
         return
-    run_python_module("mempalace", "init", str(docs_root), "--yes")
+    run_mempalace("init", str(docs_root), "--yes", "--no-llm")
 
 
 def mine_docs() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(docs_source_root()),
         "--wing",
@@ -240,8 +265,7 @@ def mine_docs() -> None:
 
 
 def mine_chats() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(chats_source_root()),
         "--mode",
@@ -268,22 +292,26 @@ def refresh() -> None:
 
 def status() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "status")
+    run_mempalace("status")
 
 
 def search(query: str) -> None:
     ensure_runtime()
-    run_python_module("mempalace", "search", query)
+    run_mempalace("search", query)
 
 
 def wake_up() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "wake-up")
+    run_mempalace("wake-up")
 
 
 def mcp() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "--palace", str(palace_path()), "mcp")
+    os.execve(
+        mempalace_mcp_executable(),
+        [mempalace_mcp_executable(), "--palace", str(palace_path())],
+        _mempalace_env(),
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
