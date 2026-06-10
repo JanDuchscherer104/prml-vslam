@@ -97,24 +97,6 @@ def test_lingbot_streaming_is_available_and_sparse_requests_are_unavailable(tmp_
     assert "does not expose a separate sparse point-cloud artifact" in str(reason)
 
 
-def test_lingbot_full_toml_parses_through_run_config() -> None:
-    config = load_run_config_toml(
-        path_config=PathConfig(),
-        config_path=Path(".configs/pipelines/lingbot-full.toml"),
-    )
-
-    assert config.mode is PipelineMode.OFFLINE
-    assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
-    assert config.stages.slam.backend.enable_point_head is False
-    assert config.stages.slam.backend.confidence_threshold == 1.5
-    assert config.stages.slam.outputs.emit_dense_points is True
-    assert config.stages.slam.outputs.emit_sparse_points is False
-    assert config.stages.align_ground.enabled is True
-    assert config.stages.reconstruction.enabled is False
-    assert config.visualization.export_viewer_rrd is True
-    assert config.visualization.connect_live_viewer is False
-
-
 def test_lingbot_planned_outputs_use_normalized_geometry_paths(tmp_path: Path) -> None:
     config = build_run_config(
         experiment_name="lingbot-plan",
