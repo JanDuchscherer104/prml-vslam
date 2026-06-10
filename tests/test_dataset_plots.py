@@ -2,30 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import plotly.graph_objects as go
 from evo.core import metrics
 
 from prml_vslam.eval.dataset_aggregation import (
     CoverageCell,
     CoverageMatrix,
-    HeatmapData,
-    MetricFilter,
     PerSequenceRow,
-    build_coverage_matrix,
     build_heatmap_data,
-    build_per_sequence_table,
 )
-from prml_vslam.eval.query import DatasetEvaluationSelection, DatasetRunCoverage
-from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 from prml_vslam.plotting.metrics import (
     build_coverage_chart,
     build_dataset_heatmap,
     build_grouped_bar_per_sequence,
     build_violin_by_method,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId
 
 
 def _per_sequence_rows(
