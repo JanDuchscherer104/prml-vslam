@@ -27,10 +27,9 @@ Implemented or functional:
 - ADVIO local dataset readiness checks, selective downloads, and replay tooling
 - TOML-backed run planning and persisted pipeline request loading
 - Separate offline and streaming runner paths
-- ViSTA-SLAM wrapper
-- Optional MASt3R-SLAM wrapper for CUDA-capable environments
-- Optional LingBot-Map wrapper for CUDA-capable environments with local
-  upstream checkout and checkpoint provisioning
+- [ViSTA-SLAM](https://github.com/zhangganlin/vista-slam),
+  [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM), and
+  [LingBot-Map](https://github.com/Robbyant/lingbot-map) integration
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
 
