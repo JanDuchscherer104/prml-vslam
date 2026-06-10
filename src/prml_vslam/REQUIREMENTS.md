@@ -119,6 +119,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   but the pipeline must not interpret backend-native arrays directly.
 - Persisted diagnostic or benchmark comparisons belong in `eval`; app pages and
   plotting helpers may render them but must not define their semantics.
+- Dense-cloud benchmark metrics are persisted eval artifacts computed from full
+  benchmark PLY clouds with Open3D. The standard point-cloud comparison uses
+  Sim(3)-aligned and Sim(3)+ICP-aligned estimates, records directed accuracy,
+  completeness, summed Chamfer distance, F1 at the configured metric threshold,
+  and attaches ICP fitness/RMSE when alignment metadata exists.
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.
 

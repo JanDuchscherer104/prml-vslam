@@ -470,7 +470,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert rebuilt_run_config.stages.source.backend.normalize_video_orientation is True
 
 
-def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) -> None:
+def test_cloud_evaluation_stage_is_supported_by_request_preview(tmp_path: Path) -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
     run_config = build_run_config(
         experiment_name="placeholder",
@@ -487,8 +487,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
 
     error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
 
-    assert error is not None
-    assert "no runtime is registered yet" in error
+    assert error is None
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:

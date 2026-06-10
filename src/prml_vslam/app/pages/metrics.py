@@ -5,8 +5,22 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.eval.contracts import BenchmarkReference, DiscoveredRun, EvaluationArtifact
-from prml_vslam.plotting import build_error_figure, build_trajectory_figure
+from prml_vslam.eval.contracts import (
+    BenchmarkReference,
+    CloudAlignmentArtifact,
+    CloudEstimateKind,
+    DenseCloudEvaluationArtifact,
+    DiscoveredRun,
+    EvaluationArtifact,
+)
+from prml_vslam.eval.query import dense_cloud_metric_rows
+from prml_vslam.plotting import (
+    build_cloud_distance_metrics_figure,
+    build_cloud_point_count_figure,
+    build_cloud_quality_metrics_figure,
+    build_error_figure,
+    build_trajectory_figure,
+)
 from prml_vslam.sources.datasets.contracts import DatasetId
 
 from ..state import save_model_updates
@@ -81,7 +95,15 @@ def render(context: AppContext) -> None:
         return
     _save_state(context, dataset=dataset, sequence_slug=sequence_slug, run_root=selection.run.artifact_root)
 
-    references = context.evaluation_service.discover_benchmark_references(selection.run.artifact_root)
+    trajectory_tab, cloud_tab = st.tabs(["Trajectory Evaluation", "Point-Cloud & Reconstruction Evaluation"])
+    with trajectory_tab:
+        _render_trajectory_tab(context, selection.run)
+    with cloud_tab:
+        _render_cloud_tab(context, selection.run)
+
+
+def _render_trajectory_tab(context: AppContext, run: DiscoveredRun) -> None:
+    references = context.evaluation_service.discover_benchmark_references(run.artifact_root)
     if not references:
         st.info(
             "No benchmark reference trajectories found in the run's `benchmark/` directory. "
@@ -90,7 +112,7 @@ def render(context: AppContext) -> None:
         return
 
     evaluations: dict[str, EvaluationArtifact | None] = {
-        ref.source_key: _try_load(context, run=selection.run, reference=ref) for ref in references
+        ref.source_key: _try_load(context, run=run, reference=ref) for ref in references
     }
     missing = [ref for ref in references if evaluations[ref.source_key] is None]
 
@@ -112,7 +134,7 @@ def render(context: AppContext) -> None:
             for ref in targets:
                 try:
                     evaluations[ref.source_key] = context.evaluation_service.compute_evaluation_for_source(
-                        run=selection.run, reference=ref
+                        run=run, reference=ref
                     )
                 except EVALUATION_ERRORS as exc:
                     st.error(f"{ref.label}: {exc}")
@@ -131,6 +153,117 @@ def render(context: AppContext) -> None:
                 st.info(f"No persisted result for **{ref.label}** yet. Use the compute button above.")
                 continue
             _render_source_detail(evaluation)
+
+
+def _render_cloud_tab(context: AppContext, run: DiscoveredRun) -> None:
+    reference_cloud = _discover_reference_cloud(run.artifact_root)
+    estimates = _discover_cloud_estimates(run.artifact_root)
+    if reference_cloud is None:
+        st.info("No reference point cloud found for this run. Expected `reference/reference_cloud.ply` or equivalent.")
+        return
+    if not estimates:
+        st.info("No Sim3, ICP-aligned, or reconstruction point-cloud estimates found for this run.")
+        return
+
+    result_path = context.cloud_evaluation_service.result_path(run.artifact_root)
+    artifact = _try_load_cloud_metrics(result_path)
+    missing = artifact is None
+    with st.container(border=True):
+        action_col, status_col = st.columns((0.9, 1.1), gap="large")
+        compute = action_col.button(
+            "Compute point-cloud metrics" if missing else "Recompute point-cloud metrics",
+            type="primary",
+            width="stretch",
+        )
+        if missing:
+            status_col.info("No persisted point-cloud metrics found yet.")
+        else:
+            status_col.success(f"Loaded `{result_path.relative_to(run.artifact_root)}`.")
+
+    if compute:
+        with st.spinner(f"Computing Open3D metrics for {len(estimates)} cloud estimate(s)..."):
+            try:
+                artifact = context.cloud_evaluation_service.compute_dense_evaluations(
+                    artifact_root=run.artifact_root,
+                    reference_cloud_path=reference_cloud,
+                    estimates=estimates,
+                    f1_threshold_m=0.05,
+                    cloud_alignment_path=_existing_path(run.artifact_root / "evaluation" / "cloud_alignment.json"),
+                )
+            except EVALUATION_ERRORS as exc:
+                st.error(str(exc))
+                return
+        st.success("Point-cloud evaluation complete.")
+
+    if artifact is None:
+        _render_cloud_artifact_inputs(reference_cloud, estimates, result_path)
+        return
+
+    with st.container(border=True):
+        st.subheader("Visual Comparison")
+        distance_col, quality_col = st.columns((1.2, 1.0), gap="large")
+        distance_col.plotly_chart(build_cloud_distance_metrics_figure(artifact), width="stretch")
+        quality_col.plotly_chart(build_cloud_quality_metrics_figure(artifact), width="stretch")
+        st.plotly_chart(build_cloud_point_count_figure(artifact), width="stretch")
+
+    with st.container(border=True):
+        st.subheader("Summary")
+        rows = [row.table_row() for row in dense_cloud_metric_rows(artifact)]
+        st.dataframe(rows, hide_index=True, width="stretch")
+
+    with st.container(border=True):
+        st.subheader("Artifacts")
+        _render_cloud_artifact_inputs(reference_cloud, estimates, artifact.path)
+
+
+def _try_load_cloud_metrics(path: Path) -> DenseCloudEvaluationArtifact | None:
+    if not path.exists():
+        return None
+    try:
+        return DenseCloudEvaluationArtifact.model_validate_json(path.read_text(encoding="utf-8"))
+    except EVALUATION_ERRORS:
+        return None
+
+
+def _discover_reference_cloud(run_root: Path) -> Path | None:
+    cloud_alignment_path = run_root / "evaluation" / "cloud_alignment.json"
+    if cloud_alignment_path.exists():
+        alignment = CloudAlignmentArtifact.model_validate_json(cloud_alignment_path.read_text(encoding="utf-8"))
+        if alignment.reference_cloud_path.exists():
+            return alignment.reference_cloud_path
+    for relative_path in (
+        Path("reference/reference_cloud.ply"),
+        Path("benchmark/reference_cloud.ply"),
+        Path("benchmark/reference/reference_cloud.ply"),
+    ):
+        candidate = run_root / relative_path
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _discover_cloud_estimates(run_root: Path) -> list[tuple[CloudEstimateKind, Path]]:
+    candidates = [
+        (CloudEstimateKind.SIM3, run_root / "evaluation" / "point_cloud_sim3_aligned.ply"),
+        (CloudEstimateKind.SIM3_ICP, run_root / "evaluation" / "point_cloud_sim3_icp_aligned.ply"),
+        (CloudEstimateKind.RECONSTRUCTION, run_root / "reconstruction" / "reconstruction_cloud.ply"),
+    ]
+    return [(kind, path) for kind, path in candidates if path.exists()]
+
+
+def _existing_path(path: Path) -> Path | None:
+    return path if path.exists() else None
+
+
+def _render_cloud_artifact_inputs(
+    reference_cloud: Path,
+    estimates: list[tuple[CloudEstimateKind, Path]],
+    metrics_path: Path,
+) -> None:
+    rows = [{"Role": "reference", "Kind": "reference", "Path": reference_cloud.as_posix()}]
+    rows.extend({"Role": "estimate", "Kind": kind.value, "Path": path.as_posix()} for kind, path in estimates)
+    rows.append({"Role": "metrics", "Kind": "cloud_metrics", "Path": metrics_path.as_posix()})
+    st.dataframe(rows, hide_index=True, width="stretch")
 
 
 def _try_load(
@@ -161,7 +294,7 @@ def _render_comparison_table(
         for ref in references
         for ev in (evaluations.get(ref.source_key),)
     ]
-    st.dataframe(rows, use_container_width=True)
+    st.dataframe(rows, width="stretch")
 
 
 def _render_source_detail(evaluation: EvaluationArtifact) -> None:

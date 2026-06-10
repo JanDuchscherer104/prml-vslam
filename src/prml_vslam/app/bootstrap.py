@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from prml_vslam.eval import TrajectoryEvaluationService
+from prml_vslam.eval import DenseCloudEvaluationService, TrajectoryEvaluationService
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
@@ -35,6 +35,7 @@ class AppContext:
     advio_service: AdvioDatasetService
     tum_rgbd_service: TumRgbdDatasetService
     evaluation_service: TrajectoryEvaluationService
+    cloud_evaluation_service: DenseCloudEvaluationService
     record3d_runtime: Record3DStreamRuntimeController
     advio_runtime: AdvioPreviewRuntimeController
     run_service: RunService
@@ -60,6 +61,7 @@ def build_context() -> AppContext:
         advio_service=AdvioDatasetService(path_config),
         tum_rgbd_service=TumRgbdDatasetService(path_config),
         evaluation_service=TrajectoryEvaluationService(path_config),
+        cloud_evaluation_service=DenseCloudEvaluationService(),
         record3d_runtime=store.load_record3d_runtime(),
         advio_runtime=store.load_advio_runtime(),
         run_service=store.load_run_service(path_config=path_config),
