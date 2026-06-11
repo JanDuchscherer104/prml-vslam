@@ -81,16 +81,10 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     """Shared source-prepared reference-cloud sampling policy."""
 
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
-        """Build the normalized TUM RGB-D source adapter."""
+        """Build the raw local TUM RGB-D source adapter."""
         path_config = get_path_config() if path_config is None else path_config
         service = TumRgbdDatasetService(path_config)
         sequence_id = str(service.resolve_sequence_id(self.sequence_id))
-        profile = normalized_profile_for_source_config(
-            dataset_id=DatasetId.TUM_RGBD,
-            sequence_id=sequence_id,
-            source_id=self.source_id,
-            payload=self.model_dump(mode="json"),
-        )
         return service.build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
@@ -98,8 +92,6 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
             reference_cloud=self.reference_cloud,
-            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.TUM_RGBD),
-            normalized_profile=profile,
         )
 
 
@@ -129,24 +121,16 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     """Whether replay should normalize video display orientation before emission."""
 
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
-        """Build the normalized ADVIO source adapter."""
+        """Build the raw local ADVIO source adapter."""
         path_config = get_path_config() if path_config is None else path_config
         service = AdvioDatasetService(path_config)
         sequence_id = service.resolve_sequence_id(self.sequence_id)
-        profile = normalized_profile_for_source_config(
-            dataset_id=DatasetId.ADVIO,
-            sequence_id=f"advio-{sequence_id:02d}",
-            source_id=self.source_id,
-            payload=self.model_dump(mode="json"),
-        )
         return service.build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
             normalize_video_orientation=self.normalize_video_orientation,
-            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.ADVIO),
-            normalized_profile=profile,
         )
 
 
