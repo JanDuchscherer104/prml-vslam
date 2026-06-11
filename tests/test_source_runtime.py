@@ -564,17 +564,14 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
     assert calls[0][1]["frame_selection"].target_fps == 15.0
     assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[0][1]["normalized_store"].dataset_root == (path_config.data_dir / "fake-dataset").resolve()
-    assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
-    assert "target_fps" not in calls[0][1]["normalized_profile"].source_profile
+    assert "normalized_store" not in calls[0][1]
+    assert "normalized_profile" not in calls[0][1]
     assert calls[1][1]["sequence_id"] == 20
     assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
     assert calls[1][1]["normalize_video_orientation"] is True
     assert calls[1][1]["frame_selection"].frame_stride == 3
-    assert calls[1][1]["normalized_store"].dataset_root == (path_config.data_dir / "fake-dataset").resolve()
-    assert calls[1][1]["normalized_profile"].sequence_id == "advio-20"
-    assert "frame_stride" not in calls[1][1]["normalized_profile"].source_profile
-    assert "normalize_video_orientation" not in calls[1][1]["normalized_profile"].source_profile
+    assert "normalized_store" not in calls[1][1]
+    assert "normalized_profile" not in calls[1][1]
 
 
 def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orientation() -> None:

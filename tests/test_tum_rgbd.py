@@ -371,6 +371,16 @@ def test_dataset_sequence_source_reference_cloud_uses_manifest_frame_selection(t
     assert not (output_dir / "selected_associations.tum_rgbd.json").exists()
 
 
+def test_tum_rgbd_source_config_uses_raw_local_dataset_without_normalized_entry(tmp_path: Path) -> None:
+    _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", sequence_id="freiburg1_desk")
+    source = TumRgbdSourceConfig(sequence_id="freiburg1_desk").setup_target(path_config=PathConfig(root=tmp_path))
+
+    manifest = source.prepare_sequence_manifest(tmp_path / "prepared")
+
+    assert manifest.sequence_id == "freiburg1_desk"
+    assert manifest.rgb_dir.is_dir()
+
+
 def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path, image_shape=(480, 640))
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))

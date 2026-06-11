@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import prml_vslam.sources.replay.video as replay_video_module
+from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceSource,
@@ -568,6 +569,17 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     stream.disconnect()
     assert packet.T_world_camera is not None
     assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
+
+
+def test_advio_source_config_uses_raw_local_dataset_without_normalized_entry(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    source = AdvioSourceConfig(sequence_id="advio-15").setup_target(path_config=PathConfig(root=tmp_path))
+
+    manifest = source.prepare_sequence_manifest(tmp_path / "prepared")
+
+    assert manifest.sequence_id == "advio-15"
+    assert manifest.video_path is not None and manifest.video_path.is_file()
+    assert manifest.timestamps_path is not None and manifest.timestamps_path.is_file()
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:
