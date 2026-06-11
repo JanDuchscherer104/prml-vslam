@@ -107,6 +107,13 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates(mon
     monkeypatch.setattr(rerun_helpers, "log_pointcloud", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, **kwargs: calls.append(
+            ("point", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
         "log_line_strip3d",
         lambda stream, *, entity_path, positions_xyz, **kwargs: calls.append(
             ("trajectory", entity_path, *_timeline_state(stream))
@@ -135,7 +142,7 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates(mon
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
         ("pose", "world/slam/live/tracking/camera", 7, None),
-        ("pose", "world/slam/trajectory/raw/start", 7, None),
+        ("point", "world/slam/trajectory/raw/start", 7, None),
         ("trajectory", "world/slam/trajectory/raw", 7, None),
     ]
 
@@ -155,6 +162,13 @@ def test_policy_logs_live_model_and_keyed_history_on_frame_timeline(monkeypatch)
         "log_pointcloud",
         lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
             ("points", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, **kwargs: calls.append(
+            ("point", entity_path, *_timeline_state(stream))
         ),
     )
     monkeypatch.setattr(

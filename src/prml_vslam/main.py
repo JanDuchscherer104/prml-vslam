@@ -36,7 +36,6 @@ from prml_vslam.pipeline.demo import (
     load_run_config_toml,
     persist_advio_demo_run_config,
 )
-from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
 from prml_vslam.sources.contracts import ReferenceSource
@@ -692,64 +691,6 @@ def _run_config_loaded(*, run_cfg: RunConfig, path_config: PathConfig) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command("export-run")
-def export_run(
-    artifact_root: Annotated[
-        Path,
-        typer.Argument(help="Method-level run artifact root to export."),
-    ],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Output `.prmlrun.tar.gz` bundle path."),
-    ],
-) -> None:
-    """Export a completed run artifact root as a portable single-file bundle."""
-    try:
-        result = export_run_bundle(artifact_root, output)
-    except Exception as exc:
-        console.error(str(exc))
-        raise typer.Exit(code=1) from exc
-    console.plog(
-        {
-            "bundle_path": result.bundle_path.as_posix(),
-            "run_id": result.manifest.exported_run_id,
-            "artifact_label": result.manifest.artifact_label,
-            "file_count": len(result.manifest.files),
-        }
-    )
-
-
-@app.command("import-run")
-def import_run(
-    bundle_path: Annotated[
-        Path,
-        typer.Argument(help="Portable `.prmlrun.tar.gz` bundle to import."),
-    ],
-    output_dir: Annotated[
-        Path,
-        typer.Option("--output-dir", help="Artifacts directory that should receive the imported run."),
-    ] = Path(".artifacts"),
-    on_collision: Annotated[
-        RunBundleCollisionPolicy,
-        typer.Option("--on-collision", help="How to handle an existing target run root.", case_sensitive=False),
-    ] = RunBundleCollisionPolicy.FAIL,
-) -> None:
-    """Import a portable run bundle into the local artifacts tree."""
-    try:
-        result = import_run_bundle(bundle_path, output_dir=output_dir, collision_policy=on_collision)
-    except Exception as exc:
-        console.error(str(exc))
-        raise typer.Exit(code=1) from exc
-    console.plog(
-        {
-            "artifact_root": result.artifact_root.as_posix(),
-            "run_id": result.manifest.exported_run_id,
-            "artifact_label": result.manifest.artifact_label,
-            "warnings": result.warnings,
-        }
-    )
-
-
 @app.command("eval-trajectory")
 def eval_trajectory(
     artifact_root: Annotated[
@@ -774,8 +715,8 @@ def eval_trajectory(
     """Evaluate trajectory against a reference directly from an existing artifact root."""
     import json as _json
 
-    from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
     from prml_vslam.eval.services import TrajectoryEvaluationService
+    from prml_vslam.eval.trajectory_contracts import DiscoveredRun, SelectionSnapshot
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)
@@ -817,7 +758,15 @@ def eval_trajectory(
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog({"result_path": str(artifact.path), "stats": artifact.stats.model_dump(mode="json")})
+    console.plog(
+        {
+            "manifest_path": str((artifact.artifact_root / "evaluation" / "trajectory" / "manifest.json").resolve()),
+            "metrics_long_path": str(
+                (artifact.artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
+            ),
+            "error_series_count": len(artifact.error_series_paths),
+        }
+    )
 
 
 @app.command("write-demo-config")

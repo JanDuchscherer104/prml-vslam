@@ -37,7 +37,10 @@ class TrajectoryEvaluationStageConfig(StageConfig):
         return self.evaluation.baseline_source
 
     def planned_outputs(self, context: PipelinePlanContext) -> list[Path]:
-        return [context.run_paths.trajectory_metrics_path]
+        return [
+            context.run_paths.trajectory_evaluation_manifest_path,
+            context.run_paths.trajectory_metrics_long_path,
+        ]
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         slam_backend = context.run_config.stages.slam.backend

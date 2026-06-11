@@ -128,9 +128,10 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> SequenceManifest:
         """Build the normalized offline manifest for one dataset sequence."""
-        return self._sequence(sequence_id).to_sequence_manifest(
+        return self._sequence(sequence_id, config_overrides=sequence_config_overrides).to_sequence_manifest(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
@@ -141,9 +142,10 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> PreparedBenchmarkInputs:
         """Build prepared benchmark inputs for one dataset sequence."""
-        return self._sequence(sequence_id).to_benchmark_inputs(
+        return self._sequence(sequence_id, config_overrides=sequence_config_overrides).to_benchmark_inputs(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
@@ -153,22 +155,32 @@ class DatasetServiceBase:
         return self.scene(sequence_slug).sequence_id
 
     def build_offline_source(
-        self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
+        self,
+        *,
+        sequence_id: SequenceKey,
+        frame_selection: FrameSelectionConfig | None = None,
+        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> DatasetSequenceSource:
         """Build the dataset-backed offline source adapter for one sequence."""
-        return self._build_source(sequence_id=sequence_id, frame_selection=frame_selection)
+        return self._build_source(
+            sequence_id=sequence_id,
+            frame_selection=frame_selection,
+            sequence_config_overrides=sequence_config_overrides,
+        )
 
     def build_streaming_source(
         self,
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
+        sequence_config_overrides: dict[str, Any] | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
         """Build the dataset-backed streaming source adapter for one sequence."""
         return self._build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
+            sequence_config_overrides=sequence_config_overrides,
             **stream_kwargs,
         )
 
@@ -197,6 +209,7 @@ class DatasetServiceBase:
         frame_selection: FrameSelectionConfig | None = None,
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
+        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> DatasetSequenceSource:
         return DatasetSequenceSource(
             sequence_id=sequence_id,
@@ -206,11 +219,13 @@ class DatasetServiceBase:
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
+                sequence_config_overrides=sequence_config_overrides,
             ),
             benchmark=lambda value, output_dir, selection: self.build_benchmark_inputs(
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
+                sequence_config_overrides=sequence_config_overrides,
             ),
             stream=stream,
             replay_mode=replay_mode,
@@ -222,12 +237,14 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
+        sequence_config_overrides: dict[str, Any] | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
         return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
             replay_mode=replay_mode,
+            sequence_config_overrides=sequence_config_overrides,
             stream=lambda value, loop, replay_mode, selection: self.open_preview_stream(
                 sequence_id=value,
                 frame_selection=selection,
@@ -259,8 +276,11 @@ class DatasetServiceBase:
     def _preview_timestamps_ns(self, sequence: Any) -> list[int]:
         raise NotImplementedError
 
-    def _sequence(self, sequence_id: SequenceKey) -> Any:
+    def _sequence(self, sequence_id: SequenceKey, *, config_overrides: dict[str, Any] | None = None) -> Any:
+        config_payload = {"dataset_root": self.dataset_root, "sequence_id": sequence_id}
+        if config_overrides:
+            config_payload.update(config_overrides)
         return self.sequence_model(
-            config=self.sequence_config_model(dataset_root=self.dataset_root, sequence_id=sequence_id),
+            config=self.sequence_config_model(**config_payload),
             catalog=self.catalog,
         )

@@ -20,17 +20,9 @@ import pytest
 import ray
 from pydantic import ValidationError
 
-from prml_vslam.eval.contracts import (
-    ErrorSeries,
-    EvaluationArtifact,
-    MetricStats,
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentMode,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
-)
+from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
     FrameTransform,
@@ -869,6 +861,51 @@ def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_stores_reused_source_and_slam_results(tmp_path: Path) -> None:
+    reuse_paths = RunArtifactPaths.build(tmp_path / "old-run" / "vista")
+    reuse_paths.sequence_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.sequence_manifest_path.write_text(
+        SequenceManifest(sequence_id="reused-seq").model_dump_json(),
+        encoding="utf-8",
+    )
+    reuse_paths.benchmark_inputs_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.benchmark_inputs_path.write_text(PreparedBenchmarkInputs().model_dump_json(), encoding="utf-8")
+    reuse_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    reuse_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_config = RunConfig.from_toml(
+        f"""
+experiment_name = "reuse"
+mode = "offline"
+output_dir = "{tmp_path.as_posix()}"
+reuse_artifact_root = "{reuse_paths.artifact_root.as_posix()}"
+
+[stages.source]
+enabled = false
+
+[stages.slam]
+enabled = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+"""
+    )
+    plan = run_config.compile_plan(PathConfig(root=tmp_path))
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="reuse", namespace="pytest-unit")
+
+    coordinator._load_reused_results(run_config=run_config, plan=plan)
+
+    assert coordinator._result_store.require_sequence_manifest().sequence_id == "reused-seq"
+    slam = coordinator._result_store.require_slam_artifacts()
+    assert slam.trajectory_tum.path == reuse_paths.trajectory_path
+    assert slam.dense_points_ply is not None
+    assert slam.dense_points_ply.path == reuse_paths.dense_points_path
+
+
 def test_run_coordinator_forwards_packet_arrival_timestamp_to_slam_runtime() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
@@ -1112,7 +1149,7 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
 
 
-def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_only(
+def test_run_coordinator_routes_trajectory_evaluation_manifest_to_export_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1129,34 +1166,12 @@ def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_
         submitted.append((update, payload_resolver, destinations))
 
     monkeypatch.setattr(coordinator, "_submit_rerun_update", capture_rerun_update)
-    artifact = EvaluationArtifact(
-        path=tmp_path / "ape.json",
-        title="APE translation",
-        matched_pairs=1,
-        stats=MetricStats(rmse=0.1, mean=0.1, median=0.1, std=0.0, min=0.1, max=0.1, sse=0.01),
-        reference_path=tmp_path / "ref.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        semantics=TrajectoryEvaluationSemantics(
-            metric_id=TrajectoryMetricId.APE_TRANSLATION,
-            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-            sync_max_diff_s=0.01,
-        ),
-        trajectories=[
-            TrajectorySeries(
-                name="reference",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.0, 0.0, 0.0]], dtype=np.float64),
-            ),
-            TrajectorySeries(
-                name="estimate",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.1, 0.0, 0.0]], dtype=np.float64),
-            ),
-        ],
-        error_series=ErrorSeries(
-            timestamps_s=np.array([0.0], dtype=np.float64),
-            values=np.array([0.1], dtype=np.float64),
-        ),
+    artifact = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="demo",
+        reference_trajectories=[tmp_path / "ref.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
     )
 
     coordinator._record_stage_result(
@@ -1686,11 +1701,11 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
     coordinator._path_config = path_config
     coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
 
-    metrics_path = plan.artifact_root / "evaluation" / "trajectory_metrics.json"
+    manifest_path = plan.artifact_root / "evaluation" / "trajectory" / "manifest.json"
 
     def _fake_trajectory_run_offline(self, input_payload):
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text('{"title": "fake"}', encoding="utf-8")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text('{"run_id": "fake"}', encoding="utf-8")
         return StageResult(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             payload=None,
@@ -1699,7 +1714,13 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
                 status=StageStatus.COMPLETED,
                 config_hash="traj-cfg",
                 input_fingerprint="traj-inp",
-                artifacts={"trajectory_metrics": ArtifactRef(path=metrics_path, kind="json", fingerprint="metrics")},
+                artifacts={
+                    "trajectory_evaluation_manifest": ArtifactRef(
+                        path=manifest_path,
+                        kind="json",
+                        fingerprint="manifest",
+                    )
+                },
             ),
             final_runtime_status=StageRuntimeStatus(
                 stage_key=StageKey.TRAJECTORY_EVALUATION,
@@ -1721,8 +1742,8 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
 
     snapshot = coordinator.snapshot()
     assert snapshot.stage_outcomes[StageKey.TRAJECTORY_EVALUATION].status is StageStatus.COMPLETED
-    assert metrics_path.exists()
-    assert "trajectory_metrics" in snapshot.artifacts
+    assert manifest_path.exists()
+    assert "trajectory_evaluation_manifest" in snapshot.artifacts
     assert snapshot.state is RunState.COMPLETED
 
 

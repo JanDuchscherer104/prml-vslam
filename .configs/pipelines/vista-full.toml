@@ -18,8 +18,13 @@ enabled = true
     [stages.source.backend]
     source_id    = "tum_rgbd"
     sequence_id  = "freiburg3_large_cabinet"
-    frame_stride = 3
+    frame_stride = 1
     replay_mode  = "fast_as_possible"
+
+        [stages.source.backend.reference_cloud]
+        depth_stride_px = 8
+        max_points      = 100000
+        random_seed     = 17
 
 [stages.slam]
 enabled = true

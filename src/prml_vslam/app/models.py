@@ -186,11 +186,11 @@ class MetricsPageState(BaseData):
     sequence_slug: str | None = None
     """Selected dataset sequence, for example `advio-15`."""
 
-    run_root: Path | None = None
-    """Selected artifact root for one evaluated run."""
+    scope: str = "sequence"
+    """View scope: ``sequence`` for single-sequence review, ``dataset`` for dataset-wide summary."""
 
-    result_path: Path | None = None
-    """Most recently loaded or computed persisted result path."""
+    dataset_primary_metric: str = "ape/translation_part/rmse"
+    """Primary metric shown in the dataset-wide leaderboard, encoded as ``family/pose_relation/statistic``."""
 
 
 class ArtifactInspectorPageState(BaseData):

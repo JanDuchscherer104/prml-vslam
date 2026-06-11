@@ -12,7 +12,8 @@ This document is the concise source of truth for `prml_vslam.visualization`.
   - aligned reference clouds
   - original source RGB under `world/live/source/rgb`
   - live tracking and model transforms plus keyed historical transforms
-  - trajectory polylines plus optional per-pose SE3 axes
+  - trajectory polylines, compact start points, offline end-pose axes, and
+    optional per-pose SE3 axes
   - `rr.Pinhole` camera models
   - model-raster RGB camera images
   - metric `rr.DepthImage` payloads

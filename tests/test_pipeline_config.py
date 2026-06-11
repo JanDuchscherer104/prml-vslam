@@ -20,6 +20,7 @@ from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
+    ReferenceCloudSamplingConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
@@ -264,7 +265,7 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
 
     assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
     assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
-    assert run_config.stages.source.backend.frame_stride == 3
+    assert run_config.stages.source.backend.frame_stride == 1
     assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
     assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
@@ -344,6 +345,11 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "freiburg1_room",
                 "target_fps": 15.0,
                 "replay_mode": "fast_as_possible",
+                "reference_cloud": {
+                    "depth_stride_px": 4,
+                    "max_points": 5000,
+                    "random_seed": 23,
+                },
             }
         }
     )
@@ -373,6 +379,10 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     assert isinstance(video.backend, VideoSourceConfig)
     assert isinstance(tum.backend, TumRgbdSourceConfig)
     assert tum.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
+    assert isinstance(tum.backend.reference_cloud, ReferenceCloudSamplingConfig)
+    assert tum.backend.reference_cloud.depth_stride_px == 4
+    assert tum.backend.reference_cloud.max_points == 5000
+    assert tum.backend.reference_cloud.random_seed == 23
     assert isinstance(advio.backend, AdvioSourceConfig)
     assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
     assert advio.backend.replay_mode is ReplayMode.REALTIME
