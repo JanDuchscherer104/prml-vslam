@@ -14,6 +14,7 @@ from prml_vslam.app.models import (
     AppPageId,
     AppState,
     ArtifactInspectorPageState,
+    MetricsPageState,
     PipelinePageState,
     PipelineSourceId,
     PipelineTelemetryMetricId,
@@ -52,6 +53,13 @@ from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
+
+
+def test_metrics_page_state_preserves_persisted_view_fields() -> None:
+    state = MetricsPageState()
+
+    assert state.scope == "sequence"
+    assert state.dataset_primary_metric == "ape/translation_part/rmse"
 
 
 def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:

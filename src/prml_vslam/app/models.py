@@ -261,8 +261,14 @@ class MetricsPageState(BaseData):
     dataset: DatasetId = DatasetId.ADVIO
     """Selected dataset."""
 
+    scope: str = "sequence"
+    """Selected metrics page view scope."""
+
     sequence_slug: str | None = None
     """Selected dataset sequence, for example `advio-15`."""
+
+    dataset_primary_metric: str = "ape/translation_part/rmse"
+    """Encoded primary metric used for dataset-level summaries."""
 
     run_root: Path | None = None
     """Selected artifact root for one evaluated run."""
