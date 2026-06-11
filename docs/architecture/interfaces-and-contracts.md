@@ -89,6 +89,16 @@ summaries. Normalized `.rrd` recordings are viewer/export artifacts, not the
 scientific source of truth. Bulk arrays stay out of persisted/public contracts
 and move through repo-owned opaque handles instead.
 
+Offline dataset sources may use source-owned normalized store entries at
+`.data/<dataset>/.normalized/<sequence>/<profile-key>/`. Each entry is keyed by
+dataset id, sequence id, source id, and byte-affecting source settings; sampling
+and replay pacing settings are excluded so one full-frame entry can serve many
+pipeline runs. Store entries persist `entry.json`, `sequence_manifest.json`,
+`benchmark_inputs.json`, and the referenced payload directories. Run-local
+frame sampling is represented by sidecar index files, including
+`SequenceManifest.source_frame_indices_path`, instead of copying RGB-D frames
+into each artifact root.
+
 Source-stage visualization is represented by neutral `VisualizationItem`
 values. The source stage may request logging of prepared reference trajectories
 and reference clouds, but Rerun entity paths and SDK calls stay in the sink

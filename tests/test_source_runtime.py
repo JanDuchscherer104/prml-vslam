@@ -27,6 +27,7 @@ from prml_vslam.sources.config import (
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    normalized_profile_for_source_config,
 )
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
@@ -37,6 +38,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
 from prml_vslam.sources.replay import ReplayMode
@@ -526,8 +528,11 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     class FakeDatasetService:
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
+            self.dataset_root = path_config.data_dir / "fake-dataset"
 
         def resolve_sequence_id(self, sequence_id: str) -> str:
+            if sequence_id == "advio-20":
+                return 20
             return f"resolved-{sequence_id}"
 
         def build_streaming_source(self, **kwargs):
@@ -554,10 +559,45 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
     assert calls[0][1]["frame_selection"].target_fps == 15.0
     assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[1][1]["sequence_id"] == "resolved-advio-20"
+    assert calls[0][1]["normalized_store"].dataset_root == (path_config.data_dir / "fake-dataset").resolve()
+    assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
+    assert "target_fps" not in calls[0][1]["normalized_profile"].source_profile
+    assert calls[1][1]["sequence_id"] == 20
     assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
     assert calls[1][1]["normalize_video_orientation"] is True
     assert calls[1][1]["frame_selection"].frame_stride == 3
+    assert calls[1][1]["normalized_store"].dataset_root == (path_config.data_dir / "fake-dataset").resolve()
+    assert calls[1][1]["normalized_profile"].sequence_id == "advio-20"
+    assert "frame_stride" not in calls[1][1]["normalized_profile"].source_profile
+    assert "normalize_video_orientation" not in calls[1][1]["normalized_profile"].source_profile
+
+
+def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orientation() -> None:
+    source = AdvioSourceConfig(sequence_id="advio-20", normalize_video_orientation=True)
+    rotated_source = source.model_copy(update={"normalize_video_orientation": False})
+    sampled_source = source.model_copy(update={"frame_stride": 3, "replay_mode": ReplayMode.FAST_AS_POSSIBLE})
+
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=source.source_id,
+        payload=source.model_dump(mode="json"),
+    )
+    rotated_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=rotated_source.source_id,
+        payload=rotated_source.model_dump(mode="json"),
+    )
+    sampled_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=sampled_source.source_id,
+        payload=sampled_source.model_dump(mode="json"),
+    )
+
+    assert profile.profile_key == rotated_profile.profile_key
+    assert profile.profile_key == sampled_profile.profile_key
 
 
 def test_record3d_source_config_constructs_sampled_live_adapter(tmp_path: Path, monkeypatch) -> None:

@@ -18,6 +18,8 @@ from prml_vslam.app.models import (
     PipelineSourceId,
     PipelineTelemetryMetricId,
     PipelineTelemetryViewMode,
+    Record3DDatasetPageState,
+    Record3DDatasetPoseSource,
 )
 from prml_vslam.app.pipeline_controller import (
     build_pipeline_snapshot_render_model,
@@ -119,6 +121,38 @@ def test_live_action_slot_call_sites_define_unique_stable_keys() -> None:
     assert len(keys) == len(set(keys))
 
 
+def test_dataset_loop_preview_widgets_define_dataset_scoped_keys() -> None:
+    tree = ast.parse(Path("src/prml_vslam/app/pages/datasets.py").read_text(encoding="utf-8"))
+    helper = _function_def(tree, "_render_loop_preview_impl")
+    checked_calls = 0
+
+    for node in ast.walk(helper):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute) or node.func.attr not in {"selectbox", "toggle"}:
+            continue
+        if not isinstance(node.func.value, ast.Name) or node.func.value.id != "st":
+            continue
+        key_values = [keyword.value for keyword in node.keywords if keyword.arg == "key"]
+        assert len(key_values) == 1, f"_render_loop_preview_impl:{node.lineno} must pass one key="
+        assert _uses_action_key_prefix(key_values[0]), (
+            f"_render_loop_preview_impl:{node.lineno} must scope widget keys by action_key_prefix"
+        )
+        checked_calls += 1
+
+    assert checked_calls == 3
+
+
+def _function_def(tree: ast.AST, function_name: str) -> ast.FunctionDef:
+    matches = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == function_name]
+    assert len(matches) == 1, f"Expected exactly one {function_name} definition"
+    return matches[0]
+
+
+def _uses_action_key_prefix(node: ast.AST) -> bool:
+    return any(isinstance(child, ast.Name) and child.id == "action_key_prefix" for child in ast.walk(node))
+
+
 def _literal_keywords_for_calls(tree: ast.AST, function_name: str, keyword_name: str) -> list[str]:
     values: list[str] = []
     for node in ast.walk(tree):
@@ -182,6 +216,36 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert reloaded.artifacts.comparison_target_triangles == 10_000
     assert reloaded.artifacts.rerun_validation_max_keyed_clouds == 7
     assert reloaded.artifacts.rerun_validation_max_render_points == 8_000
+
+
+def test_record3d_dataset_state_round_trips_separately_from_live_state() -> None:
+    state = AppState(
+        record3d_dataset=Record3DDatasetPageState(
+            selected_sequence_ids=[1, 3],
+            overwrite_existing=True,
+            explorer_sequence_id="2026-06-03--18-26-32",
+            preview_sequence_id="2026-06-03--18-29-08",
+            preview_pose_source=Record3DDatasetPoseSource.ARKIT,
+            preview_include_depth=False,
+            preview_is_running=True,
+        )
+    )
+    state.record3d.transport = Record3DTransportId.WIFI
+    state.record3d.wifi_device_address = "record3d.local"
+    state.record3d.is_running = True
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.record3d.transport is Record3DTransportId.WIFI
+    assert reloaded.record3d.wifi_device_address == "record3d.local"
+    assert reloaded.record3d.is_running is True
+    assert reloaded.record3d_dataset.selected_sequence_ids == [1, 3]
+    assert reloaded.record3d_dataset.overwrite_existing is True
+    assert reloaded.record3d_dataset.explorer_sequence_id == "2026-06-03--18-26-32"
+    assert reloaded.record3d_dataset.preview_sequence_id == "2026-06-03--18-29-08"
+    assert reloaded.record3d_dataset.preview_pose_source is Record3DDatasetPoseSource.ARKIT
+    assert reloaded.record3d_dataset.preview_include_depth is False
+    assert reloaded.record3d_dataset.preview_is_running is True
 
 
 def test_build_run_config_from_action_derives_backend_kind(tmp_path: Path) -> None:

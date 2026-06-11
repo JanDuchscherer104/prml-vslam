@@ -48,9 +48,19 @@ Use this file for package-root ownership rules and cross-package contract constr
     dataset catalogs, replay adapters, Record3D transports, sequence
     materialization, source-stage outputs, and prepared reference identifiers
     and DTOs such as `PreparedBenchmarkInputs`
-  - preserves the currently supported dataset modalities and dataset-specific
-    auxiliary/reference assets, including ADVIO provider trajectories and TUM
-    RGB-D reference-cloud preparation
+  - owns reusable normalized dataset stores under
+    `.data/<dataset>/.normalized/<sequence>/<profile-key>/`; store entries
+    persist full-frame source payloads once plus source-owned long-form
+    Core/Motion statistics and metadata tables, while run-local sampling policy
+    such as `frame_stride` and `target_fps` is applied by readers through
+    lightweight selected-index sidecars
+  - keeps normalized entry layout canonical: the common single RGB-D observation
+    sequence lives at `<entry>/observations/`, indexed observation subdirectories
+    are used only for multiple sequences, and Record3D depth stays benchmark
+    observation material without duplicating matching RGB payloads
+  - preserves full-scene dataset fetches and dataset-specific auxiliary/reference
+    assets, including ADVIO provider trajectories and TUM RGB-D reference-cloud
+    preparation
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
   - may decimate geometry sent to Rerun observer sinks for viewer performance;
@@ -89,7 +99,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
   are distinct shared geometry contracts.
 - ADVIO does not prepare point-cloud benchmark references and does not expose
-  legacy auxiliary device streams as supported modalities or pose providers.
+  legacy auxiliary device streams as supported source data or pose providers.
 - Repository-prepared TUM RGB-D reference clouds must be built from the same
   persisted RGB-D observation index consumed by the method input path. Any point
   budget or Rerun decimation must happen after all method frames have

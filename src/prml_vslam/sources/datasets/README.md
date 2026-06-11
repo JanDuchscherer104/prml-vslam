@@ -6,14 +6,15 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 
 ## Current Implementation
 
-This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
-and TUM RGB-D.
+This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO,
+TUM RGB-D, and Record3D.
 
 Current simplification work must preserve the supported dataset surface. In particular:
 
-- all currently supported modalities remain in scope
+- full-scene dataset downloads remain the only supported local fetch surface
 - ADVIO remains trajectory-only for benchmark inputs
 - TUM RGB-D dataset-provided reference cloud preparation remains in scope
+- Record3D downloads cache full `.r3d` archives and derive RGB-D observations plus reference clouds from those archives
 - the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
 
 The current ADVIO stack includes:
@@ -43,6 +44,13 @@ The TUM RGB-D stack mirrors the same service shape where practical:
 - TGZ download/extraction flows in `tum_rgbd/tum_rgbd_download.py`
 - sequence manifest and benchmark input preparation in `tum_rgbd/tum_rgbd_sequence.py`
 - image-sequence loop preview in `tum_rgbd/tum_rgbd_replay_adapter.py`
+
+The Record3D stack follows the same dataset-service boundary for full `.r3d` archives:
+
+- static Zenodo catalog and local archive path resolution in `record3d/record3d_layout.py`
+- full-archive download and SHA-256 verification in `record3d/record3d_download.py`
+- RGB-D frame decoding, trajectory preparation, and reference-cloud generation in `record3d/record3d_sequence.py`
+- replay and offline source integration through `record3d/record3d_service.py`
 
 Package-local guides:
 
@@ -149,7 +157,7 @@ The most important dataset-owned DTOs and outputs are:
 - [AdvioDatasetService](./advio/advio_service.py:66)
   - summarize the local dataset state
   - inspect scenes
-  - download selected modalities
+  - download selected full scenes
   - resolve dataset sequence ids for pipeline execution
   - prepare normalized sequence manifests and benchmark inputs
   - open a replay stream for the app or pipeline surfaces
@@ -167,6 +175,33 @@ The most important dataset-owned DTOs and outputs are:
   - open one RGB-D image-sequence replay stream
   - prepare one `SequenceManifest`
   - prepare one `PreparedBenchmarkInputs`
+
+## Normalized Store Batch Builds
+
+Dataset-backed sources share one canonical `NormalizedDatasetStore` under
+`.data/<dataset>/.normalized/<sequence>/<profile-key>/`. The store persists
+full-frame source payloads once, plus source-owned long-form Core/Motion
+statistics and metadata tables. Runtime sampling options such as
+`frame_stride` and `target_fps` remain read-time policy and do not create
+stride-specific stored payloads.
+
+A normalized entry stores the common single RGB-D observation sequence directly
+under `<entry>/observations/`. Indexed child directories such as
+`<entry>/observations/0/` are reserved only for entries that genuinely carry
+multiple observation sequences. Record3D depth maps remain benchmark observation
+payloads rather than primary `SequenceManifest` input, but the matching RGB
+frames are shared with the source manifest instead of duplicated under
+`benchmark/observations/`.
+
+To build or refresh the benchmark store for locally offline-ready scenes, use
+the checked-in seed config:
+
+```bash
+prml-vslam dataset normalize-batch .configs/datasets/normalize-benchmark.toml
+```
+
+The Streamlit Datasets page and `prml-vslam dataset stats` read those persisted
+records and CSV tables; they do not normalize datasets during display.
 
 ## Typical Usage
 
@@ -232,7 +267,7 @@ statuses = service.local_scene_statuses()
 ## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
-- Simplification in this package must not drop supported modalities or TUM RGB-D reference-cloud preparation.
+- Simplification in this package must not reintroduce partial modality downloads or drop TUM RGB-D reference-cloud preparation.
 - Generic replay mechanics stay in `prml_vslam.sources.replay`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
   corresponding sequence classes over rebuilding dataset path, manifest, or

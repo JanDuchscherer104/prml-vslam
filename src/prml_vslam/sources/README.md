@@ -61,6 +61,7 @@ classDiagram
     class TumRgbdSourceConfig {
         +source_id = "tum_rgbd"
         +sequence_id
+        +reference_cloud
         +replay_mode
     }
 
@@ -70,6 +71,14 @@ classDiagram
         +dataset_serving
         +replay_mode
         +normalize_video_orientation
+    }
+
+    class Record3DDatasetSourceConfig {
+        +source_id = "record3d_dataset"
+        +sequence_id
+        +materialization
+        +reference_cloud
+        +replay_mode
     }
 
     class Record3DSourceConfig {
@@ -84,13 +93,15 @@ classDiagram
     SourceBackendConfig <|-- VideoSourceConfig
     SourceBackendConfig <|-- TumRgbdSourceConfig
     SourceBackendConfig <|-- AdvioSourceConfig
+    SourceBackendConfig <|-- Record3DDatasetSourceConfig
     SourceBackendConfig <|-- Record3DSourceConfig
 ```
 
 `frame_stride` and `target_fps` are shared source backend policy fields. Dataset
-sources apply them through timestamp-aware frame selection, raw video applies
-them during frame materialization, and Record3D treats them as best-effort
-sampling before the SLAM hot path.
+sources apply them through timestamp-aware frame selection before manifest,
+observation-sequence, stream, and reference-cloud materialization. Shared
+dataset `reference_cloud` config only controls depth pixel sampling, point
+capping, random sampling seed, and dataset-specific confidence filtering.
 
 ## Source I/O Contracts
 
