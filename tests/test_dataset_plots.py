@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import plotly.graph_objects as go
+import pytest
 from evo.core import metrics
 
 from prml_vslam.eval.dataset_aggregation import (
@@ -113,6 +114,41 @@ def test_build_grouped_bar_per_sequence_returns_one_bar_trace_per_source() -> No
     assert "vista/raw" in trace_names
     assert "arcore/source_native" in trace_names
     assert figure.layout.barmode == "group"
+
+
+def test_build_grouped_bar_per_sequence_two_runs_on_same_cell_are_averaged() -> None:
+    """Two runs on the same (sequence, source) must be averaged, not last-write-wins."""
+    rows = [
+        PerSequenceRow(
+            sequence_id="advio-01",
+            run_id="run-a",
+            estimate_source_base="vista",
+            coordinate_status="raw",
+            metric_family="ape",
+            pose_relation=metrics.PoseRelation.translation_part,
+            statistic="rmse",
+            value=0.2,
+            unit="m",
+            matched_pairs=10,
+        ),
+        PerSequenceRow(
+            sequence_id="advio-01",
+            run_id="run-b",
+            estimate_source_base="vista",
+            coordinate_status="raw",
+            metric_family="ape",
+            pose_relation=metrics.PoseRelation.translation_part,
+            statistic="rmse",
+            value=0.6,
+            unit="m",
+            matched_pairs=10,
+        ),
+    ]
+
+    figure = build_grouped_bar_per_sequence(rows)
+
+    assert len(figure.data) == 1
+    assert figure.data[0].y[0] == pytest.approx(0.4)
 
 
 def test_build_grouped_bar_per_sequence_x_axis_contains_all_sequences() -> None:

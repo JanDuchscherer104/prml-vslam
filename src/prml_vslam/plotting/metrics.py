@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 from collections import defaultdict
 from typing import Protocol
 
@@ -137,11 +138,18 @@ def build_dataset_heatmap(data: HeatmapData) -> go.Figure:
 
 
 def build_grouped_bar_per_sequence(rows: list[PerSequenceRow]) -> go.Figure:
-    """Build a grouped bar chart of metric values by sequence and estimate source."""
-    groups: dict[str, dict[str, float]] = defaultdict(dict)
+    """Build a grouped bar chart of metric values by sequence and estimate source.
+
+    Multiple runs on the same (sequence, source) cell are averaged so no run
+    silently overwrites another.
+    """
+    raw: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         source_label = f"{row.estimate_source_base}/{row.coordinate_status}"
-        groups[source_label][row.sequence_id] = row.value
+        raw[source_label][row.sequence_id].append(row.value)
+    groups: dict[str, dict[str, float]] = {
+        src: {seq_id: statistics.mean(vals) for seq_id, vals in seq_map.items()} for src, seq_map in raw.items()
+    }
 
     all_sequences = sorted({row.sequence_id for row in rows})
     colors = DEFAULT_COLORS[np.arange(len(groups), dtype=np.intp) % DEFAULT_COLORS.size]
