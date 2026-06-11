@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from evo.core import metrics
 
 from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
@@ -541,44 +542,64 @@ class RerunLoggingPolicy:
                 evaluation_case.candidate_path,
             )
             return
+        is_translation_metric = evaluation_case.pose_relation is metrics.PoseRelation.translation_part
+        is_rotation_metric = evaluation_case.pose_relation is metrics.PoseRelation.rotation_angle_deg
+        if is_translation_metric:
+            relation_token = "translation"
+        elif is_rotation_metric:
+            relation_token = "rotation"
+        else:
+            relation_token = _entity_token(evaluation_case.pose_relation.name)
+
+        metric_id = f"{evaluation_case.metric_family}.{relation_token}"
+        if evaluation_case.metric_family == "rpe":
+            if evaluation_case.delta is None or evaluation_case.delta_unit is None:
+                delta_token = "delta_unspecified"
+            else:
+                delta_value = f"{evaluation_case.delta:g}".replace(".", "_")
+                delta_token = f"delta_{delta_value}_{_entity_token(evaluation_case.delta_unit)}"
+            metric_id = f"rpe.{relation_token}.{delta_token}"
+
+        error_leaf = "rotation_deg" if is_rotation_metric else "translation_m"
         metric_root = RERUN_SCENE.evaluation_case_root(
             reference_source=evaluation_case.reference_source,
-            metric_id=_evaluation_metric_id(evaluation_case),
+            metric_id=metric_id,
             candidate_source=evaluation_case.candidate_source,
             candidate_coordinate_status=evaluation_case.candidate_coordinate_status,
         )
-        rerun_helpers.log_line_strip3d(
-            stream,
-            entity_path=f"{metric_root}/reference/trajectory",
-            positions_xyz=reference_positions_xyz[:matched_pairs],
-            color_rgb=RERUN_SCENE.reference_color(evaluation_case.reference_source),
-            static=True,
-        )
-        rerun_helpers.log_line_strip3d(
-            stream,
-            entity_path=f"{metric_root}/estimate/trajectory",
-            positions_xyz=estimate_positions_xyz[:matched_pairs],
-            color_rgb=_evaluation_candidate_color(evaluation_case.candidate_source),
-            static=True,
-        )
-        rerun_helpers.log_points3d(
-            stream,
-            entity_path=f"{metric_root}/estimate/ape_points",
-            points_xyz=estimate_positions_xyz[:matched_pairs],
-            colors=rerun_helpers.ape_error_colors(error_values[:matched_pairs]),
-            radii=rerun_helpers.POINT_CLOUD_RADII,
-            static=True,
-        )
-        rerun_helpers.log_correspondence_strips3d(
-            stream,
-            entity_path=f"{metric_root}/correspondences",
-            reference_positions_xyz=reference_positions_xyz[:matched_pairs],
-            estimate_positions_xyz=estimate_positions_xyz[:matched_pairs],
-            static=True,
-        )
+        if evaluation_case.metric_family == "ape" and is_translation_metric:
+            rerun_helpers.log_line_strip3d(
+                stream,
+                entity_path=f"{metric_root}/reference/trajectory",
+                positions_xyz=reference_positions_xyz[:matched_pairs],
+                color_rgb=RERUN_SCENE.reference_color(evaluation_case.reference_source),
+                static=True,
+            )
+            rerun_helpers.log_line_strip3d(
+                stream,
+                entity_path=f"{metric_root}/estimate/trajectory",
+                positions_xyz=estimate_positions_xyz[:matched_pairs],
+                color_rgb=_evaluation_candidate_color(evaluation_case.candidate_source),
+                static=True,
+            )
+            rerun_helpers.log_points3d(
+                stream,
+                entity_path=f"{metric_root}/estimate/ape_points",
+                points_xyz=estimate_positions_xyz[:matched_pairs],
+                colors=rerun_helpers.ape_error_colors(error_values[:matched_pairs]),
+                radii=rerun_helpers.POINT_CLOUD_RADII,
+                static=True,
+            )
+            rerun_helpers.log_correspondence_strips3d(
+                stream,
+                entity_path=f"{metric_root}/correspondences",
+                reference_positions_xyz=reference_positions_xyz[:matched_pairs],
+                estimate_positions_xyz=estimate_positions_xyz[:matched_pairs],
+                static=True,
+            )
         rerun_helpers.log_scalar_series(
             stream,
-            entity_path=f"{metric_root}/error/translation_m",
+            entity_path=f"{metric_root}/error/{error_leaf}",
             timestamps_s=timestamps_s[:matched_pairs],
             values=error_values[:matched_pairs],
             static=False,
@@ -759,12 +780,6 @@ def _image_plane_distance_for_role(role: str) -> float | None:
     if role == ROLE_SOURCE_PINHOLE:
         return SOURCE_IMAGE_PLANE_DISTANCE
     return None
-
-
-def _evaluation_metric_id(evaluation_case: TrajectoryEvaluationCase) -> str:
-    if evaluation_case.metric_family == "ape" and evaluation_case.pose_relation is not None:
-        return "ape.translation"
-    return f"{evaluation_case.metric_family}.{str(evaluation_case.pose_relation).replace(' ', '_')}"
 
 
 def _evaluation_candidate_color(candidate_source: str) -> np.ndarray:
