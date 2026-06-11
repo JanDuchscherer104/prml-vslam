@@ -54,6 +54,12 @@ class Record3DSceneMetadata(BaseData):
     archive_size_bytes: int = 0
 
 
+class Record3DModality(StrEnum):
+    """Local Record3D artifact classes tracked by the shared dataset contracts."""
+
+    ARCHIVE = "archive"
+
+
 class Record3DCatalog(BaseData):
     """Small catalog wrapper used by the shared dataset service base."""
 
@@ -83,12 +89,16 @@ class Record3DDownloadRequest(BaseConfig):
         return normalized
 
 
-class Record3DDownloadResult(DatasetDownloadResult[int]):
+class Record3DDownloadResult(DatasetDownloadResult[int, Record3DModality]):
     """Summary of one explicit Record3D archive download action."""
 
+    modalities: list[Record3DModality] = Field(default_factory=lambda: [Record3DModality.ARCHIVE])
 
-class Record3DLocalSceneStatus(LocalSceneStatus[Record3DSceneMetadata]):
+
+class Record3DLocalSceneStatus(LocalSceneStatus[Record3DSceneMetadata, Record3DModality]):
     """Local availability summary for one Record3D archive."""
+
+    local_modalities: list[Record3DModality] = Field(default_factory=list)
 
 
 class Record3DDatasetSummary(DatasetSummary):
@@ -102,6 +112,7 @@ __all__ = [
     "Record3DDownloadResult",
     "Record3DLocalSceneStatus",
     "Record3DMaterializationConfig",
+    "Record3DModality",
     "Record3DPoseFrameMode",
     "Record3DSceneMetadata",
     "Record3DSequenceConfig",

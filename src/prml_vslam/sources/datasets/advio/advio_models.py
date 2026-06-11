@@ -185,13 +185,13 @@ class AdvioDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class AdvioDownloadResult(DatasetDownloadResult[int]):
+class AdvioDownloadResult(DatasetDownloadResult[int, AdvioModality]):
     """Summary of one explicit ADVIO download action."""
 
     modalities: list[AdvioModality] = Field(default_factory=list)
 
 
-class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata]):
+class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata, AdvioModality]):
     """Local availability summary for one ADVIO scene."""
 
     local_modalities: list[AdvioModality] = Field(default_factory=list)

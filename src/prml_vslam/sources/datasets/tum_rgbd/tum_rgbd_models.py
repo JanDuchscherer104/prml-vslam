@@ -116,13 +116,13 @@ class TumRgbdDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class TumRgbdDownloadResult(DatasetDownloadResult[str]):
+class TumRgbdDownloadResult(DatasetDownloadResult[str, TumRgbdModality]):
     """Summary of one explicit TUM RGB-D download action."""
 
     modalities: list[TumRgbdModality] = Field(default_factory=list)
 
 
-class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata]):
+class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata, TumRgbdModality]):
     """Local availability summary for one TUM RGB-D scene."""
 
     local_modalities: list[TumRgbdModality] = Field(default_factory=list)

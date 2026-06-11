@@ -244,7 +244,9 @@ def normalized_profile_for_source_config(
 ) -> NormalizedDatasetProfile:
     """Build the normalized-store profile for one dataset source config."""
     source_profile = {
-        key: value for key, value in payload.items() if key not in {"frame_stride", "target_fps", "replay_mode"}
+        key: value
+        for key, value in payload.items()
+        if key not in {"frame_stride", "target_fps", "replay_mode", "normalize_video_orientation"}
     }
     return normalized_dataset_profile(
         dataset_id=dataset_id,
