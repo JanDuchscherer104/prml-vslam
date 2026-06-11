@@ -9,26 +9,21 @@ import numpy as np
 import streamlit as st
 from evo.core import metrics
 
-from prml_vslam.eval.dataset_aggregation import (
-    MetricFilter,
-    build_coverage_matrix,
-    build_heatmap_data,
-    build_leaderboard,
-    build_per_sequence_table,
-)
+from prml_vslam.eval.dataset_aggregation import (MetricFilter,
+                                                 build_coverage_matrix,
+                                                 build_heatmap_data,
+                                                 build_leaderboard,
+                                                 build_per_sequence_table)
 from prml_vslam.eval.query import RunTrajectoryEvaluation
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
-from prml_vslam.plotting.metrics import (
-    build_coverage_chart,
-    build_dataset_heatmap,
-    build_trajectory_error_box,
-    build_trajectory_error_cdf,
-    build_trajectory_rmse_bar,
-    build_violin_by_method,
-)
-from prml_vslam.plotting.metrics import (
-    build_grouped_bar_per_sequence as _plot_grouped_bar,
-)
+from prml_vslam.plotting.metrics import (build_coverage_chart,
+                                         build_dataset_heatmap)
+from prml_vslam.plotting.metrics import \
+    build_grouped_bar_per_sequence as _plot_grouped_bar
+from prml_vslam.plotting.metrics import (build_trajectory_error_box,
+                                         build_trajectory_error_cdf,
+                                         build_trajectory_rmse_bar,
+                                         build_violin_by_method)
 from prml_vslam.sources.datasets.contracts import DatasetId
 
 from ..state import save_model_updates
@@ -242,7 +237,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
         if coverage_matrix.cells:
             with st.container(border=True):
                 st.subheader("Run Coverage")
-                st.plotly_chart(build_coverage_chart(coverage_matrix), use_container_width=True)
+                st.plotly_chart(build_coverage_chart(coverage_matrix), width="stretch")
         return
 
     total_skipped = sum(c.skipped_metric_count for c in dataset_selection.coverage)
@@ -281,7 +276,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     coverage_matrix = build_coverage_matrix(dataset_selection)
     with st.container(border=True):
         st.subheader("Coverage")
-        st.plotly_chart(build_coverage_chart(coverage_matrix), use_container_width=True)
+        st.plotly_chart(build_coverage_chart(coverage_matrix), width="stretch")
 
     if per_seq_rows:
         leaderboard = build_leaderboard(per_seq_rows, n_total_sequences=n_total)
@@ -302,7 +297,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
                     for r in leaderboard
                 ],
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )
 
         heatmap_data = build_heatmap_data(
@@ -312,11 +307,11 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
         )
         with st.container(border=True):
             st.subheader("Sequence Heatmap")
-            st.plotly_chart(build_dataset_heatmap(heatmap_data), use_container_width=True)
+            st.plotly_chart(build_dataset_heatmap(heatmap_data), width="stretch")
 
         col_bar, col_violin = st.columns(2, gap="large")
-        col_bar.plotly_chart(_plot_grouped_bar(per_seq_rows), use_container_width=True)
-        col_violin.plotly_chart(build_violin_by_method(per_seq_rows), use_container_width=True)
+        col_bar.plotly_chart(_plot_grouped_bar(per_seq_rows), width="stretch")
+        col_violin.plotly_chart(build_violin_by_method(per_seq_rows), width="stretch")
     else:
         st.info("No metric rows match the selected primary metric. Try selecting a different metric.")
 
