@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
@@ -26,26 +25,6 @@ class _RelativePathSpec:
         names = self.names or (str(getattr(scene, self.scene_attr or "")),)
         return next((path for name in names if (path := directory / name).exists()), None)
 
-    def matches(self, relative_path: PurePosixPath, scene: AdvioSceneMetadata) -> bool:
-        if relative_path.parts[: len(self.parent_parts)] != self.parent_parts:
-            return False
-        if self.recurse:
-            return True
-        remainder = relative_path.parts[len(self.parent_parts) :]
-        if len(remainder) != 1:
-            return False
-        if self.glob_pattern is not None:
-            return fnmatch(remainder[0], self.glob_pattern)
-        names = self.names or (str(getattr(scene, self.scene_attr or "")),)
-        return remainder[0] in names
-
-
-@dataclass(frozen=True)
-class _ModalitySpec:
-    sequence_specs: tuple[_RelativePathSpec, ...] = ()
-    dataset_specs: tuple[_RelativePathSpec, ...] = ()
-    archive_specs: tuple[_RelativePathSpec, ...] = ()
-
 
 _CALIBRATION = _RelativePathSpec(("calibration",), scene_attr="calibration_name")
 _GROUND_TRUTH_POSE = _RelativePathSpec(("ground-truth",), names=("poses.csv", "pose.csv"))
@@ -59,34 +38,30 @@ _IPHONE_MAGNETOMETER = _RelativePathSpec(("iphone",), names=("magnetometer.csv",
 _IPHONE_BAROMETER = _RelativePathSpec(("iphone",), names=("barometer.csv",))
 _IPHONE_ARKIT = _RelativePathSpec(("iphone",), names=("arkit.csv",))
 _PIXEL_ARCORE = _RelativePathSpec(("pixel",), names=("arcore.csv",))
+_STREAMING_SEQUENCE_SPECS = (_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS, _IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV)
+_OFFLINE_SEQUENCE_SPECS = (
+    *_STREAMING_SEQUENCE_SPECS,
+    _IPHONE_PLATFORM_LOCATION,
+    _IPHONE_ACCELEROMETER,
+    _IPHONE_GYROSCOPE,
+    _IPHONE_MAGNETOMETER,
+    _IPHONE_BAROMETER,
+    _IPHONE_ARKIT,
+    _PIXEL_ARCORE,
+)
 _MODALITY_SPECS = {
-    AdvioModality.CALIBRATION: _ModalitySpec(dataset_specs=(_CALIBRATION,)),
-    AdvioModality.GROUND_TRUTH: _ModalitySpec(
-        sequence_specs=(_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
-        archive_specs=(_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
+    AdvioModality.CALIBRATION: (_CALIBRATION,),
+    AdvioModality.GROUND_TRUTH: (_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
+    AdvioModality.IPHONE_VIDEO: (_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
+    AdvioModality.IPHONE_SENSORS: (
+        _IPHONE_PLATFORM_LOCATION,
+        _IPHONE_ACCELEROMETER,
+        _IPHONE_GYROSCOPE,
+        _IPHONE_MAGNETOMETER,
+        _IPHONE_BAROMETER,
     ),
-    AdvioModality.IPHONE_VIDEO: _ModalitySpec(
-        sequence_specs=(_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
-        archive_specs=(_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
-    ),
-    AdvioModality.IPHONE_SENSORS: _ModalitySpec(
-        sequence_specs=(
-            _IPHONE_PLATFORM_LOCATION,
-            _IPHONE_ACCELEROMETER,
-            _IPHONE_GYROSCOPE,
-            _IPHONE_MAGNETOMETER,
-            _IPHONE_BAROMETER,
-        ),
-        archive_specs=(
-            _IPHONE_PLATFORM_LOCATION,
-            _IPHONE_ACCELEROMETER,
-            _IPHONE_GYROSCOPE,
-            _IPHONE_MAGNETOMETER,
-            _IPHONE_BAROMETER,
-        ),
-    ),
-    AdvioModality.IPHONE_ARKIT: _ModalitySpec(sequence_specs=(_IPHONE_ARKIT,), archive_specs=(_IPHONE_ARKIT,)),
-    AdvioModality.PIXEL_ARCORE: _ModalitySpec(sequence_specs=(_PIXEL_ARCORE,), archive_specs=(_PIXEL_ARCORE,)),
+    AdvioModality.IPHONE_ARKIT: (_IPHONE_ARKIT,),
+    AdvioModality.PIXEL_ARCORE: (_PIXEL_ARCORE,),
 }
 
 
@@ -165,37 +140,81 @@ def resolve_optional_gyroscope_csv(sequence_dir: Path, scene: AdvioSceneMetadata
     return _IPHONE_GYROSCOPE.resolve(sequence_dir, scene)
 
 
-def local_modalities(dataset_root: Path, scene: AdvioSceneMetadata) -> list[AdvioModality]:
+def arkit_ready(sequence_dir: Path | None, scene: AdvioSceneMetadata) -> bool:
+    return sequence_dir is not None and _IPHONE_ARKIT.resolve(sequence_dir, scene) is not None
+
+
+def arcore_ready(sequence_dir: Path | None, scene: AdvioSceneMetadata) -> bool:
+    return sequence_dir is not None and _PIXEL_ARCORE.resolve(sequence_dir, scene) is not None
+
+
+def replay_ready(dataset_root: Path, scene: AdvioSceneMetadata) -> bool:
     sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_slug)
-    return [
-        modality
-        for modality in AdvioModality
-        if _modality_present(_MODALITY_SPECS[modality], dataset_root, sequence_dir, scene)
-    ]
+    return _complete_scene_ready(dataset_root, sequence_dir, scene, sequence_specs=_STREAMING_SEQUENCE_SPECS)
+
+
+def offline_ready(dataset_root: Path, scene: AdvioSceneMetadata) -> bool:
+    sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_slug)
+    return _complete_scene_ready(dataset_root, sequence_dir, scene, sequence_specs=_OFFLINE_SEQUENCE_SPECS)
+
+
+def local_modalities(dataset_root: Path, scene: AdvioSceneMetadata) -> list[AdvioModality]:
+    """Return the ADVIO modality bundles currently materialized for one scene."""
+    sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_slug)
+    modalities: list[AdvioModality] = []
+    for modality, specs in _MODALITY_SPECS.items():
+        root = dataset_root if modality is AdvioModality.CALIBRATION else sequence_dir
+        if root is not None and all(spec.resolve(root, scene) is not None for spec in specs):
+            modalities.append(modality)
+    return modalities
 
 
 def archive_member_matches(
-    relative_path: PurePosixPath, scene: AdvioSceneMetadata, modalities: tuple[AdvioModality, ...]
+    relative_path: PurePosixPath,
+    scene: AdvioSceneMetadata,
+    modalities: tuple[AdvioModality, ...],
 ) -> bool:
+    """Return whether one archive member belongs to a requested ADVIO modality."""
+    del scene
+    path = relative_path.as_posix()
     return any(
-        requirement.matches(relative_path, scene)
+        (
+            modality is AdvioModality.GROUND_TRUTH
+            and path.startswith("ground-truth/")
+            or modality is AdvioModality.IPHONE_VIDEO
+            and path in {"iphone/frames.mov", "iphone/frames.csv"}
+            or modality is AdvioModality.IPHONE_SENSORS
+            and path
+            in {
+                "iphone/platform-location.csv",
+                "iphone/platform-locations.csv",
+                "iphone/accelerometer.csv",
+                "iphone/gyroscope.csv",
+                "iphone/gyro.csv",
+                "iphone/magnetometer.csv",
+                "iphone/barometer.csv",
+            }
+            or modality is AdvioModality.IPHONE_ARKIT
+            and path == "iphone/arkit.csv"
+            or modality is AdvioModality.PIXEL_ARCORE
+            and path == "pixel/arcore.csv"
+        )
         for modality in modalities
-        for requirement in _MODALITY_SPECS[modality].archive_specs
+        if modality is not AdvioModality.CALIBRATION
     )
 
 
-def _modality_present(
-    spec: _ModalitySpec,
+def _complete_scene_ready(
     dataset_root: Path,
     sequence_dir: Path | None,
     scene: AdvioSceneMetadata,
+    *,
+    sequence_specs: tuple[_RelativePathSpec, ...],
 ) -> bool:
-    if any(requirement.resolve(dataset_root, scene) is None for requirement in spec.dataset_specs):
+    if _CALIBRATION.resolve(dataset_root, scene) is None:
         return False
-    if not spec.sequence_specs:
-        return True
     return sequence_dir is not None and all(
-        requirement.resolve(sequence_dir, scene) is not None for requirement in spec.sequence_specs
+        requirement.resolve(sequence_dir, scene) is not None for requirement in sequence_specs
     )
 
 

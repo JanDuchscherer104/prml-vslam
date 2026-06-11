@@ -27,11 +27,7 @@ from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfi
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.geometry import (
-    depth_map_to_world_points,
-    sample_point_cloud_random,
-    write_point_cloud_ply,
-)
+from prml_vslam.utils.geometry import depth_map_to_world_points, sample_point_cloud_random, write_point_cloud_ply
 
 from . import tum_rgbd_layout, tum_rgbd_loading
 from .tum_rgbd_loading import TUM_RGBD_CAMERA_FRAME, TUM_RGBD_NATIVE_WORLD_FRAME, TUM_RGBD_WORLD_FRAME
@@ -251,13 +247,13 @@ class TumRgbdSequence(BaseData):
         """Fuse method-input RGB-D observations into the aligned TUM RGB-D reference cloud."""
         if observation_sequence is None:
             return None
+        reference_cloud = self.config.reference_cloud
         chunks: list[np.ndarray] = []
         color_chunks: list[np.ndarray] = []
         skipped_method_frame_reasons: dict[str, int] = {}
         contributed_source_frame_indices: list[int] = []
         contributed_timestamps_ns: list[int] = []
         observation_index = load_observation_sequence_index(observation_sequence.index_path)
-        reference_cloud_config = self.config.reference_cloud
         for row in observation_index.rows:
             if row.depth_path is None or row.intrinsics is None or row.T_world_camera is None:
                 skipped_method_frame_reasons["missing_metric_geometry"] = (
@@ -275,7 +271,7 @@ class TumRgbdSequence(BaseData):
                 row.intrinsics,
                 row.T_world_camera,
                 rgb=rgb,
-                depth_stride_px=reference_cloud_config.depth_stride_px,
+                depth_stride_px=reference_cloud.depth_stride_px,
             )
             if len(points_xyz_world) == 0:
                 skipped_method_frame_reasons["no_valid_depth"] = (
@@ -298,8 +294,8 @@ class TumRgbdSequence(BaseData):
         points_xyz, colors_rgb = sample_point_cloud_random(
             points_xyz,
             colors_rgb,
-            max_points=reference_cloud_config.max_points,
-            seed=reference_cloud_config.random_seed,
+            max_points=reference_cloud.max_points,
+            seed=reference_cloud.random_seed,
         )
         cloud_path, metadata_path = _reference_cloud_paths(output_dir)
         cloud_path = write_point_cloud_ply(cloud_path, points_xyz, colors_rgb=colors_rgb)
@@ -326,18 +322,19 @@ class TumRgbdSequence(BaseData):
                     "source_frame_indices": contributed_source_frame_indices,
                     "reference_cloud_sampled_frame_indices": contributed_source_frame_indices,
                     "reference_cloud_sampled_timestamps_ns": contributed_timestamps_ns,
-                    "depth_stride_px": reference_cloud_config.depth_stride_px,
-                    "depth_pixel_stride_px": reference_cloud_config.depth_stride_px,
+                    "depth_stride_px": reference_cloud.depth_stride_px,
+                    "depth_pixel_stride_px": reference_cloud.depth_stride_px,
+                    "min_confidence": reference_cloud.min_confidence,
                     "point_sampling_policy": (
                         "none" if point_count_before_sampling == len(points_xyz) else "random_without_replacement"
                     ),
-                    "seed": reference_cloud_config.random_seed,
-                    "point_sampling_seed": reference_cloud_config.random_seed,
+                    "seed": reference_cloud.random_seed,
+                    "point_sampling_seed": reference_cloud.random_seed,
                     "point_count_before_sampling": point_count_before_sampling,
                     "point_count_after_sampling": int(len(points_xyz)),
                     "point_count": int(len(points_xyz)),
-                    "max_points": reference_cloud_config.max_points,
-                    "max_reference_points": reference_cloud_config.max_points,
+                    "max_points": reference_cloud.max_points,
+                    "max_reference_points": reference_cloud.max_points,
                     "device": "CPU:0",
                     "source_observation_index_path": str(observation_sequence.index_path),
                     "skipped_method_frame_count": sum(skipped_method_frame_reasons.values()),

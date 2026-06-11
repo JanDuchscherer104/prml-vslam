@@ -37,17 +37,20 @@ from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
+from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio.advio_layout import (
     resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
 )
 from prml_vslam.sources.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
 from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.record3d.record3d_layout import archive_path_for_sequence
+from prml_vslam.sources.datasets.record3d.record3d_loading import read_archive_metadata
 from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
     resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
 )
@@ -293,10 +296,35 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
                 "pose_source": dataset_serving.pose_source.value,
                 "pose_frame_mode": dataset_serving.pose_frame_mode.value,
             }
-        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode):
+        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode, reference_cloud=reference_cloud):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["metadata"] = {"dataset_id": DatasetId.TUM_RGBD.value}
+            payload["metadata"] = {
+                "dataset_id": DatasetId.TUM_RGBD.value,
+                "reference_cloud_source": ReferenceCloudSource.TUM_RGBD.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
+        case Record3DDatasetSourceConfig(
+            sequence_id=sequence_id,
+            replay_mode=replay_mode,
+            materialization=materialization,
+            reference_cloud=reference_cloud,
+        ):
+            payload["sequence_id"] = sequence_id
+            payload["replay_mode"] = replay_mode.value
+            payload["metadata"] = {
+                "dataset_id": DatasetId.RECORD3D.value,
+                "pose_source": ReferenceSource.ARKIT.value,
+                "pose_frame_mode": materialization.pose_frame_mode.value,
+                "reference_cloud_source": ReferenceCloudSource.RECORD3D_LIDAR.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
         case Record3DSourceConfig(transport=transport, device_index=device_index, device_address=device_address):
             payload["transport"] = transport.value
             payload["device_index"] = device_index
@@ -336,6 +364,8 @@ def _native_source_fps(source_backend: SourceBackendConfig, *, path_config: Path
                 return _advio_native_fps(sequence_id=sequence_id, path_config=path_config)
             case TumRgbdSourceConfig(sequence_id=sequence_id):
                 return _tum_rgbd_native_fps(sequence_id=sequence_id, path_config=path_config)
+            case Record3DDatasetSourceConfig(sequence_id=sequence_id):
+                return _record3d_native_fps(sequence_id=sequence_id, path_config=path_config)
             case Record3DSourceConfig():
                 return None
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
@@ -374,6 +404,15 @@ def _tum_rgbd_native_fps(*, sequence_id: str, path_config: PathConfig) -> float 
         return None
     timestamps_s = [timestamp_s for timestamp_s, _path in load_tum_rgbd_list(sequence_dir / "rgb.txt")]
     return _fps_for_timestamps_s(timestamps_s)
+
+
+def _record3d_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
+    dataset_dir = path_config.resolve_dataset_dir("record3d")
+    archive_path = archive_path_for_sequence(dataset_dir, sequence_id)
+    if not archive_path.exists():
+        return None
+    metadata = read_archive_metadata(archive_path)
+    return _fps_for_timestamps_s(metadata.frameTimestamps)
 
 
 def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
@@ -451,7 +490,10 @@ def build_run_config(
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=trajectory_alignment_enabled),
+            align_trajectory=TrajectoryAlignmentStageConfig(
+                enabled=trajectory_alignment_enabled,
+                baseline_source=trajectory_baseline,
+            ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
                 evaluation=trajectory_policy,

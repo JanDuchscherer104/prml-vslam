@@ -185,12 +185,22 @@ class AdvioDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class AdvioDownloadResult(DatasetDownloadResult[int, AdvioModality]):
+class AdvioDownloadResult(DatasetDownloadResult[int]):
     """Summary of one explicit ADVIO download action."""
 
+    modalities: list[AdvioModality] = Field(default_factory=list)
 
-class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata, AdvioModality]):
+
+class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata]):
     """Local availability summary for one ADVIO scene."""
+
+    local_modalities: list[AdvioModality] = Field(default_factory=list)
+
+    arcore_ready: bool = False
+    """Whether ARCore pose data is available for consumption-time provider selection."""
+
+    arkit_ready: bool = False
+    """Whether ARKit pose data is available for consumption-time provider selection."""
 
 
 class AdvioDatasetSummary(DatasetSummary):
