@@ -212,28 +212,8 @@ curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt 
 For the Streamlit app without ViSTA:
 
 ```bash
-uv sync --extra streaming
-uv run streamlit run streamlit_app.py
+uv run prml-vslam app
 ```
-
-For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setup
-above, then run:
-
-```bash
-mamba activate prml-vslam
-uv run --extra vista --extra streaming streamlit run streamlit_app.py
-```
-
-For LingBot workbench runs, complete the LingBot/CUDA setup above and launch the
-workbench from the same `prml-vslam` mamba environment with the repository
-package on `PYTHONPATH`:
-
-```bash
-mamba activate prml-vslam
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-uv run --extra streaming streamlit run streamlit_app.py
-```
-
 
 ## Codex History Utilities
 
