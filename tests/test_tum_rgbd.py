@@ -10,21 +10,22 @@ import pytest
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME
 from prml_vslam.sources import FileObservationSequenceLoader
-from prml_vslam.sources.config import TumRgbdSourceConfig
-from prml_vslam.sources.contracts import ReferenceCloudCoordinateStatus, ReferenceCloudSource
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.config import TumRgbdSourceConfig, normalized_profile_for_source_config
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudCoordinateStatus, ReferenceCloudSource
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetStore
 from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.sources.datasets.tum_rgbd import (
-    ReferenceCloudSamplingConfig,
     TumRgbdCatalog,
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
-    TumRgbdModality,
     TumRgbdSceneMetadata,
     TumRgbdSequence,
     TumRgbdSequenceConfig,
 )
+from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_ground_truth
 from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply, load_point_cloud_ply_with_colors, load_tum_trajectory
 
@@ -122,7 +123,6 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert manifest.intrinsics_path == sequence_dir / "intrinsics.yaml"
     assert manifest.intrinsics_path.exists()
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert benchmark_inputs.candidate_trajectories == []
     reference_cloud = benchmark_inputs.reference_clouds[0]
     reference_cloud_points = load_point_cloud_ply(reference_cloud.path)
     reference_cloud_metadata = json.loads(reference_cloud.metadata_path.read_text(encoding="utf-8"))
@@ -205,38 +205,6 @@ def test_tum_rgbd_reference_cloud_masks_invalid_depth_without_reference_only_fra
     assert "reference_cloud_max_frames" not in metadata
 
 
-def test_tum_rgbd_source_config_overrides_reference_cloud_sampling(tmp_path: Path) -> None:
-    data_dir = tmp_path / ".data"
-    _write_tum_rgbd_sequence(data_dir / "tum_rgbd", image_shape=(16, 16), frame_count=3)
-    path_config = PathConfig(root=Path(__file__).resolve().parents[1], data_dir=data_dir)
-    source = TumRgbdSourceConfig(
-        sequence_id="freiburg1_desk",
-        reference_cloud=ReferenceCloudSamplingConfig(
-            depth_stride_px=4,
-            max_points=5,
-            random_seed=3,
-        ),
-    ).setup_target(path_config=path_config)
-
-    first_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark")
-    repeat_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark-repeat")
-    first_points = load_point_cloud_ply(first_inputs.reference_clouds[0].path)
-    repeat_points = load_point_cloud_ply(repeat_inputs.reference_clouds[0].path)
-    metadata = json.loads(first_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
-
-    assert metadata["depth_stride_px"] == 4
-    assert metadata["depth_pixel_stride_px"] == 4
-    assert metadata["max_points"] == 5
-    assert metadata["max_reference_points"] == 5
-    assert metadata["seed"] == 3
-    assert metadata["point_sampling_seed"] == 3
-    assert metadata["point_count_before_sampling"] == 48
-    assert metadata["point_count_after_sampling"] == 5
-    assert metadata["point_count"] == 5
-    assert metadata["point_sampling_policy"] == "random_without_replacement"
-    np.testing.assert_allclose(repeat_points, first_points)
-
-
 def test_tum_rgbd_reference_cloud_ply_includes_sampled_rgb_colors(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path, image_shape=(16, 16), frame_count=3)
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
@@ -275,6 +243,53 @@ def test_tum_rgbd_reference_cloud_subsamples_points_after_full_selection(tmp_pat
     assert first_metadata["point_sampling_seed"] == 17
     assert second_metadata["point_count"] == first_metadata["point_count"]
     np.testing.assert_allclose(second_points, first_points)
+
+
+def test_tum_rgbd_reference_cloud_config_controls_sampling_and_metadata(tmp_path: Path) -> None:
+    _write_tum_rgbd_sequence(tmp_path, image_shape=(16, 16), frame_count=3)
+    sequence = TumRgbdSequence(
+        config=TumRgbdSequenceConfig(
+            dataset_root=tmp_path,
+            sequence_id="freiburg1_desk",
+            reference_cloud=ReferenceCloudConfig(depth_stride_px=4, max_points=5, random_seed=11),
+        )
+    )
+
+    benchmark_inputs = sequence.to_benchmark_inputs(output_dir=tmp_path / "benchmark")
+    points = load_point_cloud_ply(benchmark_inputs.reference_clouds[0].path)
+    metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
+
+    assert points.shape == (5, 3)
+    assert metadata["depth_stride_px"] == 4
+    assert metadata["max_points"] == 5
+    assert metadata["seed"] == 11
+    assert metadata["min_confidence"] is None
+    assert metadata["point_count_before_sampling"] == 48
+    assert metadata["point_sampling_policy"] == "random_without_replacement"
+
+
+def test_tum_rgbd_source_config_accepts_reference_cloud_block() -> None:
+    source = SourceStageConfig.from_toml(
+        """
+        [backend]
+        source_id = "tum_rgbd"
+        sequence_id = "freiburg1_room"
+
+        [backend.reference_cloud]
+        depth_stride_px = 4
+        max_points = 64
+        random_seed = 5
+        """
+    )
+    reloaded = SourceStageConfig.from_toml(source.to_toml())
+
+    assert isinstance(source.backend, TumRgbdSourceConfig)
+    assert source.backend.reference_cloud.depth_stride_px == 4
+    assert source.backend.reference_cloud.max_points == 64
+    assert source.backend.reference_cloud.random_seed == 5
+    assert source.backend.reference_cloud.min_confidence is None
+    assert isinstance(reloaded.backend, TumRgbdSourceConfig)
+    assert reloaded.backend.reference_cloud == source.backend.reference_cloud
 
 
 def test_ground_truth_tum_normalization_is_independent_of_sample_selection(tmp_path: Path) -> None:
@@ -388,16 +403,11 @@ def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) ->
     assert packet_0.provenance.dataset_id == "tum_rgbd"
 
 
-def test_tum_rgbd_dataset_service_downloads_selected_modalities(tmp_path: Path) -> None:
+def test_tum_rgbd_dataset_service_downloads_full_scene(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = TumRgbdDatasetService(PathConfig(root=tmp_path), catalog=catalog)
 
-    result = service.download(
-        TumRgbdDownloadRequest(
-            sequence_ids=["freiburg1_desk"],
-            modalities=[TumRgbdModality.RGB, TumRgbdModality.GROUND_TRUTH],
-        )
-    )
+    result = service.download(TumRgbdDownloadRequest(sequence_ids=["freiburg1_desk"]))
 
     dataset_root = tmp_path / ".data" / "tum_rgbd"
     archive_path = dataset_root / ".archives" / "rgbd_dataset_freiburg1_desk.tgz"
@@ -405,14 +415,62 @@ def test_tum_rgbd_dataset_service_downloads_selected_modalities(tmp_path: Path) 
     assert archive_path.exists()
     assert (dataset_root / "rgbd_dataset_freiburg1_desk" / "rgb.txt").exists()
     assert (dataset_root / "rgbd_dataset_freiburg1_desk" / "rgb" / "0.000000.png").exists()
+    assert (dataset_root / "rgbd_dataset_freiburg1_desk" / "depth.txt").exists()
+    assert (dataset_root / "rgbd_dataset_freiburg1_desk" / "depth" / "0.000000.png").exists()
     assert (dataset_root / "rgbd_dataset_freiburg1_desk" / "groundtruth.txt").exists()
-    assert not (dataset_root / "rgbd_dataset_freiburg1_desk" / "depth.txt").exists()
 
     status = service.local_scene_statuses()[0]
     assert status.archive_path == archive_path
-    assert status.local_modalities == [TumRgbdModality.RGB, TumRgbdModality.GROUND_TRUTH]
     assert status.replay_ready is True
-    assert status.offline_ready is False
+    assert status.offline_ready is True
+
+
+def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Path) -> None:
+    _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", image_shape=(480, 640))
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = TumRgbdDatasetService(path_config)
+    source_config = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
+    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.TUM_RGBD)
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.TUM_RGBD,
+        sequence_id="freiburg1_desk",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+    )
+    raw_source = service.build_streaming_source(
+        sequence_id="freiburg1_desk",
+        frame_selection=FrameSelectionConfig(),
+        replay_mode=source_config.replay_mode,
+        reference_cloud=source_config.reference_cloud,
+    )
+
+    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    observation_ref = benchmark_inputs["observation_sequences"][0]
+    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    observations = list(FileObservationSequenceLoader(stored_inputs.observation_sequences[0]).iter_observations())
+    stream = store.open_stream(
+        entry,
+        frame_selection=FrameSelectionConfig(),
+        output_dir=tmp_path / "preview",
+        loop=False,
+        replay_mode=source_config.replay_mode,
+    )
+    stream.connect()
+    streamed = stream.wait_for_observation()
+    stream.disconnect()
+
+    assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
+    assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
+    assert (entry.root / "observations" / "rgb").is_dir()
+    assert (entry.root / "observations" / "depth").is_dir()
+    assert not (entry.root / "observations" / "0").exists()
+    assert not (entry.root / "benchmark" / "observations").exists()
+    assert len(observations) == 3
+    assert observations[0].rgb is not None
+    assert observations[0].depth_m is not None
+    assert streamed.depth_m is not None
+    assert streamed.depth_m[0, 0] == pytest.approx(1.0)
 
 
 def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None:
@@ -460,3 +518,25 @@ def test_relativize_trajectory_to_first_pose_anchors_first_pose_at_identity() ->
     np.testing.assert_allclose(relativized.poses_se3[0], np.eye(4), atol=1e-9)
     np.testing.assert_allclose(relativized.poses_se3[1], np.linalg.inv(first) @ second, atol=1e-9)
     np.testing.assert_allclose(relativized.timestamps, [0.0, 1.0])
+
+
+def test_load_tum_rgbd_ground_truth_sorts_and_deduplicates_raw_timestamps(tmp_path: Path) -> None:
+    path = tmp_path / "groundtruth.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "# timestamp tx ty tz qx qy qz qw",
+                "2.0 2.0 0.0 0.0 0.0 0.0 0.0 1.0",
+                "1.0 1.0 0.0 0.0 0.0 0.0 0.0 1.0",
+                "1.0 99.0 0.0 0.0 0.0 0.0 0.0 1.0",
+                "3.0 3.0 0.0 0.0 0.0 0.0 0.0 1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trajectory = load_tum_rgbd_ground_truth(path)
+
+    np.testing.assert_allclose(trajectory.timestamps, [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [1.0, 2.0, 3.0])

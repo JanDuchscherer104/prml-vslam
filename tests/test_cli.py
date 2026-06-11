@@ -7,12 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 import typer
+from click.utils import strip_ansi
 from typer.testing import CliRunner
 
+import prml_vslam.main as main_module
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
 from prml_vslam.utils import PathConfig
 
 runner = CliRunner()
@@ -37,6 +40,134 @@ def test_record3d_devices_command_runs(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "device-42" in result.stdout
+
+
+def test_record3d_download_command_builds_zero_based_sequence_request(monkeypatch) -> None:
+    seen_requests: list[Record3DDownloadRequest] = []
+
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def download(self, request: Record3DDownloadRequest) -> SimpleNamespace:
+            seen_requests.append(request)
+            return SimpleNamespace(
+                model_dump=lambda *, mode: {
+                    "sequence_ids": request.sequence_ids,
+                    "downloaded_archive_count": 1,
+                    "reused_archive_count": 0,
+                    "written_path_count": 1,
+                    "mode": mode,
+                }
+            )
+
+        def summarize(self) -> SimpleNamespace:
+            return SimpleNamespace(model_dump=lambda *, mode: {"total_scene_count": 8, "mode": mode})
+
+    monkeypatch.setattr(main_module, "Record3DDatasetService", FakeService)
+
+    result = runner.invoke(app, ["record3d", "download", "--sequence", "3"])
+
+    assert result.exit_code == 0
+    assert seen_requests == [Record3DDownloadRequest(sequence_ids=[3])]
+    assert "downloaded_archive_count" in result.stdout
+
+
+def test_record3d_download_rejects_invalid_sequence_index() -> None:
+    result = runner.invoke(app, ["record3d", "download", "--sequence", "8"])
+
+    assert result.exit_code == 1
+    assert "[0, 7]" in result.stdout
+
+
+def test_record3d_help_lists_download_command() -> None:
+    result = runner.invoke(app, ["record3d", "--help"])
+
+    assert result.exit_code == 0
+    assert "download" in result.stdout
+
+
+def test_dataset_help_lists_normalized_store_commands() -> None:
+    result = runner.invoke(app, ["dataset", "--help"])
+
+    assert result.exit_code == 0
+    assert "normalize" in result.stdout
+    assert "normalize-batch" in result.stdout
+    assert "stats" in result.stdout
+    assert "summary" in result.stdout
+
+
+def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> None:
+    class FakeService:
+        dataset_root = tmp_path / ".data" / "record3d"
+
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+    monkeypatch.setattr(main_module, "Record3DDatasetService", FakeService)
+
+    result = runner.invoke(app, ["dataset", "summary", "--dataset", "record3d"])
+
+    assert result.exit_code == 0
+    assert "record3d_dataset" in result.stdout
+
+
+def test_dataset_stats_reuses_one_query_record_scan(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FakeQuery:
+        def __init__(self, *, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def records(self) -> list[str]:
+            calls.append("records")
+            return ["entry"]
+
+        def record_rows(self, *, records: list[str]) -> list[dict[str, str]]:
+            calls.append(f"record_rows:{records!r}")
+            return [{"sequence_id": records[0]}]
+
+        def stats_long_rows(self, *, records: list[str]) -> list[dict[str, str]]:
+            calls.append(f"stats:{records!r}")
+            return [{"stat_name": "frame_count"}]
+
+        def metadata_long_rows(self, *, records: list[str]) -> list[dict[str, str]]:
+            calls.append(f"metadata:{records!r}")
+            return [{"stat_name": "dataset_id"}]
+
+        def issue_rows(self) -> list[dict[str, str]]:
+            calls.append("issues")
+            return [{"status": "stale_schema"}]
+
+    monkeypatch.setattr(main_module, "NormalizedDatasetQuery", FakeQuery)
+
+    result = runner.invoke(app, ["dataset", "stats"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        "records",
+        "record_rows:['entry']",
+        "issues",
+        "stats:['entry']",
+        "metadata:['entry']",
+    ]
+    assert "stats_row_count" in result.stdout
+    assert "stale_schema" in result.stdout
+
+
+@pytest.mark.parametrize("command", (("advio", "download"), ("tum-rgbd", "download")))
+def test_dataset_download_commands_keep_selective_modality_options(command: tuple[str, str]) -> None:
+    result = runner.invoke(app, [*command, "--help"])
+    help_text = strip_ansi(result.stdout)
+
+    assert result.exit_code == 0
+    assert "--sequence" in help_text
+    assert "--overwrite" in help_text
+    assert "--reuse" in help_text
+    assert "--preset" in help_text
+    assert "--modality" in help_text
 
 
 def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -> None:

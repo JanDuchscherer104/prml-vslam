@@ -12,10 +12,10 @@ ADVIO is trajectory-only in this repository. The supported source data is:
 - iPhone RGB video, timestamps, sensors, calibration, and optional ARKit poses
 - Pixel ARCore poses
 
-ADVIO does not expose legacy auxiliary device streams as supported download
-modalities, replay pose providers, reference-cloud sources, or benchmark-input
-surfaces. Dense reference clouds are prepared by RGB-D datasets such as TUM
-RGB-D.
+ADVIO does not expose legacy auxiliary device streams as supported source data,
+replay pose providers, reference-cloud sources, or benchmark-input surfaces.
+Download actions fetch full scenes rather than partial modality subsets. Dense
+reference clouds are prepared by RGB-D datasets such as TUM RGB-D.
 
 ## File Conventions
 
@@ -57,9 +57,9 @@ Repository loader conventions:
   - translation: columns `1:4`
   - quaternion: columns `4:8`
   - timestamps: column `0`
-- The repository treats `ground-truth/fixpoints.csv` as part of the
-  `GROUND_TRUTH` modality bundle. It is preserved for source fidelity and local
-  completeness checks, but the trajectory loader reads only the pose CSV.
+- The repository treats `ground-truth/fixpoints.csv` as part of a complete local
+  ADVIO scene. It is preserved for source fidelity and local completeness
+  checks, but the trajectory loader reads only the pose CSV.
 - The calibration YAML is parsed as pinhole intrinsics, image size, distortion
   parameters, and `T_cam_imu`.
 - Poses and calibration transforms use
@@ -79,9 +79,8 @@ In the released CSVs, each row is numeric and starts with the fix timestamp
 followed by the metric 3D fix position used by the trajectory optimizer. The
 remaining fields preserve the floor-plan marking metadata used by the ADVIO
 annotation tooling, such as image-plane marker coordinates and floor or level
-identifier. This repository currently preserves the file and uses it for
-ground-truth modality completeness checks, but does not parse it into a typed
-runtime model.
+identifier. This repository currently preserves the file and uses it for local
+scene completeness checks, but does not parse it into a typed runtime model.
 
 ## Ground Truth Versus Device Poses
 
@@ -106,7 +105,7 @@ For the current Streamlit Sequence Explorer:
 - ADVIO is displayed as `Y`-up, so the BEV uses the `X-Z` floor plane
 
 Those display transforms are repository-owned visualization choices. They are
-not stored as native ADVIO modalities.
+not stored as native ADVIO source data.
 
 ## References
 

@@ -16,6 +16,7 @@ import pytest
 import typer
 
 from prml_vslam.main import (
+    _apply_dataset_sampling_overrides,
     _build_rerun_viewer_command,
     _find_rerun_viewer_processes,
     _forward_rerun_viewer_stdout,
@@ -45,7 +46,7 @@ from prml_vslam.pipeline.demo import (
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
@@ -116,6 +117,20 @@ def _run_config_command(config_path: Path) -> None:
         ignore_unknown_options=True,
     )
     run_config(ctx, config_path)
+
+
+def test_dataset_sampling_overrides_accept_record3d_dataset_source() -> None:
+    source = Record3DDatasetSourceConfig(sequence_id="synthetic")
+
+    updated = _apply_dataset_sampling_overrides(
+        source,
+        dataset_frame_stride=None,
+        dataset_target_fps=5.0,
+    )
+
+    assert isinstance(updated, Record3DDatasetSourceConfig)
+    assert updated.frame_stride == 1
+    assert updated.target_fps == 5.0
 
 
 def test_load_run_config_toml_accepts_target_config(tmp_path: Path) -> None:
