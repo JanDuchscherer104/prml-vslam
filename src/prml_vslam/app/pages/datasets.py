@@ -738,7 +738,10 @@ def _render_download_form_fields(
 
 def _download_options_for_request(
     request_type: type[DownloadRequestT],
-) -> tuple[tuple[AdvioDownloadPreset, ...] | tuple[TumRgbdDownloadPreset, ...], tuple[AdvioModality, ...] | tuple[TumRgbdModality, ...]]:
+) -> tuple[
+    tuple[AdvioDownloadPreset, ...] | tuple[TumRgbdDownloadPreset, ...],
+    tuple[AdvioModality, ...] | tuple[TumRgbdModality, ...],
+]:
     if request_type is AdvioDownloadRequest:
         return tuple(AdvioDownloadPreset), tuple(AdvioModality)
     return tuple(TumRgbdDownloadPreset), tuple(TumRgbdModality)
