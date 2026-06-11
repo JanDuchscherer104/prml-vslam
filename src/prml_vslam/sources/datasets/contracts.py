@@ -21,12 +21,13 @@ class DatasetId(StrEnum):
     """Datasets exposed through evaluation surfaces."""
 
     ADVIO = "advio"
+    RECORD3D = "record3d_dataset"
     TUM_RGBD = "tum_rgbd"
 
     @property
     def label(self) -> str:
         """Return the short user-facing dataset label."""
-        return {self.ADVIO: "ADVIO", self.TUM_RGBD: "TUM RGB-D"}[self]
+        return {self.ADVIO: "ADVIO", self.RECORD3D: "Record3D", self.TUM_RGBD: "TUM RGB-D"}[self]
 
 
 class AdvioPoseSource(StrEnum):
@@ -103,6 +104,15 @@ class FrameSelectionConfig(BaseConfig):
         return self.stride_for_timestamps_ns([int(round(value * 1e9)) for value in timestamps_s])
 
 
+class ReferenceCloudConfig(BaseConfig):
+    """Source-prepared RGB-D reference-cloud sampling policy."""
+
+    depth_stride_px: int = Field(default=8, ge=1)
+    max_points: int = Field(default=100_000, ge=1)
+    random_seed: int = 17
+    min_confidence: int | None = Field(default=None, ge=0, le=255)
+
+
 class DatasetDownloadResult(BaseData, Generic[SequenceT, ModalityT]):
     """Summary of one explicit dataset download action."""
 
@@ -154,6 +164,7 @@ __all__ = [
     "DatasetSummary",
     "FrameSelectionConfig",
     "LocalSceneStatus",
+    "ReferenceCloudConfig",
     "SequenceKey",
     "selected_advio_pose_source",
 ]
