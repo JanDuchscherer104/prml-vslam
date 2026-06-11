@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -273,7 +273,13 @@ class _LingbotRuntime:
         self._console.info("Loading LingBot-Map checkpoint from '%s' on CPU.", checkpoint)
         load_started = time.monotonic()
         state = torch.load(str(checkpoint), map_location="cpu", weights_only=True)
-        state_dict = state.get("model", state)
+        state_dict = dict(_extract_checkpoint_state_dict(state))
+        _adapt_checkpoint_state_dict(
+            torch,
+            state_dict,
+            target_state_dict=model.state_dict(),
+            pos_embed_policy=self._cfg.checkpoint_pos_embed,
+        )
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         del state, state_dict
         self._console.info("LingBot-Map checkpoint loaded in %.1fs.", time.monotonic() - load_started)
@@ -286,6 +292,7 @@ class _LingbotRuntime:
         if device.startswith("cuda"):
             self._console.info("Moving LingBot-Map model to %s.", device)
             model = model.to(device=device).eval()
+            _cast_aggregator_for_inference(torch, model, dtype=_resolve_model_dtype(torch, self._cfg.model_dtype))
         else:
             model = model.to(device).eval()
 
@@ -358,6 +365,95 @@ class _LingbotRuntime:
 def _is_cuda_oom(exc: RuntimeError) -> bool:
     message = str(exc).lower()
     return "cuda out of memory" in message or ("cuda" in message and "out of memory" in message)
+
+
+def _extract_checkpoint_state_dict(state: Any) -> Mapping[str, Any]:
+    if not isinstance(state, Mapping):
+        raise RuntimeError("LingBot-Map checkpoint did not contain a state-dict mapping.")
+    if "model" in state:
+        model_state = state["model"]
+        if not isinstance(model_state, Mapping):
+            raise RuntimeError("LingBot-Map checkpoint `model` entry did not contain a state-dict mapping.")
+        return model_state
+    return state
+
+
+def _adapt_checkpoint_state_dict(
+    torch: Any,
+    state_dict: dict[str, Any],
+    *,
+    target_state_dict: Mapping[str, Any],
+    pos_embed_policy: str,
+) -> None:
+    key = "aggregator.patch_embed.pos_embed"
+    source = state_dict.get(key)
+    target = target_state_dict.get(key)
+    if source is None or target is None or tuple(source.shape) == tuple(target.shape):
+        return
+    if pos_embed_policy == "drop":
+        del state_dict[key]
+        return
+    if pos_embed_policy != "interpolate":
+        raise RuntimeError(
+            f"LingBot-Map checkpoint key '{key}' has shape {tuple(source.shape)}, but the configured model expects "
+            f'{tuple(target.shape)}. Set `checkpoint_pos_embed = "interpolate"` or `"drop"` when using '
+            "a smaller `image_size` than the checkpoint."
+        )
+    state_dict[key] = _resize_pos_embed(torch, source, target)
+
+
+def _resize_pos_embed(torch: Any, source: Any, target: Any) -> Any:
+    if len(source.shape) != 3 or len(target.shape) != 3 or source.shape[0] != 1 or target.shape[0] != 1:
+        raise RuntimeError(
+            "LingBot-Map positional embedding interpolation requires [1, num_tokens, dim] tensors; "
+            f"got {tuple(source.shape)} -> {tuple(target.shape)}."
+        )
+    if source.shape[-1] != target.shape[-1]:
+        raise RuntimeError(
+            f"LingBot-Map positional embedding dimension mismatch: {int(source.shape[-1])} -> {int(target.shape[-1])}."
+        )
+    source_grid_tokens = int(source.shape[1]) - 1
+    target_grid_tokens = int(target.shape[1]) - 1
+    source_grid = int(source_grid_tokens**0.5)
+    target_grid = int(target_grid_tokens**0.5)
+    if source_grid * source_grid != source_grid_tokens or target_grid * target_grid != target_grid_tokens:
+        raise RuntimeError(
+            "LingBot-Map positional embedding interpolation requires square patch-token grids; "
+            f"got {source_grid_tokens} -> {target_grid_tokens} patch tokens."
+        )
+    class_token = source[:, :1]
+    patch_tokens = source[:, 1:].reshape(1, source_grid, source_grid, source.shape[-1]).permute(0, 3, 1, 2)
+    resized = torch.nn.functional.interpolate(
+        patch_tokens.float(),
+        size=(target_grid, target_grid),
+        mode="bicubic",
+        align_corners=False,
+    )
+    resized = (
+        resized.to(dtype=source.dtype, device=source.device)
+        .permute(0, 2, 3, 1)
+        .reshape(1, target_grid_tokens, target.shape[-1])
+    )
+    return torch.cat([class_token, resized], dim=1)
+
+
+def _resolve_model_dtype(torch: Any, value: str) -> Any:
+    if value == "float32":
+        return torch.float32
+    if value == "float16":
+        return torch.float16
+    if value == "bfloat16":
+        return torch.bfloat16
+    capability = torch.cuda.get_device_capability()
+    return torch.bfloat16 if capability[0] >= 8 else torch.float16
+
+
+def _cast_aggregator_for_inference(torch: Any, model: Any, *, dtype: Any) -> None:
+    if dtype == torch.float32:
+        return
+    aggregator = getattr(model, "aggregator", None)
+    if aggregator is not None:
+        model.aggregator = aggregator.to(dtype=dtype)
 
 
 def _preprocess_images_with_lingbot(

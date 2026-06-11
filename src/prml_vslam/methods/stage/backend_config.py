@@ -323,6 +323,8 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
     keyframe_interval: int | Literal["auto"] = "auto"
     use_sdpa: bool = True
     use_amp: bool = True
+    model_dtype: Literal["auto", "float32", "float16", "bfloat16"] = "auto"
+    checkpoint_pos_embed: Literal["error", "interpolate", "drop"] = "error"
     camera_num_iterations: int = Field(default=4, ge=1)
     enable_point_head: bool = False
     window_size: int = Field(default=64, ge=1)
