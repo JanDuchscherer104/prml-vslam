@@ -20,7 +20,7 @@ enabled = true
     # views. The cabinet subset has about 1000 RGB frames, so stride 5 keeps
     # this benchmark near 200 processed frames while preserving
     # the same dataset and normalized source artifacts.
-    frame_stride = 5
+    # frame_stride = 1
     replay_mode = "fast_as_possible"
 
 [stages.slam]
@@ -112,7 +112,7 @@ sampling_interval_ms    = 1000
     enable_point_head = false
 
     # Upstream visibility threshold for depth-confidence filtering.
-    confidence_threshold = 1.5
+    confidence_threshold = 0.5
 
     # Spatial stride when materializing the durable PLY from dense depth maps.
     # This affects artifact size/export time only, not model inference.
@@ -152,17 +152,17 @@ enabled = false
 enabled = true
 
 [visualization]
-connect_live_viewer               = false
-export_viewer_rrd                 = true
-grpc_url                          = "rerun+http://127.0.0.1:9876/proxy"
-viewer_blueprint_path             = ".configs/visualization/vista_blueprint.rbl"
-preserve_native_rerun             = false
-log_source_rgb                    = false
-log_diagnostic_preview            = false
-log_camera_image_rgb              = false
-show_tracking_trajectory          = true
-trajectory_pose_axis_length       = 0.0
-point_cloud_decimation_keep_ratio = 0.05
-reference_point_cloud_decimation_keep_ratio = 0.05
-mesh_decimation_keep_ratio        = 0.25
-decimation_random_seed            = 0
+connect_live_viewer                         = false
+export_viewer_rrd                           = true
+grpc_url                                    = "rerun+http://127.0.0.1:9876/proxy"
+viewer_blueprint_path                       = ".configs/visualization/vista_blueprint.rbl"
+preserve_native_rerun                       = false
+log_source_rgb                              = false
+log_diagnostic_preview                      = false
+log_camera_image_rgb                        = true
+show_tracking_trajectory                    = true
+trajectory_pose_axis_length                 = 0.0
+point_cloud_decimation_keep_ratio           = 0.05
+reference_point_cloud_decimation_keep_ratio = 0.95
+mesh_decimation_keep_ratio                  = 0.25
+decimation_random_seed                      = 0
