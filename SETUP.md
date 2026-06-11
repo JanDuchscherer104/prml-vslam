@@ -190,82 +190,22 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
 
 ## LingBot/CUDA Setup
 
-LingBot-Map is operator-managed. This repository does not vendor
-`Robbyant/lingbot-map` or expose a `lingbot` package extra, so install the
-upstream checkout and checkpoint explicitly before running LingBot configs.
-
-Activate the same `prml-vslam` mamba environment used for GPU SLAM runs:
+LingBot-Map is operator-managed: this repository does not vendor
+`Robbyant/lingbot-map` or expose a `lingbot` package extra. Install the
+upstream checkout and checkpoint at the configured defaults:
 
 ```bash
 mamba activate prml-vslam
 unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-```
 
-Clone the upstream checkout at the default configured location:
-
-```bash
 mkdir -p external
 git clone https://github.com/Robbyant/lingbot-map.git external/lingbot-map
-```
-
-Place the LingBot checkpoint at the configured default path:
-
-```bash
 mkdir -p external/lingbot-map/checkpoints
-# Copy or download the operator-provided checkpoint here:
-# external/lingbot-map/checkpoints/lingbot-map.pt
+curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
+  -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
-
-If your checkout or checkpoint lives elsewhere, override the backend config
-fields `lingbot_map_dir` and `checkpoint_path` in the run config instead of
-changing repository paths.
-
-Validate the environment before a full run:
-
-```bash
-python - <<'PY'
-import sys
-from pathlib import Path
-import torch
-
-checkout = Path("external/lingbot-map")
-checkpoint = checkout / "checkpoints" / "lingbot-map.pt"
-if checkout.exists():
-    sys.path.insert(0, str(checkout.resolve()))
-    from lingbot_map.models.gct_stream import GCTStream
-else:
-    GCTStream = None
-
-print("cuda_available:", torch.cuda.is_available())
-print("lingbot_checkout:", checkout.exists())
-print("lingbot_checkpoint:", checkpoint.exists())
-print("GCTStream:", GCTStream)
-PY
-```
-
-Plan the full offline run:
-
-```bash
-python -m prml_vslam.main plan-run-config .configs/pipelines/lingbot-full.toml
-```
-
-Run the full offline pipeline:
-
-```bash
-python -m prml_vslam.main run-config .configs/pipelines/lingbot-full.toml
-```
-
-Run the streaming GPU smoke pipeline:
-
-```bash
-python -m prml_vslam.main run-config .configs/pipelines/lingbot-smoke-streaming-gpu.toml
-```
-
-Both LingBot configs write normalized SLAM artifacts under the run's `slam/`
-directory, including `trajectory.tum`, `point_cloud.ply`, and first-class
-processed-raster geometry NPZs when dense predictions are available.
 
 ## Streamlit Workbench
 
