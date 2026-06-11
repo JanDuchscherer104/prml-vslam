@@ -52,6 +52,9 @@ class DatasetRunCoverage(BaseData):
     load_error: str | None = None
     """Non-fatal loading error, when the manifest or CSV could not be parsed."""
 
+    skipped_metric_count: int = 0
+    """Number of non-primary metrics that were attempted but skipped during evaluation."""
+
 
 class DatasetEvaluationSelection(BaseData):
     """All discovered run coverage and metric rows for one dataset."""
@@ -105,6 +108,9 @@ class RunTrajectoryEvaluation(BaseData):
 
     load_error: str | None = None
     """Non-fatal loading error shown by review surfaces."""
+
+    skipped_metric_count: int = 0
+    """Number of non-primary metrics that were skipped during evaluation of this run."""
 
 
 class TrajectoryEvaluationQueryService:
@@ -165,6 +171,7 @@ class TrajectoryEvaluationQueryService:
                     metric_row_count=len(evaluation.metric_rows),
                     matched_pairs=sum(r.matched_pairs for r in evaluation.metric_rows),
                     load_error=evaluation.load_error,
+                    skipped_metric_count=evaluation.skipped_metric_count,
                 )
             )
             all_metric_rows.extend(evaluation.metric_rows)
@@ -244,7 +251,12 @@ class TrajectoryEvaluationQueryService:
             metric_rows = self.load_metric_rows(self.metrics_long_path(run.artifact_root))
         except (OSError, ValueError) as exc:
             return RunTrajectoryEvaluation(run=run, load_error=str(exc))
-        return RunTrajectoryEvaluation(run=run, manifest=manifest, metric_rows=metric_rows)
+        return RunTrajectoryEvaluation(
+            run=run,
+            manifest=manifest,
+            metric_rows=metric_rows,
+            skipped_metric_count=len(manifest.skipped_metrics),
+        )
 
     def load_metric_rows(self, path: Path) -> list[TrajectoryMetricResultRow]:
         """Load the long-form metrics CSV emitted by the trajectory evaluator."""

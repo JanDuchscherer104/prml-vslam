@@ -135,6 +135,7 @@ def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
             if item.load_error is not None
             else "loaded",
             "Metric Rows": len(item.metric_rows),
+            "Skipped Metrics": item.skipped_metric_count,
             "Message": item.load_error or "",
         }
         for item in loaded
@@ -243,6 +244,15 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
                 st.subheader("Run Coverage")
                 st.plotly_chart(build_coverage_chart(coverage_matrix), use_container_width=True)
         return
+
+    total_skipped = sum(c.skipped_metric_count for c in dataset_selection.coverage)
+    if total_skipped > 0:
+        affected = sum(1 for c in dataset_selection.coverage if c.skipped_metric_count > 0)
+        st.warning(
+            f"{total_skipped} non-primary metric calculation(s) were skipped across {affected} run(s). "
+            "Short trajectories or insufficient pose-pair counts are the usual cause. "
+            "Switch to **Single Sequence** view and inspect the Skipped Metrics column for details."
+        )
 
     metric_keys = _PRIMARY_METRIC_OPTIONS
     current_key = _decode_primary_metric(page_state.dataset_primary_metric)

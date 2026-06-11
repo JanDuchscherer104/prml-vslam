@@ -100,6 +100,32 @@ class TrajectoryMetricResultRow(BaseData):
     """Path to the raw error series backing distribution plots."""
 
 
+class SkippedMetricRecord(BaseData):
+    """Record for a non-primary metric that was attempted but skipped due to a non-fatal error."""
+
+    candidate_source: str
+    """Estimate source that failed, e.g. ``vista/raw``."""
+
+    metric_family: Literal["ape", "rpe"]
+    pose_relation: metrics.PoseRelation
+    reason: str
+    """Exception message from evo describing why the metric could not be computed."""
+
+    delta: float | None = None
+    delta_unit: str | None = None
+
+    @field_validator("pose_relation", mode="before")
+    @classmethod
+    def _validate_pose_relation(cls, value: object) -> object:
+        if isinstance(value, str) and value in metrics.PoseRelation.__members__:
+            return metrics.PoseRelation[value]
+        return value
+
+    @field_serializer("pose_relation", when_used="json")
+    def _serialize_pose_relation(self, value: metrics.PoseRelation) -> str:
+        return value.name
+
+
 class TrajectoryEvaluationCase(BaseData):
     """Describe one persisted reference-vs-candidate trajectory metric case."""
 
@@ -173,10 +199,14 @@ class TrajectoryEvaluationManifest(BaseData):
     evaluation_cases: list[TrajectoryEvaluationCase] = Field(default_factory=list)
     """Structured per-candidate trajectory metric cases produced by the evaluator."""
 
+    skipped_metrics: list[SkippedMetricRecord] = Field(default_factory=list)
+    """Non-primary metrics that were attempted but skipped due to non-fatal errors."""
+
 
 __all__ = [
     "DiscoveredRun",
     "SelectionSnapshot",
+    "SkippedMetricRecord",
     "TrajectoryEvaluationCase",
     "TrajectoryEvaluationManifest",
     "TrajectoryMetricResultRow",
