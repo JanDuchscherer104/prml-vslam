@@ -13,8 +13,17 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.sources.datasets.contracts import DatasetDownloadResult, DatasetSummary, LocalSceneStatus
+from prml_vslam.sources.datasets.contracts import (
+    DatasetDownloadResult,
+    DatasetSummary,
+    LocalSceneStatus,
+)
 from prml_vslam.utils import BaseConfig, BaseData
+from prml_vslam.utils.geometry import (
+    DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
+    DEFAULT_REFERENCE_CLOUD_MAX_POINTS,
+    DEFAULT_REFERENCE_CLOUD_RANDOM_SEED,
+)
 
 
 class TumRgbdPoseSource(StrEnum):
@@ -123,8 +132,17 @@ class TumRgbdDatasetSummary(DatasetSummary):
     """High-level summary of committed and local TUM RGB-D coverage."""
 
 
+class ReferenceCloudSamplingConfig(BaseConfig):
+    """Sampling policy for source-prepared TUM RGB-D reference clouds."""
+
+    depth_stride_px: int = Field(default=DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX, ge=1)
+    max_points: int = Field(default=DEFAULT_REFERENCE_CLOUD_MAX_POINTS, ge=1)
+    random_seed: int = Field(default=DEFAULT_REFERENCE_CLOUD_RANDOM_SEED, ge=0)
+
+
 class TumRgbdSequenceConfig(BaseConfig):
     """Configure one local TUM RGB-D sequence owner."""
 
     dataset_root: Path = Path(".data/tum_rgbd")
     sequence_id: str
+    reference_cloud: ReferenceCloudSamplingConfig = Field(default_factory=ReferenceCloudSamplingConfig)

@@ -6,12 +6,14 @@ This document is the concise source of truth for `prml_vslam.eval`.
 
 ## Current State
 
-- The package owns metric computation, metric result DTOs, and metric artifact loading.
+- The package owns metric computation, metric result DTOs, and metric artifact persistence.
 - `TrajectoryEvaluationService` computes metrics from prepared reference inputs
   and SLAM trajectories.
 - `TrajectoryEvaluationRuntime` adapts metric computation to the bounded runtime API.
-- The evaluator persists explicit semantics: metric ID, pose relation, alignment
-  mode, and sync tolerance.
+- The evaluator persists trajectory manifests, long-form metric rows, and
+  error-series refs.
+- `TrajectoryEvaluationQueryService` owns read-only app/post-run discovery and
+  aggregation loading.
 
 ## Responsibilities
 
@@ -33,4 +35,5 @@ This document is the concise source of truth for `prml_vslam.eval`.
 
 - translation APE matches expected residuals for known aligned sequences
 - alignment modes include Sim(3) Umeyama and timestamp association
-- terminal metrics are recorded in the `EvaluationArtifact`
+- terminal trajectory metrics are recorded in `TrajectoryEvaluationManifest`
+  plus `metrics_long.csv`

@@ -18,7 +18,8 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.eval.contracts import EvaluationArtifact, TrajectoryAlignmentArtifact
+from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -614,7 +615,7 @@ class RunCoordinatorActor:
                 ),
                 payload_resolver=None,
             )
-        if stage_key is StageKey.TRAJECTORY_EVALUATION and isinstance(payload, EvaluationArtifact):
+        if stage_key is StageKey.TRAJECTORY_EVALUATION and isinstance(payload, TrajectoryEvaluationManifest):
             self._submit_rerun_update(
                 update=StageRuntimeUpdate(
                     stage_key=StageKey.TRAJECTORY_EVALUATION,
@@ -645,6 +646,7 @@ class RunCoordinatorActor:
         enabled_stage_keys = {stage.key for stage in plan.stages}
         for result in load_reused_stage_results(reuse_root):
             if result.stage_key not in enabled_stage_keys:
+                self._result_store.put(result)
                 self._record_stage_result(result.stage_key, result)
 
     def _run_streaming(

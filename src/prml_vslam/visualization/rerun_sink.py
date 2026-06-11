@@ -200,6 +200,7 @@ class ExportRerunEventSink(_BaseRerunEventSink):
                 view_coordinates=view_coordinates,
             )
         )
+        self._policy.log_static_trajectory_end_pose = True
         self._target_path = target_path
         self._latest_ground_alignment: GroundAlignmentMetadata | None = None
         attach_recording_sinks(self._stream, grpc_url=None, target_path=target_path)

@@ -2,35 +2,35 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
+from evo.core import metrics
 
-from prml_vslam.eval.contracts import (
-    CloudAlignmentArtifact,
-    CloudAlignmentSelection,
-    DiscoveredRun,
-    EvaluationArtifact,
-    MetricStats,
-    SelectionSnapshot,
+from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
 )
-from prml_vslam.eval.services import (
-    CloudAlignmentService,
-    TrajectoryEvaluationService,
-    compute_trajectory_ape_preview,
+from prml_vslam.eval.contracts import (
+    CloudAlignmentArtifact,
+    CloudAlignmentSelection,
+    MetricStats,
 )
+from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
 from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
 from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
+from prml_vslam.eval.trajectory_contracts import (
+    DiscoveredRun,
+    SelectionSnapshot,
+    TrajectoryEvaluationManifest,
+    TrajectoryMetricResultRow,
+)
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -52,51 +52,38 @@ from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply, write_point_cloud_ply, write_tum_trajectory
 
 
-def test_evaluation_artifact_round_trips_explicit_semantics(tmp_path: Path) -> None:
-    payload = {
-        "title": "Trajectory APE (evo)",
-        "matched_pairs": 2,
-        "stats": MetricStats(
-            rmse=1.0,
-            mean=1.0,
-            median=1.0,
-            std=0.0,
-            min=1.0,
-            max=1.0,
-            sse=2.0,
-        ).model_dump(mode="python"),
-        "error_timestamps_s": [0.0, 1.0],
-        "error_values": [0.5, 1.5],
-        "semantics": TrajectoryEvaluationSemantics(
-            metric_id=TrajectoryMetricId.APE_TRANSLATION,
-            pose_relation="translation_part",
-            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-            sync_max_diff_s=0.01,
-        ).model_dump(mode="python"),
-    }
-
-    artifact = EvaluationArtifact.from_payload(
-        path=tmp_path / "trajectory_metrics.json",
-        payload=payload,
-        reference_path=tmp_path / "reference.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        trajectories=(
-            TrajectorySeries(
-                name="Reference",
-                positions_xyz=np.zeros((2, 3), dtype=np.float64),
-                timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
-            ),
-            TrajectorySeries(
-                name="Estimate",
-                positions_xyz=np.ones((2, 3), dtype=np.float64),
-                timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
-            ),
-        ),
+def test_trajectory_metric_contracts_round_trip_manifest_rows(tmp_path: Path) -> None:
+    stats = MetricStats.from_evo_statistics(
+        {"rmse": 1.0, "mean": 1.0, "median": 1.0, "std": 0.0, "min": 1.0, "max": 1.0, "sse": 2.0}
+    )
+    row = TrajectoryMetricResultRow(
+        run_id="run",
+        sequence_id="seq",
+        reference_source="ground_truth",
+        estimate_source="vslam",
+        metric_family="rpe",
+        pose_relation=metrics.PoseRelation.rotation_angle_deg,
+        statistic="rmse",
+        value=stats.rmse,
+        unit="deg",
+        matched_pairs=2,
+        delta=1.0,
+        delta_unit="frames",
+        error_series_path=tmp_path / "errors.npz",
+    )
+    manifest = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq",
+        run_id="run",
+        reference_trajectories=[tmp_path / "reference.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
     )
 
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
-    assert artifact.semantics.alignment_mode is TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-    assert artifact.semantics.candidate_next_metrics == [TrajectoryMetricId.RPE_TRANSLATION]
+    assert row.metric_family == "rpe"
+    assert row.pose_relation is metrics.PoseRelation.rotation_angle_deg
+    assert manifest.model_validate_json(manifest.model_dump_json()).candidate_trajectories == [
+        tmp_path / "estimate.tum"
+    ]
 
 
 def test_sim3_umeyama_preview_recovers_metric_scale(tmp_path: Path) -> None:
@@ -161,6 +148,23 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         ],
         timestamps=[0.0, 1.0],
     )
+    candidate_specs = [
+        (ReferenceSource.ARCORE, "source_native", tmp_path / "arcore.tum", 1.2),
+        (ReferenceSource.ARCORE, "aligned", tmp_path / "arcore_aligned_to_gt.tum", 1.3),
+        (ReferenceSource.ARKIT, "source_native", tmp_path / "arkit.tum", 1.4),
+        (ReferenceSource.ARKIT, "aligned", tmp_path / "arkit_aligned_to_gt.tum", 1.5),
+    ]
+    candidate_paths = [
+        write_tum_trajectory(
+            path,
+            poses=[
+                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=offset, ty=0.0, tz=0.0),
+            ],
+            timestamps=[0.0, 1.0],
+        )
+        for _, _, path, offset in candidate_specs
+    ]
     artifact_root = tmp_path / "run"
     run_config = build_run_config(
         experiment_name="trajectory-stage",
@@ -178,7 +182,15 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     benchmark_inputs = PreparedBenchmarkInputs(
         reference_trajectories=[
             ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=reference_path),
-        ]
+        ],
+        candidate_trajectories=[
+            ReferenceTrajectoryRef(
+                source=source,
+                path=path,
+                coordinate_status=ReferenceCloudCoordinateStatus(status),
+            )
+            for (source, status, _, _), path in zip(candidate_specs, candidate_paths, strict=True)
+        ],
     )
     slam = SlamArtifacts(
         trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="estimate"),
@@ -195,10 +207,41 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     )
 
     assert artifact is not None
-    assert artifact.path == artifact_root / "evaluation" / "trajectory_metrics.json"
-    assert artifact.reference_path == reference_path
-    assert artifact.estimate_path == estimate_path
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
+    assert artifact.reference_trajectories == [reference_path]
+    assert artifact.candidate_trajectories == [estimate_path, *candidate_paths]
+    manifest_path = artifact_root / "evaluation" / "trajectory" / "manifest.json"
+    assert manifest_path.exists()
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # Multi-metric loop now emits both translation and rotation APE (and RPE when tractable)
+    pose_relations_in_manifest = {case["pose_relation"] for case in manifest_payload["evaluation_cases"]}
+    assert "translation_part" in pose_relations_in_manifest
+    assert "rotation_angle_deg" in pose_relations_in_manifest
+    metrics_long_path = artifact_root / "evaluation" / "trajectory" / "metrics_long.csv"
+    assert metrics_long_path.exists()
+    # All 5 candidate sources are still represented (one entry per candidate per spec)
+    assert set(case.candidate_source for case in artifact.evaluation_cases) == {"vista", "arcore", "arkit"}
+    assert set(case.candidate_coordinate_status for case in artifact.evaluation_cases) == {
+        "raw",
+        "source_native",
+        "aligned",
+    }
+    assert artifact.error_series_paths == [case.error_series_path for case in artifact.evaluation_cases]
+    # At minimum 5 candidates × 2 APE specs = 10 paths; RPE paths may additionally appear
+    assert len(artifact.error_series_paths) >= 10
+    assert all(path.exists() for path in artifact.error_series_paths)
+    # vista is always the first candidate; APE translation then APE rotation are specs 0 and 1
+    # Note: PoseRelation.rotation_angle_deg.value == "rotation_angle_in_degrees" in evo
+    assert artifact.error_series_paths[0].name == "ground_truth__vista__raw__ape_translation_part.npz"
+    assert artifact.error_series_paths[1].name == "ground_truth__vista__raw__ape_rotation_angle_in_degrees.npz"
+    with metrics_long_path.open("r", encoding="utf-8", newline="") as handle:
+        estimate_sources = {row["estimate_source"] for row in csv.DictReader(handle)}
+    assert estimate_sources == {
+        "vista/raw",
+        "arcore/source_native",
+        "arcore/aligned",
+        "arkit/source_native",
+        "arkit/aligned",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +611,7 @@ def _planar_yawed_pair(
 
 def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
     from prml_vslam.eval.services import _sim3_up_axis_tilt_deg
-    from prml_vslam.interfaces.geometry import yaw_similarity_align
+    from prml_vslam.utils.geometry import yaw_similarity_align
 
     estimate, reference, _ = _planar_yawed_pair(yaw_deg=175.0, scale=1.3)
     scale, rotation, translation = yaw_similarity_align(estimate, reference, up_axis=(0.0, 1.0, 0.0))
