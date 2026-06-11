@@ -41,10 +41,7 @@ class _CappedStreamingSource(StreamingSequenceSource):
     def __init__(self, source: StreamingSequenceSource, *, max_frames: int) -> None:
         self._source = source
         self._max_frames = max_frames
-
-    @property
-    def label(self) -> str:
-        return self._source.label
+        self.label = source.label
 
     def prepare_sequence_manifest(self, output_dir: Path):
         return self._source.prepare_sequence_manifest(output_dir)
