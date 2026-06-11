@@ -148,9 +148,28 @@ def _prepare(
 
 
 def _resolve_data_range(reference: np.ndarray, generated: np.ndarray, data_range: float | None) -> float:
+    """Infer the value range, failing fast on dtype combinations that cannot be inferred.
+
+    A consistent ``uint8`` pair implies ``[0, 255]`` and a consistent floating pair
+    implies ``[0, 1]``. Mixed integer/float inputs (e.g. ``float[0, 1]`` vs
+    ``uint8[0, 255]``) or non-``uint8`` integers are ambiguous and would silently
+    produce wrong metrics, so they require an explicit ``data_range`` instead.
+    """
     if data_range is not None:
         return float(data_range)
-    if np.issubdtype(reference.dtype, np.integer) or np.issubdtype(generated.dtype, np.integer):
+    reference_is_integer = np.issubdtype(reference.dtype, np.integer)
+    generated_is_integer = np.issubdtype(generated.dtype, np.integer)
+    if reference_is_integer != generated_is_integer:
+        raise ValueError(
+            f"Cannot infer data_range for mixed integer/floating images ({reference.dtype} vs {generated.dtype}); "
+            "pass an explicit data_range."
+        )
+    if reference_is_integer:
+        if reference.dtype != np.uint8 or generated.dtype != np.uint8:
+            raise ValueError(
+                f"Cannot infer data_range for non-uint8 integer images ({reference.dtype}, {generated.dtype}); "
+                "pass an explicit data_range."
+            )
         return 255.0
     return 1.0
 

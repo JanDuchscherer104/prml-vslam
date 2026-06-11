@@ -995,7 +995,8 @@ def render_run(
     source intrinsics, scores masked L1/L2/PSNR/SSIM, and writes
     evaluation/image_metrics.json plus a side-by-side gallery for visual review.
     """
-    from prml_vslam.eval.render_eval import RenderEvalConfig, evaluate_run_from_artifact_root
+    from prml_vslam.eval.image_service import ImageQualityEvaluationService
+    from prml_vslam.eval.render_eval import RenderEvalConfig
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)
@@ -1006,7 +1007,7 @@ def render_run(
         depth_max_m=depth_max_m,
     )
     try:
-        result = evaluate_run_from_artifact_root(resolved_root, config=config)
+        result = ImageQualityEvaluationService(path_config).evaluate_run(resolved_root, config=config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc

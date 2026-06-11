@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.render_eval import RenderEvalResult, evaluate_run_from_artifact_root
+from prml_vslam.eval.image_service import ImageQualityEvaluationService
+from prml_vslam.eval.render_eval import RenderEvalResult
 from prml_vslam.eval.stage_image.contracts import ImageEvaluationStageInput
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
@@ -17,8 +18,8 @@ class ImageEvaluationRuntime(OfflineStageRuntime[ImageEvaluationStageInput]):
     """Adapt the eval-owned render-and-score engine to the bounded runtime API.
 
     The runtime builds pipeline outcomes and status, while
-    :func:`prml_vslam.eval.render_eval.evaluate_run_from_artifact_root` owns
-    rendering, timestamp pairing, masked metric computation, and persistence.
+    :meth:`prml_vslam.eval.image_service.ImageQualityEvaluationService.evaluate_run`
+    owns rendering, timestamp pairing, masked metric computation, and persistence.
     """
 
     def __init__(self) -> None:
@@ -41,7 +42,7 @@ class ImageEvaluationRuntime(OfflineStageRuntime[ImageEvaluationStageInput]):
             }
         )
         try:
-            result = evaluate_run_from_artifact_root(
+            result = ImageQualityEvaluationService().evaluate_run(
                 input_payload.artifact_root,
                 config=input_payload.render_config,
             )
