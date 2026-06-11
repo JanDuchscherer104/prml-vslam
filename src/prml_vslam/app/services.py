@@ -5,11 +5,11 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from threading import Event
 from typing import TypeVar
 
 from prml_vslam.interfaces import Observation
-from prml_vslam.sources.datasets.advio import AdvioPoseSource
 from prml_vslam.sources.record3d.record3d import (
     Record3DDevice,
     Record3DTransportId,
@@ -123,7 +123,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         *,
         sequence_id: int | str,
         sequence_label: str,
-        pose_source: AdvioPoseSource,
+        pose_source: StrEnum,
         stream: ObservationStream,
     ) -> None:
         self.launch(
@@ -148,7 +148,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         *,
         sequence_id: int | str,
         sequence_label: str,
-        pose_source: AdvioPoseSource,
+        pose_source: StrEnum,
         stream: ObservationStream,
         stop_event: Event,
     ) -> None:

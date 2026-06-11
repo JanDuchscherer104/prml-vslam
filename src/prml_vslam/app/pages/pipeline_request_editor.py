@@ -10,7 +10,7 @@ import streamlit as st
 from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig, MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
-from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 
 from ..models import PipelinePageState, PipelineSourceId
@@ -309,9 +309,9 @@ def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioP
     if status is None:
         return [AdvioPoseSource.GROUND_TRUTH]
     options = [AdvioPoseSource.GROUND_TRUTH]
-    if AdvioModality.PIXEL_ARCORE in status.local_modalities:
+    if status.arcore_ready:
         options.append(AdvioPoseSource.ARCORE)
-    if AdvioModality.IPHONE_ARKIT in status.local_modalities:
+    if status.arkit_ready:
         options.append(AdvioPoseSource.ARKIT)
     return options
 

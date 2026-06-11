@@ -17,6 +17,7 @@ from .models import (
     AdvioPageData,
     AdvioPreviewFormData,
     AdvioPreviewSnapshot,
+    DatasetTableRow,
 )
 from .state import save_model_updates
 
@@ -54,8 +55,6 @@ def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest
         context.state,
         context.state.advio,
         selected_sequence_ids=request.sequence_ids,
-        download_preset=request.preset,
-        selected_modalities=request.modalities,
         overwrite_existing=request.overwrite,
     )
 
@@ -109,16 +108,18 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         )
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=True)
         save_model_updates(context.store, context.state, context.state.tum_rgbd, preview_is_running=False)
+        save_model_updates(context.store, context.state, context.state.record3d_dataset, preview_is_running=False)
         return None
     except Exception as exc:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return str(exc)
 
 
-def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[dict[str, object]]:
+def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[DatasetTableRow]:
     return [
         {
             "Scene": status.scene.sequence_slug,
+            "Sequence": status.scene.sequence_slug,
             "Venue": status.scene.venue,
             "Dataset": status.scene.dataset_code,
             "Environment": status.scene.environment.label,
@@ -126,7 +127,6 @@ def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[dict[str, object]
             "Local": status.sequence_dir is not None,
             "Replay Ready": status.replay_ready,
             "Offline Ready": status.offline_ready,
-            "Local Modalities": ", ".join(modality.label for modality in status.local_modalities),
         }
         for status in statuses
     ]

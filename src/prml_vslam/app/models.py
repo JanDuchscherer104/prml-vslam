@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import AliasChoices, Field
 
@@ -15,19 +16,50 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetSummary,
-    AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
-    AdvioModality,
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
+from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary
+from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
+from prml_vslam.sources.datasets.record3d.record3d_models import Record3DDatasetSummary, Record3DLocalSceneStatus
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource
+from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_models import TumRgbdDatasetSummary, TumRgbdLocalSceneStatus
 from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, JsonObject
 
 from .preview_runtime import PacketSessionSnapshot
+
+DatasetTableValue: TypeAlias = str | int | float | bool | None
+DatasetTableRow: TypeAlias = dict[str, DatasetTableValue]
+DatasetPageSummary: TypeAlias = AdvioDatasetSummary | TumRgbdDatasetSummary | Record3DDatasetSummary | DatasetSummary
+DatasetStatusList: TypeAlias = (
+    list[AdvioLocalSceneStatus] | list[TumRgbdLocalSceneStatus] | list[Record3DLocalSceneStatus]
+)
+
+
+class DatasetPageData(BaseData):
+    """Computed dataset-tab render payload."""
+
+    summary: DatasetPageSummary
+    statuses: DatasetStatusList
+    rows: list[DatasetTableRow]
+    notice_level: Literal["error", "warning", "success"] | None = None
+    notice_message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedDatasetSnapshot:
+    """Cache-local normalized dataset rows used by one Streamlit render."""
+
+    records: list[JsonObject]
+    stats: list[JsonObject]
+    metadata: list[JsonObject]
+    issues: list[JsonObject]
+    sequence_ids: set[str]
+    default_profile_sequence_ids: set[str]
+    profile_counts: dict[str, int]
 
 
 class AppPageId(StrEnum):
@@ -84,7 +116,7 @@ class AdvioPreviewSnapshot(PreviewSessionSnapshot):
     sequence_label: str = ""
     """Human-readable label for the selected dataset sequence."""
 
-    pose_source: AdvioPoseSource | TumRgbdPoseSource | None = None
+    pose_source: StrEnum | None = None
     """Pose source currently used for the preview stream."""
 
 
@@ -110,7 +142,7 @@ class AdvioPageData(BaseData):
 
     summary: AdvioDatasetSummary
     statuses: list[AdvioLocalSceneStatus]
-    rows: list[dict[str, object]]
+    rows: list[DatasetTableRow]
     notice_level: Literal["error", "warning", "success"] | None = None
     notice_message: str = ""
 
@@ -120,12 +152,6 @@ class AdvioPageState(BaseData):
 
     selected_sequence_ids: list[int] = Field(default_factory=list)
     """Explicit scene selection for download actions."""
-
-    download_preset: AdvioDownloadPreset = AdvioDownloadPreset.OFFLINE
-    """Selected curated download bundle."""
-
-    selected_modalities: list[AdvioModality] = Field(default_factory=list)
-    """Optional explicit modality override."""
 
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
@@ -152,12 +178,6 @@ class TumRgbdPageState(BaseData):
     selected_sequence_ids: list[str] = Field(default_factory=list)
     """Explicit scene selection for download actions."""
 
-    download_preset: TumRgbdDownloadPreset = TumRgbdDownloadPreset.OFFLINE
-    """Selected curated download bundle."""
-
-    selected_modalities: list[TumRgbdModality] = Field(default_factory=list)
-    """Optional explicit modality override."""
-
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
 
@@ -177,6 +197,50 @@ class TumRgbdPageState(BaseData):
     """Whether the current browser session expects a TUM RGB-D preview stream to be active."""
 
 
+class Record3DDatasetPoseSource(StrEnum):
+    """Pose providers supported by the offline Record3D dataset tab."""
+
+    ARKIT = "arkit"
+    NONE = "none"
+
+    @property
+    def label(self) -> str:
+        """Return the user-facing pose-source label."""
+        return {self.ARKIT: "Record3D / ARKit", self.NONE: "No Pose Overlay"}[self]
+
+
+class Record3DDatasetPageState(BaseData):
+    """Persisted selector state for the offline Record3D dataset-management tab."""
+
+    selected_sequence_ids: list[int] = Field(default_factory=list)
+    """Explicit zero-based scene selection for download actions."""
+
+    overwrite_existing: bool = False
+    """Whether download actions should overwrite local `.r3d` archives."""
+
+    explorer_sequence_id: str | None = None
+    """Selected local `.r3d` archive shown in the explorer section."""
+
+    preview_sequence_id: str | None = None
+    """Selected local `.r3d` archive shown in the loop-preview section."""
+
+    preview_pose_source: Record3DDatasetPoseSource = Record3DDatasetPoseSource.ARKIT
+    """Selected camera-pose source for the loop-preview stream."""
+
+    preview_include_depth: bool = True
+    """Whether the preview should include Record3D depth frames when available."""
+
+    preview_is_running: bool = False
+    """Whether the current browser session expects a Record3D dataset preview stream to be active."""
+
+
+class Record3DDownloadFormData(BaseData):
+    """Typed Record3D dataset-download form payload."""
+
+    request: Record3DDownloadRequest
+    submitted: bool = False
+
+
 class MetricsPageState(BaseData):
     """Persisted selector state for the metrics page."""
 
@@ -186,11 +250,11 @@ class MetricsPageState(BaseData):
     sequence_slug: str | None = None
     """Selected dataset sequence, for example `advio-15`."""
 
-    scope: str = "sequence"
-    """View scope: ``sequence`` for single-sequence review, ``dataset`` for dataset-wide summary."""
+    run_root: Path | None = None
+    """Selected artifact root for one evaluated run."""
 
-    dataset_primary_metric: str = "ape/translation_part/rmse"
-    """Primary metric shown in the dataset-wide leaderboard, encoded as ``family/pose_relation/statistic``."""
+    result_path: Path | None = None
+    """Most recently loaded or computed persisted result path."""
 
 
 class ArtifactInspectorPageState(BaseData):
@@ -486,6 +550,9 @@ class AppState(BaseData):
     record3d: Record3DPageState = Field(default_factory=Record3DPageState)
     """Record3D page selector state."""
 
+    record3d_dataset: Record3DDatasetPageState = Field(default_factory=Record3DDatasetPageState)
+    """Offline Record3D dataset-tab selector state."""
+
     advio: AdvioPageState = Field(default_factory=AdvioPageState)
     """ADVIO page selector state."""
 
@@ -515,6 +582,9 @@ __all__ = [
     "PipelineTelemetryViewMode",
     "PreviewStreamState",
     "Record3DPageState",
+    "Record3DDatasetPageState",
+    "Record3DDatasetPoseSource",
+    "Record3DDownloadFormData",
     "Record3DStreamSnapshot",
     "TumRgbdPageState",
 ]
