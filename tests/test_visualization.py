@@ -547,8 +547,13 @@ def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    case_paths = [tmp_path / "vista_errors.npz", tmp_path / "arcore_errors.npz"]
-    for path, offset in zip(case_paths, [1.0, 1.2], strict=True):
+    case_paths = [
+        tmp_path / "ape_translation_errors.npz",
+        tmp_path / "ape_rotation_errors.npz",
+        tmp_path / "rpe_translation_errors.npz",
+        tmp_path / "rpe_rotation_errors.npz",
+    ]
+    for path, offset in zip(case_paths, [1.0, 1.2, 1.4, 1.6], strict=True):
         np.savez(
             path,
             values=np.array([0.0, 0.1], dtype=np.float64),
@@ -575,14 +580,40 @@ def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace
             ),
             TrajectoryEvaluationCase(
                 reference_path=tmp_path / "ground_truth.tum",
-                candidate_path=tmp_path / "arcore_aligned_to_gt.tum",
+                candidate_path=tmp_path / "vista.tum",
                 reference_source="ground_truth",
-                candidate_source="arcore",
-                candidate_coordinate_status="aligned",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
                 metric_family="ape",
-                pose_relation=metrics.PoseRelation.translation_part,
+                pose_relation=metrics.PoseRelation.rotation_angle_deg,
                 error_series_path=case_paths[1],
                 matched_pairs=2,
+            ),
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="rpe",
+                pose_relation=metrics.PoseRelation.translation_part,
+                error_series_path=case_paths[2],
+                matched_pairs=2,
+                delta=1.0,
+                delta_unit="meters",
+            ),
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="rpe",
+                pose_relation=metrics.PoseRelation.rotation_angle_deg,
+                error_series_path=case_paths[3],
+                matched_pairs=2,
+                delta=1.0,
+                delta_unit="meters",
             ),
         ],
     )
@@ -626,20 +657,18 @@ def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace
     assert line_calls == [
         "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/reference/trajectory",
         "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/estimate/trajectory",
-        "world/evaluation/trajectory/ground_truth/ape.translation/arcore/aligned/reference/trajectory",
-        "world/evaluation/trajectory/ground_truth/ape.translation/arcore/aligned/estimate/trajectory",
     ]
     assert point_calls == [
         "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/estimate/ape_points",
-        "world/evaluation/trajectory/ground_truth/ape.translation/arcore/aligned/estimate/ape_points",
     ]
     assert correspondence_calls == [
         "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/correspondences",
-        "world/evaluation/trajectory/ground_truth/ape.translation/arcore/aligned/correspondences",
     ]
     assert scalar_calls == [
         "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/error/translation_m",
-        "world/evaluation/trajectory/ground_truth/ape.translation/arcore/aligned/error/translation_m",
+        "world/evaluation/trajectory/ground_truth/ape.rotation/vista/raw/error/rotation_deg",
+        "world/evaluation/trajectory/ground_truth/rpe.translation.delta_1_meters/vista/raw/error/translation_m",
+        "world/evaluation/trajectory/ground_truth/rpe.rotation.delta_1_meters/vista/raw/error/rotation_deg",
     ]
 
 
