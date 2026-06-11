@@ -160,6 +160,11 @@ class PreparedBenchmarkInputs(BaseData):
     """
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
+    """GT/reference trajectories that may anchor benchmark comparisons."""
+
+    candidate_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
+    """External baseline trajectories that may be evaluated against a reference."""
+
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
     observation_sequences: list[ObservationSequenceRef] = Field(default_factory=list)
 
