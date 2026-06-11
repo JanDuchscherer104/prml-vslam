@@ -41,6 +41,7 @@ from prml_vslam.sources.contracts import (
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
+from prml_vslam.sources.protocols import OfflineSequenceSource
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
@@ -57,6 +58,10 @@ from prml_vslam.sources.stage.visualization import (
     SourceVisualizationAdapter,
 )
 from prml_vslam.utils import PathConfig, RunArtifactPaths
+
+
+def test_offline_sequence_source_label_contract_is_read_only_property() -> None:
+    assert isinstance(OfflineSequenceSource.__dict__["label"], property)
 
 
 class _ManifestOnlySource:
