@@ -13,6 +13,8 @@ from prml_vslam.utils import Console
 
 from .advio_layout import (
     archive_member_matches,
+    arcore_ready,
+    arkit_ready,
     local_modalities,
     resolve_calibration_path,
     resolve_existing_sequence_dir,
@@ -49,17 +51,23 @@ class AdvioDownloadManager:
 
     def local_scene_statuses(self) -> list[AdvioLocalSceneStatus]:
         """Return local availability status for every catalog scene."""
-        return [
-            AdvioLocalSceneStatus(
-                scene=scene,
-                sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_slug),
-                local_modalities=(local_modalities := self._local_modalities(scene)),
-                archive_path=self._existing_archive_path(scene),
-                replay_ready=modalities_present(local_modalities, AdvioDownloadPreset.STREAMING.modalities),
-                offline_ready=modalities_present(local_modalities, AdvioDownloadPreset.OFFLINE.modalities),
+        statuses: list[AdvioLocalSceneStatus] = []
+        for scene in self.catalog.scenes:
+            sequence_dir = resolve_existing_sequence_dir(self.dataset_root, scene.sequence_slug)
+            modalities = self._local_modalities(scene)
+            statuses.append(
+                AdvioLocalSceneStatus(
+                    scene=scene,
+                    sequence_dir=sequence_dir,
+                    local_modalities=modalities,
+                    archive_path=self._existing_archive_path(scene),
+                    replay_ready=modalities_present(modalities, AdvioDownloadPreset.STREAMING.modalities),
+                    offline_ready=modalities_present(modalities, AdvioDownloadPreset.OFFLINE.modalities),
+                    arcore_ready=arcore_ready(sequence_dir, scene),
+                    arkit_ready=arkit_ready(sequence_dir, scene),
+                )
             )
-            for scene in self.catalog.scenes
-        ]
+        return statuses
 
     def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
         """Download selected ADVIO scenes and extract the requested modalities."""

@@ -37,8 +37,15 @@ from prml_vslam.pipeline.demo import (
     persist_advio_demo_run_config,
 )
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+    VideoSourceConfig,
+)
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.dataset_query import NormalizedDatasetQuery
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadPreset,
@@ -47,6 +54,19 @@ from prml_vslam.sources.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
+from prml_vslam.sources.datasets.batch_normalization import (
+    NormalizedDatasetBatchConfig,
+    NormalizedDatasetBatchProgress,
+    normalize_dataset_batch,
+)
+from prml_vslam.sources.datasets.normalization import (
+    dataset_service,
+    normalize_dataset_entry,
+    normalized_store_for_service,
+    parse_dataset_id,
+    source_config_for_normalization,
+)
+from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
     TumRgbdDownloadPreset,
@@ -72,11 +92,23 @@ tum_rgbd_app = typer.Typer(
     no_args_is_help=True,
     help="TUM RGB-D dataset inspection and download helpers.",
 )
+record3d_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Record3D dataset inspection and download helpers.",
+)
+dataset_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Normalized offline dataset store helpers.",
+)
 console = Console(__name__)
 pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
 app.add_typer(tum_rgbd_app, name="tum-rgbd")
+app.add_typer(record3d_app, name="record3d")
+app.add_typer(dataset_app, name="dataset")
 
 
 def _reference_trajectory_filename(source: ReferenceSource) -> str:
@@ -97,9 +129,9 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
         "Source Stage",
         (
             ("--stages.source.enabled", "Enable or disable source normalization."),
-            ("--stages.source.backend.source_id", "Source kind: video, advio, tum_rgbd, record3d."),
+            ("--stages.source.backend.source_id", "Source kind: video, advio, tum_rgbd, record3d_dataset, record3d."),
             ("--stages.source.backend.video_path", "Video source path when source_id=video."),
-            ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO or TUM RGB-D."),
+            ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO, TUM RGB-D, or Record3D."),
             ("--stages.source.backend.frame_stride", "Frame sampling stride."),
             ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
             ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
@@ -982,6 +1014,172 @@ def launch_app(
         raise typer.Exit(code=exc.returncode) from exc
 
 
+@record3d_app.command("summary")
+def record3d_summary() -> None:
+    """Print committed and local Record3D dataset coverage."""
+    service = Record3DDatasetService(get_path_config())
+    summary = service.summarize()
+    payload = {
+        "dataset_root": str(service.dataset_root),
+        "summary": summary.model_dump(mode="json"),
+        "local_sequence_ids": [
+            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+        ],
+    }
+    console.plog(payload)
+
+
+@record3d_app.command("download")
+def record3d_download(
+    sequence_ids: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--sequence",
+            help="Repeat to select one or more zero-based Record3D sequence indices. Omit to target all scenes.",
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite/--reuse",
+            help="Whether to re-download cached `.r3d` archives.",
+        ),
+    ] = False,
+) -> None:
+    """Download selected Record3D `.r3d` archives."""
+    service = Record3DDatasetService(get_path_config())
+    try:
+        result = service.download(
+            Record3DDownloadRequest(
+                sequence_ids=[] if sequence_ids is None else sequence_ids,
+                overwrite=overwrite,
+            )
+        )
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "result": result.model_dump(mode="json"),
+        "summary": service.summarize().model_dump(mode="json"),
+    }
+    console.plog(payload)
+
+
+@dataset_app.command("normalize")
+def dataset_normalize(
+    dataset: Annotated[
+        str,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ],
+    sequence: Annotated[str, typer.Option("--sequence", help="Dataset sequence id or local Record3D archive stem.")],
+    record3d_reference_cloud_pixel_stride: Annotated[
+        int,
+        typer.Option("--record3d-reference-cloud-pixel-stride", min=1),
+    ] = 8,
+    record3d_reference_cloud_min_confidence: Annotated[
+        int | None,
+        typer.Option("--record3d-reference-cloud-min-confidence", min=0, max=255),
+    ] = 1,
+    record3d_reference_cloud_max_points: Annotated[
+        int,
+        typer.Option("--record3d-reference-cloud-max-points", min=1),
+    ] = 100_000,
+) -> None:
+    """Create or replace one full-frame normalized dataset entry."""
+    path_config = get_path_config()
+    try:
+        dataset_id = parse_dataset_id(dataset)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    service = dataset_service(dataset_id, path_config)
+    source_config = source_config_for_normalization(
+        dataset_id=dataset_id,
+        sequence_id=sequence,
+        record3d_reference_cloud_pixel_stride=record3d_reference_cloud_pixel_stride,
+        record3d_reference_cloud_min_confidence=record3d_reference_cloud_min_confidence,
+        record3d_reference_cloud_max_points=record3d_reference_cloud_max_points,
+    )
+    entry = normalize_dataset_entry(dataset_id=dataset_id, service=service, source_config=source_config)
+    console.plog({"entry": entry.model_dump(mode="json")})
+
+
+@dataset_app.command("normalize-batch")
+def dataset_normalize_batch(
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="TOML config describing dataset sequences to normalize."),
+    ],
+) -> None:
+    """Create or reuse full-frame normalized entries from a TOML batch config."""
+    path_config = get_path_config()
+    resolved_config_path = path_config.resolve_toml_path(config_path, must_exist=True)
+    config = NormalizedDatasetBatchConfig.from_toml(resolved_config_path)
+    console.info(
+        f"Starting normalized dataset batch from {resolved_config_path} with max_workers={config.max_workers}."
+    )
+    result = normalize_dataset_batch(config, path_config=path_config, progress=_log_normalized_batch_progress)
+    console.plog({"config_path": resolved_config_path, "result": result.model_dump(mode="json")})
+    if result.failed:
+        raise typer.Exit(code=1)
+
+
+@dataset_app.command("stats")
+def dataset_stats() -> None:
+    """Print normalized-store records plus persisted stats/metadata row counts."""
+    query = NormalizedDatasetQuery(path_config=get_path_config())
+    entries = query.records()
+    records = query.record_rows(records=entries)
+    issues = query.issue_rows()
+    stats = query.stats_long_rows(records=entries)
+    metadata = query.metadata_long_rows(records=entries)
+    console.plog(
+        {
+            "records": records,
+            "issues": issues,
+            "stats_row_count": len(stats),
+            "metadata_row_count": len(metadata),
+        }
+    )
+
+
+def _log_normalized_batch_progress(event: NormalizedDatasetBatchProgress) -> None:
+    """Render user-facing normalized batch progress."""
+    prefix = "[normalized-cache]"
+    if event.stage in {"completed", "processing", "submitted"} and event.total:
+        progress = f" [{event.completed}/{event.total}]"
+    else:
+        progress = ""
+    dataset = f" {event.dataset_id.value}" if event.dataset_id is not None else ""
+    sequence = f"/{event.sequence_id}" if event.sequence_id is not None else ""
+    status = f" ({event.status})" if event.status else ""
+    console.info(f"{prefix}{progress} {event.stage}{dataset}{sequence}{status}: {event.message}")
+
+
+@dataset_app.command("summary")
+def dataset_summary(
+    dataset: Annotated[
+        str,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ],
+) -> None:
+    """Print normalized-entry metadata for one dataset."""
+    path_config = get_path_config()
+    try:
+        dataset_id = parse_dataset_id(dataset)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    service = dataset_service(dataset_id, path_config)
+    store = normalized_store_for_service(dataset_id, service)
+    console.plog(
+        {
+            "dataset_id": dataset_id.value,
+            "store_root": store.store_root,
+            "entries": [entry.model_dump(mode="json") for entry in store.summary()],
+        }
+    )
+
+
 @advio_app.command("summary")
 def advio_summary() -> None:
     """Print committed and local ADVIO dataset coverage."""
@@ -1004,22 +1202,6 @@ def advio_download(
         list[int] | None,
         typer.Option("--sequence", help="Repeat to select one or more ADVIO sequence ids. Omit to target all scenes."),
     ] = None,
-    preset: Annotated[
-        AdvioDownloadPreset,
-        typer.Option(
-            "--preset",
-            help="Curated modality bundle used when no explicit modality override is provided.",
-            case_sensitive=False,
-        ),
-    ] = AdvioDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[AdvioModality] | None,
-        typer.Option(
-            "--modality",
-            help="Repeat to override the preset with explicit modality groups.",
-            case_sensitive=False,
-        ),
-    ] = None,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -1027,8 +1209,16 @@ def advio_download(
             help="Whether to re-download cached ZIPs and replace extracted files.",
         ),
     ] = False,
+    preset: Annotated[
+        AdvioDownloadPreset,
+        typer.Option("--preset", help="Curated ADVIO modality bundle used when --modality is omitted."),
+    ] = AdvioDownloadPreset.OFFLINE,
+    modalities: Annotated[
+        list[AdvioModality] | None,
+        typer.Option("--modality", help="Repeat to explicitly select ADVIO modality bundles."),
+    ] = None,
 ) -> None:
-    """Download selected ADVIO scene archives and extract only requested modality bundles."""
+    """Download selected ADVIO scene archives and extract requested modalities."""
     service = AdvioDatasetService(get_path_config())
     try:
         result = service.download(
@@ -1072,22 +1262,6 @@ def tum_rgbd_download(
         list[str] | None,
         typer.Option("--sequence", help="Repeat to select one or more TUM sequence ids. Omit to target all scenes."),
     ] = None,
-    preset: Annotated[
-        TumRgbdDownloadPreset,
-        typer.Option(
-            "--preset",
-            help="Curated modality bundle used when no explicit modality override is provided.",
-            case_sensitive=False,
-        ),
-    ] = TumRgbdDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[TumRgbdModality] | None,
-        typer.Option(
-            "--modality",
-            help="Repeat to override the preset with explicit modality groups.",
-            case_sensitive=False,
-        ),
-    ] = None,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -1095,8 +1269,16 @@ def tum_rgbd_download(
             help="Whether to re-download cached TGZs and replace extracted files.",
         ),
     ] = False,
+    preset: Annotated[
+        TumRgbdDownloadPreset,
+        typer.Option("--preset", help="Curated TUM RGB-D modality bundle used when --modality is omitted."),
+    ] = TumRgbdDownloadPreset.OFFLINE,
+    modalities: Annotated[
+        list[TumRgbdModality] | None,
+        typer.Option("--modality", help="Repeat to explicitly select TUM RGB-D modality bundles."),
+    ] = None,
 ) -> None:
-    """Download selected TUM RGB-D archives and extract only requested modality bundles."""
+    """Download selected TUM RGB-D archives and extract requested modalities."""
     service = TumRgbdDatasetService(get_path_config())
     try:
         result = service.download(
@@ -1125,7 +1307,7 @@ def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence
     previewable_ids = [status.scene.sequence_id for status in service.local_scene_statuses() if status.replay_ready]
     if not previewable_ids:
         raise typer.BadParameter(
-            "No replay-ready ADVIO scenes were found. Download the streaming bundle first or pass --sequence."
+            "No replay-ready ADVIO scenes were found. Download a complete scene first or pass --sequence."
         )
     return previewable_ids[0]
 
@@ -1214,7 +1396,7 @@ def _apply_dataset_sampling_overrides(
         return source_backend
     if dataset_frame_stride is not None and dataset_target_fps is not None:
         raise typer.BadParameter("Configure either --dataset-frame-stride or --dataset-target-fps, not both.")
-    if not isinstance(source_backend, AdvioSourceConfig):
+    if not isinstance(source_backend, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig):
         raise typer.BadParameter("Dataset sampling overrides require a dataset-backed source.")
     return source_backend.model_copy(
         update={

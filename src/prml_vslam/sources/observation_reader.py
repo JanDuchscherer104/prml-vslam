@@ -47,6 +47,8 @@ def _load_manifest_rgb_inputs(
             "Materialize the source stage before invoking downstream offline stages."
         )
     image_paths = sorted(sequence.rgb_dir.glob("*.png"))
+    if sequence.source_frame_indices_path is not None:
+        image_paths = [image_paths[index] for index in _load_source_frame_indices(sequence.source_frame_indices_path)]
     if not image_paths:
         raise RuntimeError(f"Normalized input directory '{sequence.rgb_dir}' does not contain any PNG frames.")
     timestamps_ns = _load_timestamps_ns(sequence.timestamps_path)
@@ -70,6 +72,16 @@ def _load_timestamps_ns(path: Path) -> list[int]:
             f"'{path}', got: {type(payload).__name__}."
         )
     return [int(timestamp_ns) for timestamp_ns in payload["timestamps_ns"]]
+
+
+def _load_source_frame_indices(path: Path) -> list[int]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("source_frame_indices"), list):
+        raise RuntimeError(
+            "Expected normalized frame-index JSON with a `source_frame_indices` list at "
+            f"'{path}', got: {type(payload).__name__}."
+        )
+    return [int(index) for index in payload["source_frame_indices"]]
 
 
 def _load_rgb(path: Path) -> np.ndarray:

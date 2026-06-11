@@ -9,7 +9,12 @@ from pydantic import ConfigDict, Field
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+)
 from prml_vslam.sources.contracts import ReferenceCloudSource
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
@@ -75,6 +80,8 @@ def _source_reference_cloud_available(
 ) -> bool:
     if isinstance(source_backend, AdvioSourceConfig):
         return False
+    if isinstance(source_backend, Record3DDatasetSourceConfig):
+        return preferred_source in {None, ReferenceCloudSource.RECORD3D_LIDAR}
     if isinstance(source_backend, TumRgbdSourceConfig):
         return preferred_source in {None, ReferenceCloudSource.TUM_RGBD} and _tum_rgbd_reference_cloud_inputs_available(
             sequence_id=source_backend.sequence_id,

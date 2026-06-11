@@ -17,13 +17,9 @@ from prml_vslam.sources.datasets.contracts import (
     DatasetDownloadResult,
     DatasetSummary,
     LocalSceneStatus,
+    ReferenceCloudConfig,
 )
 from prml_vslam.utils import BaseConfig, BaseData
-from prml_vslam.utils.geometry import (
-    DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
-    DEFAULT_REFERENCE_CLOUD_MAX_POINTS,
-    DEFAULT_REFERENCE_CLOUD_RANDOM_SEED,
-)
 
 
 class TumRgbdPoseSource(StrEnum):
@@ -120,24 +116,20 @@ class TumRgbdDownloadRequest(BaseConfig):
         return tuple(self.modalities) if self.modalities else self.preset.modalities
 
 
-class TumRgbdDownloadResult(DatasetDownloadResult[str, TumRgbdModality]):
+class TumRgbdDownloadResult(DatasetDownloadResult[str]):
     """Summary of one explicit TUM RGB-D download action."""
 
+    modalities: list[TumRgbdModality] = Field(default_factory=list)
 
-class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata, TumRgbdModality]):
+
+class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata]):
     """Local availability summary for one TUM RGB-D scene."""
+
+    local_modalities: list[TumRgbdModality] = Field(default_factory=list)
 
 
 class TumRgbdDatasetSummary(DatasetSummary):
     """High-level summary of committed and local TUM RGB-D coverage."""
-
-
-class ReferenceCloudSamplingConfig(BaseConfig):
-    """Sampling policy for source-prepared TUM RGB-D reference clouds."""
-
-    depth_stride_px: int = Field(default=DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX, ge=1)
-    max_points: int = Field(default=DEFAULT_REFERENCE_CLOUD_MAX_POINTS, ge=1)
-    random_seed: int = Field(default=DEFAULT_REFERENCE_CLOUD_RANDOM_SEED, ge=0)
 
 
 class TumRgbdSequenceConfig(BaseConfig):
@@ -145,4 +137,4 @@ class TumRgbdSequenceConfig(BaseConfig):
 
     dataset_root: Path = Path(".data/tum_rgbd")
     sequence_id: str
-    reference_cloud: ReferenceCloudSamplingConfig = Field(default_factory=ReferenceCloudSamplingConfig)
+    reference_cloud: ReferenceCloudConfig = Field(default_factory=ReferenceCloudConfig)

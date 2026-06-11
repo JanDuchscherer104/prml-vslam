@@ -13,6 +13,7 @@ from prml_vslam.sources.datasets.contracts import DatasetServingConfig, FrameSel
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import BaseConfig
 
+from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
 from .advio_download import AdvioDownloadManager
 from .advio_layout import load_advio_catalog
@@ -32,6 +33,8 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
     dataset_serving: DatasetServingConfig
     replay_mode: ReplayMode = ReplayMode.REALTIME
     normalize_video_orientation: bool = True
+    normalized_store: NormalizedDatasetStore | None = None
+    normalized_profile: NormalizedDatasetProfile | None = None
 
     def setup_target(self) -> DatasetSequenceSource:
         """Build the normalized ADVIO streaming source adapter."""
@@ -70,6 +73,8 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
             ),
             stream=stream,
             replay_mode=self.replay_mode,
+            normalized_store=self.normalized_store,
+            normalized_profile=self.normalized_profile,
         )
 
 
@@ -124,6 +129,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         dataset_serving: DatasetServingConfig,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalize_video_orientation: bool = True,
+        normalized_store: NormalizedDatasetStore | None = None,
+        normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
         """Build the ADVIO-backed streaming source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
@@ -135,6 +142,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             normalize_video_orientation=normalize_video_orientation,
             frame_stride=selection.frame_stride,
             target_fps=selection.target_fps,
+            normalized_store=normalized_store,
+            normalized_profile=normalized_profile,
         ).setup_target()
 
     def open_preview_stream(

@@ -74,6 +74,7 @@ class SequenceManifest(BaseData):
     video_path: Path | None = None
     rgb_dir: Path | None = None
     timestamps_path: Path | None = None
+    source_frame_indices_path: Path | None = None
     intrinsics_path: Path | None = None
     rotation_metadata_path: Path | None = None
     advio: AdvioManifestAssets | None = None
@@ -104,6 +105,7 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
+    RECORD3D_LIDAR = "record3d_lidar"
     TUM_RGBD = "tum_rgbd"
 
 
@@ -158,11 +160,6 @@ class PreparedBenchmarkInputs(BaseData):
     """
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
-    """GT/reference trajectories that may anchor benchmark comparisons."""
-
-    candidate_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
-    """External baseline trajectories that may be evaluated against a reference."""
-
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
     observation_sequences: list[ObservationSequenceRef] = Field(default_factory=list)
 

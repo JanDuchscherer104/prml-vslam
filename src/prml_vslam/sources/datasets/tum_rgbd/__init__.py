@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from .tum_rgbd_loading import TumRgbdOfflineSample
 from .tum_rgbd_models import (
-    ReferenceCloudSamplingConfig,
     TumRgbdCatalog,
     TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
@@ -23,7 +22,6 @@ from .tum_rgbd_sequence import TumRgbdSequence
 from .tum_rgbd_service import TumRgbdDatasetService
 
 __all__ = [
-    "ReferenceCloudSamplingConfig",
     "TumRgbdCatalog",
     "TumRgbdDatasetService",
     "TumRgbdDownloadPreset",

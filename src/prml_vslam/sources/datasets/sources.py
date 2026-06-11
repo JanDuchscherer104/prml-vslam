@@ -15,9 +15,11 @@ from typing import TYPE_CHECKING, Any
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.sources.protocols import BenchmarkInputSource, StreamingSequenceSource
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
-from prml_vslam.utils import BaseData, Console, PathConfig
+from prml_vslam.utils import Console, PathConfig
 
-from .contracts import FrameSelectionConfig, SequenceKey
+from .contracts import DatasetSummary, FrameSelectionConfig, SequenceKey
+from .fetch import DatasetFetchHelper
+from .normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 
 if TYPE_CHECKING:
     from prml_vslam.sources.contracts import SequenceManifest
@@ -36,6 +38,8 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         benchmark: Callable[[SequenceKey, Path, FrameSelectionConfig], PreparedBenchmarkInputs],
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
+        normalized_store: NormalizedDatasetStore | None = None,
+        normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> None:
         self._sequence_id = sequence_id
         self._frame_selection = frame_selection
@@ -44,6 +48,8 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
         self._benchmark = benchmark
         self._stream = stream
         self._replay_mode = replay_mode
+        self._normalized_store = normalized_store
+        self._normalized_profile = normalized_profile
 
     @property
     def label(self) -> str:
@@ -52,14 +58,37 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
         """Materialize the normalized manifest for the selected dataset sequence."""
+        if self._normalized_store is not None and self._normalized_profile is not None:
+            entry = self._normalized_store.load_entry(self._normalized_profile)
+            return self._normalized_store.read_sequence_manifest(
+                entry,
+                frame_selection=self._frame_selection,
+                output_dir=output_dir,
+            )
         return self._manifest(self._sequence_id, output_dir, self._frame_selection)
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
         """Materialize prepared benchmark inputs for the selected dataset sequence."""
+        if self._normalized_store is not None and self._normalized_profile is not None:
+            entry = self._normalized_store.load_entry(self._normalized_profile)
+            return self._normalized_store.read_benchmark_inputs(
+                entry,
+                frame_selection=self._frame_selection,
+                output_dir=output_dir,
+            )
         return self._benchmark(self._sequence_id, output_dir, self._frame_selection)
 
     def open_stream(self, *, loop: bool) -> ObservationStream:
         """Open the replay stream for the selected dataset sequence."""
+        if self._normalized_store is not None and self._normalized_profile is not None:
+            entry = self._normalized_store.load_entry(self._normalized_profile)
+            return self._normalized_store.open_stream(
+                entry,
+                frame_selection=self._frame_selection,
+                output_dir=self._normalized_store.dataset_root / ".preview" / entry.sequence_id / entry.profile_key,
+                loop=loop,
+                replay_mode=self._replay_mode,
+            )
         if self._stream is None:
             raise RuntimeError("This dataset sequence source does not expose a replay stream.")
         return self._stream(self._sequence_id, loop, self._replay_mode, self._frame_selection)
@@ -89,22 +118,24 @@ class DatasetServiceBase:
     """
 
     catalog_loader: Callable[[], Any]
-    summary_model: type[BaseData]
+    summary_model: type[DatasetSummary]
     sequence_config_model: type[Any]
     sequence_model: type[Any]
+    dataset_root: Path
+    catalog: Any
+    console: Console
+    _fetch_helper: DatasetFetchHelper
 
     def __init__(self, path_config: PathConfig, *, catalog: Any | None = None) -> None:
         resolved_catalog = self.catalog_loader() if catalog is None else catalog
-        super().__init__(
-            path_config.resolve_dataset_dir(resolved_catalog.dataset_id),
-            catalog=resolved_catalog,
-            console=Console(self.__class__.__module__).child(self.__class__.__name__),
-        )
+        self.dataset_root = path_config.resolve_dataset_dir(resolved_catalog.dataset_id)
+        self.catalog = resolved_catalog
+        self.console = Console(self.__class__.__module__).child(self.__class__.__name__)
+        self._fetch_helper = DatasetFetchHelper()
 
-    # TODO: fix typing
-    def summarize(self, statuses: list[Any] | None = None) -> BaseData:
+    def summarize(self, statuses: list[Any] | None = None) -> DatasetSummary:
         """Return the high-level local-coverage summary for the dataset."""
-        statuses = self.local_scene_statuses() if statuses is None else statuses
+        statuses = self.local_scene_statuses() if statuses is None else statuses  # type: ignore[attr-defined]
         return self.summary_model(
             total_scene_count=len(statuses),
             local_scene_count=sum(status.sequence_dir is not None for status in statuses),
@@ -116,9 +147,9 @@ class DatasetServiceBase:
 
     def list_local_sequence_ids(self) -> list[SequenceKey]:
         """Return the offline-ready local sequence ids for the dataset."""
-        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]
+        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]  # type: ignore[attr-defined]
 
-    def load_local_sample(self, sequence_id: SequenceKey) -> object:
+    def load_local_sample(self, sequence_id: SequenceKey) -> Any:
         """Load one dataset-owned offline sample for inspection or tests."""
         return self._sequence(sequence_id).load_offline_sample()
 
@@ -128,10 +159,9 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
-        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> SequenceManifest:
         """Build the normalized offline manifest for one dataset sequence."""
-        return self._sequence(sequence_id, config_overrides=sequence_config_overrides).to_sequence_manifest(
+        return self._sequence(sequence_id).to_sequence_manifest(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
@@ -142,45 +172,34 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
-        sequence_config_overrides: dict[str, Any] | None = None,
     ) -> PreparedBenchmarkInputs:
         """Build prepared benchmark inputs for one dataset sequence."""
-        return self._sequence(sequence_id, config_overrides=sequence_config_overrides).to_benchmark_inputs(
+        return self._sequence(sequence_id).to_benchmark_inputs(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
 
     def resolve_sequence_id(self, sequence_slug: str) -> SequenceKey:
         """Resolve a UI- or CLI-facing slug into the dataset's canonical sequence id."""
-        return self.scene(sequence_slug).sequence_id
+        return self.scene(sequence_slug).sequence_id  # type: ignore[attr-defined]
 
     def build_offline_source(
-        self,
-        *,
-        sequence_id: SequenceKey,
-        frame_selection: FrameSelectionConfig | None = None,
-        sequence_config_overrides: dict[str, Any] | None = None,
+        self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
     ) -> DatasetSequenceSource:
         """Build the dataset-backed offline source adapter for one sequence."""
-        return self._build_source(
-            sequence_id=sequence_id,
-            frame_selection=frame_selection,
-            sequence_config_overrides=sequence_config_overrides,
-        )
+        return self._build_source(sequence_id=sequence_id, frame_selection=frame_selection)
 
     def build_streaming_source(
         self,
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
-        sequence_config_overrides: dict[str, Any] | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
         """Build the dataset-backed streaming source adapter for one sequence."""
         return self._build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
-            sequence_config_overrides=sequence_config_overrides,
             **stream_kwargs,
         )
 
@@ -209,26 +228,27 @@ class DatasetServiceBase:
         frame_selection: FrameSelectionConfig | None = None,
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
-        sequence_config_overrides: dict[str, Any] | None = None,
+        normalized_store: NormalizedDatasetStore | None = None,
+        normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
         return DatasetSequenceSource(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
-            label=lambda value: self.scene(value).display_name,
+            label=lambda value: self.scene(value).display_name,  # type: ignore[attr-defined]
             manifest=lambda value, output_dir, selection: self.build_sequence_manifest(
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
-                sequence_config_overrides=sequence_config_overrides,
             ),
             benchmark=lambda value, output_dir, selection: self.build_benchmark_inputs(
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
-                sequence_config_overrides=sequence_config_overrides,
             ),
             stream=stream,
             replay_mode=replay_mode,
+            normalized_store=normalized_store,
+            normalized_profile=normalized_profile,
         )
 
     def _build_streaming_source(
@@ -237,14 +257,16 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
-        sequence_config_overrides: dict[str, Any] | None = None,
+        normalized_store: NormalizedDatasetStore | None = None,
+        normalized_profile: NormalizedDatasetProfile | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
         return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
             replay_mode=replay_mode,
-            sequence_config_overrides=sequence_config_overrides,
+            normalized_store=normalized_store,
+            normalized_profile=normalized_profile,
             stream=lambda value, loop, replay_mode, selection: self.open_preview_stream(
                 sequence_id=value,
                 frame_selection=selection,
@@ -276,11 +298,8 @@ class DatasetServiceBase:
     def _preview_timestamps_ns(self, sequence: Any) -> list[int]:
         raise NotImplementedError
 
-    def _sequence(self, sequence_id: SequenceKey, *, config_overrides: dict[str, Any] | None = None) -> Any:
-        config_payload = {"dataset_root": self.dataset_root, "sequence_id": sequence_id}
-        if config_overrides:
-            config_payload.update(config_overrides)
+    def _sequence(self, sequence_id: SequenceKey) -> Any:
         return self.sequence_model(
-            config=self.sequence_config_model(**config_payload),
+            config=self.sequence_config_model(dataset_root=self.dataset_root, sequence_id=sequence_id),
             catalog=self.catalog,
         )

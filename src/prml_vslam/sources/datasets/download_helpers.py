@@ -2,18 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import TypeVar
 
-ModalityT = TypeVar("ModalityT", bound=StrEnum)
-
-
-def modalities_present(local_modalities: Iterable[ModalityT], required_modalities: tuple[ModalityT, ...]) -> bool:
-    """Return whether every required modality is available locally."""
-    available = set(local_modalities)
-    return all(modality in available for modality in required_modalities)
+ModalityT = TypeVar("ModalityT")
 
 
 def normalize_archive_member(
@@ -38,3 +30,9 @@ def relative_sequence_path(normalized_parts: tuple[str, ...], sequence_root: str
     if not root_parts or root_parts[0] != sequence_root:
         return None
     return PurePosixPath(*root_parts[1:])
+
+
+def modalities_present(local_modalities: list[ModalityT], required_modalities: tuple[ModalityT, ...]) -> bool:
+    """Return whether every required modality is present locally."""
+    local = set(local_modalities)
+    return all(modality in local for modality in required_modalities)

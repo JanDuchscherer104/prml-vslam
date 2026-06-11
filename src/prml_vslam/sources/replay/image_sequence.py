@@ -122,7 +122,7 @@ class ImageSequenceObservationSource:
                 continue
             row = self.rows[source_frame_index]
             self._clock.wait_until(row.timestamp_ns)
-            depth_m = self._load_depth(row.depth_path) if row.T_world_camera is not None else None
+            depth_m = self._load_depth(row) if row.T_world_camera is not None else None
             if row.rgb_path is None:
                 raise ValueError(f"Image sequence row seq={row.seq} is missing an RGB payload.")
             observation = Observation(
@@ -144,12 +144,12 @@ class ImageSequenceObservationSource:
             self._emitted_seq += 1
             return observation
 
-    def _load_depth(self, path: Path | None) -> NDArray[np.float32] | None:
-        if not self.include_depth or path is None:
+    def _load_depth(self, row: ObservationIndexEntry) -> NDArray[np.float32] | None:
+        if not self.include_depth or row.depth_path is None:
             return None
         if self.depth_loader is None:
             raise RuntimeError("A depth loader is required when include_depth=True and a row has a depth path.")
-        return self.depth_loader(_resolve_payload(path, self.sequence_dir))
+        return self.depth_loader(_resolve_payload(row.depth_path, self.sequence_dir)) * row.depth_scale_to_m
 
 
 def _resolve_payload(path: Path, payload_root: Path) -> Path:

@@ -43,17 +43,20 @@ class TumRgbdDownloadManager:
         return scene_for_sequence_id(self.catalog, sequence_id)
 
     def local_scene_statuses(self) -> list[TumRgbdLocalSceneStatus]:
-        return [
-            TumRgbdLocalSceneStatus(
-                scene=scene,
-                sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
-                local_modalities=(modalities := self._local_modalities(scene)),
-                archive_path=self._existing_archive_path(scene),
-                replay_ready=modalities_present(modalities, TumRgbdDownloadPreset.STREAMING.modalities),
-                offline_ready=modalities_present(modalities, TumRgbdDownloadPreset.OFFLINE.modalities),
+        statuses: list[TumRgbdLocalSceneStatus] = []
+        for scene in self.catalog.scenes:
+            modalities = self._local_modalities(scene)
+            statuses.append(
+                TumRgbdLocalSceneStatus(
+                    scene=scene,
+                    sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
+                    local_modalities=modalities,
+                    archive_path=self._existing_archive_path(scene),
+                    replay_ready=modalities_present(modalities, TumRgbdDownloadPreset.STREAMING.modalities),
+                    offline_ready=modalities_present(modalities, TumRgbdDownloadPreset.OFFLINE.modalities),
+                )
             )
-            for scene in self.catalog.scenes
-        ]
+        return statuses
 
     def download(self, request: TumRgbdDownloadRequest) -> TumRgbdDownloadResult:
         self.dataset_root.mkdir(parents=True, exist_ok=True)
@@ -71,7 +74,7 @@ class TumRgbdDownloadManager:
             downloaded_archive_count += int(downloaded)
             reused_archive_count += int(not downloaded)
             written_paths.update(
-                self._extract_modalities(
+                self._extract_full_scene(
                     scene=scene,
                     archive_path=archive_path,
                     modalities=modalities,
@@ -99,7 +102,7 @@ class TumRgbdDownloadManager:
         archive_path = self.archive_root / f"{scene.folder_name}.tgz"
         return archive_path if archive_path.exists() else None
 
-    def _extract_modalities(
+    def _extract_full_scene(
         self,
         *,
         scene: TumRgbdSceneMetadata,

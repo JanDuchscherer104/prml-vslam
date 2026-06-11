@@ -14,18 +14,20 @@ from pydantic import ConfigDict, Field
 
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
-from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
-from prml_vslam.sources.datasets.tum_rgbd import (
-    ReferenceCloudSamplingConfig,
-    TumRgbdDatasetService,
-    TumRgbdPoseSource,
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalized_store import (
+    NormalizedDatasetProfile,
+    NormalizedDatasetStore,
+    normalized_dataset_profile,
 )
+from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DMaterializationConfig, record3d_layout
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.streaming import SampledStreamingSource
-from prml_vslam.utils import FactoryConfig, PathConfig
+from prml_vslam.utils import FactoryConfig, PathConfig, get_path_config
 
 
 class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSource]):
@@ -44,8 +46,9 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
     video_path: Path
     """Repo-relative or absolute video path."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> OfflineSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> OfflineSequenceSource:
         """Build the normalized raw-video source adapter."""
+        path_config = get_path_config() if path_config is None else path_config
         return VideoOfflineSequenceSource(
             path_config=path_config,
             video_path=path_config.resolve_video_path(self.video_path, must_exist=True),
@@ -72,19 +75,29 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     replay_mode: ReplayMode = ReplayMode.REALTIME
     """Replay pacing policy for streaming TUM RGB-D observations."""
 
-    reference_cloud: ReferenceCloudSamplingConfig = Field(default_factory=ReferenceCloudSamplingConfig)
-    """Source-prepared TUM RGB-D reference-cloud sampling policy."""
+    reference_cloud: ReferenceCloudConfig = Field(default_factory=ReferenceCloudConfig)
+    """Shared source-prepared reference-cloud sampling policy."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized TUM RGB-D source adapter."""
+        path_config = get_path_config() if path_config is None else path_config
         service = TumRgbdDatasetService(path_config)
+        sequence_id = str(service.resolve_sequence_id(self.sequence_id))
+        profile = normalized_profile_for_source_config(
+            dataset_id=DatasetId.TUM_RGBD,
+            sequence_id=sequence_id,
+            source_id=self.source_id,
+            payload=self.model_dump(mode="json"),
+        )
         return service.build_streaming_source(
-            sequence_id=service.resolve_sequence_id(self.sequence_id),
+            sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
-            sequence_config_overrides={"reference_cloud": self.reference_cloud},
+            reference_cloud=self.reference_cloud,
+            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.TUM_RGBD),
+            normalized_profile=profile,
         )
 
 
@@ -113,15 +126,67 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     normalize_video_orientation: bool = True
     """Whether replay should normalize video display orientation before emission."""
 
-    def setup_target(self, *, path_config: PathConfig, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized ADVIO source adapter."""
+        path_config = get_path_config() if path_config is None else path_config
         service = AdvioDatasetService(path_config)
+        sequence_id = service.resolve_sequence_id(self.sequence_id)
+        profile = normalized_profile_for_source_config(
+            dataset_id=DatasetId.ADVIO,
+            sequence_id=f"advio-{sequence_id:02d}",
+            source_id=self.source_id,
+            payload=self.model_dump(mode="json"),
+        )
         return service.build_streaming_source(
-            sequence_id=service.resolve_sequence_id(self.sequence_id),
+            sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
             normalize_video_orientation=self.normalize_video_orientation,
+            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.ADVIO),
+            normalized_profile=profile,
+        )
+
+
+class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
+    """Configure one offline Record3D `.r3d` dataset archive."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: Literal["record3d_dataset"] = "record3d_dataset"
+    """Typed source discriminator for local Record3D `.r3d` archives."""
+
+    sequence_id: str
+    """Record3D archive stem such as `2024-03-31--16-17-17`."""
+
+    replay_mode: ReplayMode = ReplayMode.REALTIME
+    """Replay pacing policy for archive-backed RGB-D observations."""
+
+    materialization: Record3DMaterializationConfig = Field(default_factory=Record3DMaterializationConfig)
+    """Record3D-owned policy for decoded depth and pose frame semantics."""
+
+    reference_cloud: ReferenceCloudConfig = Field(default_factory=lambda: ReferenceCloudConfig(min_confidence=1))
+    """Shared source-prepared reference-cloud sampling policy."""
+
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
+        """Build the normalized offline Record3D dataset adapter."""
+        path_config = get_path_config() if path_config is None else path_config
+        service = Record3DDatasetService(path_config)
+        sequence_id = record3d_layout.normalize_sequence_id(self.sequence_id)
+        profile = normalized_profile_for_source_config(
+            dataset_id=DatasetId.RECORD3D,
+            sequence_id=sequence_id,
+            source_id=self.source_id,
+            payload=self.model_dump(mode="json"),
+        )
+        return service.build_streaming_source(
+            sequence_id=sequence_id,
+            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            replay_mode=self.replay_mode,
+            materialization=self.materialization,
+            reference_cloud=self.reference_cloud,
+            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D),
+            normalized_profile=profile,
         )
 
 
@@ -151,7 +216,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
     frame_timeout_seconds: float = 5.0
     """Maximum time to wait for the next live frame."""
 
-    def setup_target(self, *, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         """Build the normalized Record3D source adapter."""
         del path_config
         source = Record3DStreamingSourceConfig(
@@ -169,16 +234,32 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
 
 
 SourceBackendConfig: TypeAlias = Annotated[
-    VideoSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig | Record3DSourceConfig,
+    VideoSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig | Record3DDatasetSourceConfig | Record3DSourceConfig,
     Field(discriminator="source_id"),
 ]
 
 
+def normalized_profile_for_source_config(
+    *, dataset_id: DatasetId, sequence_id: str, source_id: str, payload: dict[str, Any]
+) -> NormalizedDatasetProfile:
+    """Build the normalized-store profile for one dataset source config."""
+    source_profile = {
+        key: value for key, value in payload.items() if key not in {"frame_stride", "target_fps", "replay_mode"}
+    }
+    return normalized_dataset_profile(
+        dataset_id=dataset_id,
+        sequence_id=sequence_id,
+        source_id=source_id,
+        payload=source_profile,
+    )
+
+
 __all__ = [
     "AdvioSourceConfig",
-    "ReferenceCloudSamplingConfig",
+    "Record3DDatasetSourceConfig",
     "Record3DSourceConfig",
     "SourceBackendConfig",
     "TumRgbdSourceConfig",
     "VideoSourceConfig",
+    "normalized_profile_for_source_config",
 ]

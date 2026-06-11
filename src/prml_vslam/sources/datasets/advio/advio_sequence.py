@@ -238,6 +238,7 @@ class AdvioSequence(BaseData):
                 target_path=evaluation_dir / "arkit.tum",
                 ground_truth_rdf=ground_truth_rdf,
             )
+        references.extend(candidates)
         return PreparedBenchmarkInputs(reference_trajectories=references, candidate_trajectories=candidates)
 
     def open_stream(
