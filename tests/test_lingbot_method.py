@@ -15,6 +15,7 @@ from prml_vslam.app.pipeline_controls import PipelinePageAction, build_run_confi
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, Observation, ObservationProvenance
 from prml_vslam.methods.lingbot.adapter import (
     LingbotMapSlamBackend,
+    _adapt_checkpoint_state_dict,
     _build_lingbot_artifacts,
     _pose_camera_to_world_to_frame_transform,
     _resolve_keyframe_interval,
@@ -127,20 +128,25 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
 
 
 @pytest.mark.parametrize(
-    "config_path",
+    ("config_path", "image_size", "checkpoint_pos_embed"),
     [
-        ".configs/pipelines/lingbot-full.toml",
-        ".configs/pipelines/lingbot-smoke-gpu.toml",
-        ".configs/pipelines/lingbot-smoke-offline.toml",
-        ".configs/pipelines/lingbot-smoke-streaming-gpu.toml",
+        (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
+        (".configs/pipelines/lingbot-smoke-gpu.toml", 518, "error"),
+        (".configs/pipelines/lingbot-smoke-offline.toml", 518, "error"),
+        (".configs/pipelines/lingbot-smoke-streaming-gpu.toml", 518, "error"),
     ],
 )
-def test_lingbot_tomls_use_checkpoint_native_patch_grid(config_path: str) -> None:
+def test_lingbot_tomls_use_declared_checkpoint_patch_grid(
+    config_path: str,
+    image_size: int,
+    checkpoint_pos_embed: str,
+) -> None:
     config = load_run_config_toml(path_config=PathConfig(), config_path=Path(config_path))
 
     assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
-    assert config.stages.slam.backend.image_size == 518
+    assert config.stages.slam.backend.image_size == image_size
     assert config.stages.slam.backend.patch_size == 14
+    assert config.stages.slam.backend.checkpoint_pos_embed == checkpoint_pos_embed
 
 
 def test_lingbot_config_rejects_invalid_runtime_values() -> None:
@@ -320,6 +326,52 @@ def test_lingbot_preprocesses_images_with_upstream_loader() -> None:
     assert tensor.device == "cpu"
     assert captured["kwargs"] == {"mode": "crop", "image_size": 518, "patch_size": 14}
     assert not Path(captured["paths"][0]).exists()
+
+
+def test_lingbot_checkpoint_pos_embed_interpolates_to_smaller_image_grid() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.arange(1 * (37 * 37 + 1) * 4, dtype=torch.float32).reshape(1, 37 * 37 + 1, 4)
+    target = torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)
+    state_dict = {"aggregator.patch_embed.pos_embed": source.clone()}
+
+    _adapt_checkpoint_state_dict(
+        torch,
+        state_dict,
+        target_state_dict={"aggregator.patch_embed.pos_embed": target},
+        pos_embed_policy="interpolate",
+    )
+
+    resized = state_dict["aggregator.patch_embed.pos_embed"]
+    assert tuple(resized.shape) == tuple(target.shape)
+    np.testing.assert_allclose(resized[:, :1].numpy(), source[:, :1].numpy())
+
+
+def test_lingbot_checkpoint_pos_embed_requires_policy_for_smaller_image_grid() -> None:
+    torch = pytest.importorskip("torch")
+    source = torch.zeros((1, 37 * 37 + 1, 4), dtype=torch.float32)
+    target = torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="checkpoint_pos_embed"):
+        _adapt_checkpoint_state_dict(
+            torch,
+            {"aggregator.patch_embed.pos_embed": source},
+            target_state_dict={"aggregator.patch_embed.pos_embed": target},
+            pos_embed_policy="error",
+        )
+
+
+def test_lingbot_checkpoint_pos_embed_can_be_dropped_for_smaller_image_grid() -> None:
+    torch = pytest.importorskip("torch")
+    state_dict = {"aggregator.patch_embed.pos_embed": torch.zeros((1, 37 * 37 + 1, 4), dtype=torch.float32)}
+
+    _adapt_checkpoint_state_dict(
+        torch,
+        state_dict,
+        target_state_dict={"aggregator.patch_embed.pos_embed": torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)},
+        pos_embed_policy="drop",
+    )
+
+    assert "aggregator.patch_embed.pos_embed" not in state_dict
 
 
 def test_lingbot_backend_caps_max_frames_before_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

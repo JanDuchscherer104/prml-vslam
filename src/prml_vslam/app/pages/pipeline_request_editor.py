@@ -677,6 +677,8 @@ def _render_lingbot_backend_settings(
         keyframe_interval=keyframe_interval,
         use_sdpa=use_sdpa,
         use_amp=use_amp,
+        model_dtype=backend.model_dtype,
+        checkpoint_pos_embed=backend.checkpoint_pos_embed,
         camera_num_iterations=backend.camera_num_iterations,
         window_size=backend.window_size,
         overlap_size=backend.overlap_size,
