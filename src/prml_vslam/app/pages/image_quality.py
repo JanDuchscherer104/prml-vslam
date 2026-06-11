@@ -9,7 +9,7 @@ import streamlit as st
 
 from prml_vslam.eval.contracts import DiscoveredRun, ImageQualitySummary
 from prml_vslam.eval.image_service import ImageQualityEvaluationService
-from prml_vslam.eval.render_eval import RenderEvalConfig, evaluate_run_from_artifact_root
+from prml_vslam.eval.render_eval import RenderEvalConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 
 from ..state import save_model_updates
@@ -97,7 +97,7 @@ def render(context: AppContext) -> None:
     if compute:
         with st.spinner("Rendering dense cloud and scoring image quality (this can take minutes)..."):
             try:
-                summary = evaluate_run_from_artifact_root(
+                summary = service.evaluate_run(
                     run.artifact_root, config=RenderEvalConfig(gallery_every=gallery_every)
                 ).summary
             except _COMPUTE_ERRORS as exc:

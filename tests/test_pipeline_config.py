@@ -608,6 +608,11 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
         "torchvision==0.20.1",
         "torchaudio==2.5.1",
         "xformers",
+        # Build backend + compiler for the no-build-isolation CUDA extensions
+        # (MAST3R-SLAM, curope); see no-build-isolation-package in [tool.uv].
+        "setuptools>=70.1",
+        "wheel",
+        "ninja",
         "MAST3R-SLAM",
         "MAST3R",
         "in3d",

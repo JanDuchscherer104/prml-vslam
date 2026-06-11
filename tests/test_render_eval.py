@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -73,6 +74,27 @@ def test_evaluate_run_from_artifact_root(tmp_path: Path) -> None:
         assert files[0].name == "000000_src000000.png"
     # Second pose (t=0.2s) paired to frame index 2.
     assert (result.gallery_dir / "rendered" / "000001_src000002.png").exists()
+
+
+def test_manifest_rgb_dir_resolves_frames_outside_canonical(tmp_path: Path) -> None:
+    root = tmp_path / "run"
+    _build_synthetic_run(root)
+
+    # Relocate the RGB frames to a source-owned directory and point the persisted
+    # sequence manifest at it, then remove the canonical input/frames entirely.
+    source_rgb = tmp_path / "source_rgb"
+    source_rgb.mkdir()
+    for frame in sorted((root / "input" / "frames").glob("*.png")):
+        shutil.move(str(frame), str(source_rgb / frame.name))
+    (root / "input" / "frames").rmdir()
+    (root / "input" / "sequence_manifest.json").write_text(
+        json.dumps({"sequence_id": "demo", "rgb_dir": str(source_rgb)})
+    )
+
+    result = evaluate_run_from_artifact_root(root, config=RenderEvalConfig(save_gallery=False))
+
+    assert not (root / "input" / "frames").exists()  # canonical layout is gone
+    assert result.scored_pairs == 2  # manifest-backed rgb_dir still scores
 
 
 def test_zero_coverage_poses_are_skipped(tmp_path: Path) -> None:

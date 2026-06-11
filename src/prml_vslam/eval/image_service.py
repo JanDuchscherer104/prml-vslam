@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -20,6 +21,9 @@ from prml_vslam.eval.contracts import ImageQualityMetrics, ImageQualitySummary
 from prml_vslam.eval.image_metrics import compute_image_metrics
 from prml_vslam.utils.path_config import PathConfig
 from prml_vslam.utils.serialization import write_json
+
+if TYPE_CHECKING:
+    from prml_vslam.eval.render_eval import RenderEvalConfig, RenderEvalResult
 
 __all__ = ["ImageQualityEvaluationService", "load_image_rgb", "pair_images_by_name"]
 
@@ -130,6 +134,23 @@ class ImageQualityEvaluationService:
         if not pairs:
             raise FileNotFoundError(f"No image pairs share a filename between '{reference_dir}' and '{generated_dir}'.")
         return self.compute_set(pairs, data_range=data_range)
+
+    def evaluate_run(
+        self,
+        artifact_root: Path,
+        *,
+        config: RenderEvalConfig | None = None,
+    ) -> RenderEvalResult:
+        """Render a finished run's dense cloud, score it, and persist the metrics.
+
+        This is the eval-owned seam for run-level render-and-score evaluation: the
+        CLI, the ``evaluate.image`` pipeline stage, and the Streamlit review page
+        all route through it so the artifact contract and persistence stay owned by
+        the service rather than being driven ad hoc from a UI or command surface.
+        """
+        from prml_vslam.eval.render_eval import evaluate_run_from_artifact_root
+
+        return evaluate_run_from_artifact_root(Path(artifact_root), config=config)
 
     def persist(self, summary: ImageQualitySummary, run_root: Path) -> Path:
         """Persist one image-quality summary under the run's ``evaluation/`` directory."""
