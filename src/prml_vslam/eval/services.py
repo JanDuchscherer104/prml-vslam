@@ -31,6 +31,7 @@ from prml_vslam.eval.contracts import CloudAlignmentArtifact, CloudAlignmentSele
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
+    SkippedMetricRecord,
     TrajectoryEvaluationCase,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
@@ -293,6 +294,7 @@ class TrajectoryEvaluationService:
 
         rows: list[TrajectoryMetricResultRow] = []
         cases: list[TrajectoryEvaluationCase] = []
+        skipped: list[SkippedMetricRecord] = []
         for candidate in candidates:
             for spec in _METRIC_SPECS:
                 try:
@@ -316,9 +318,19 @@ class TrajectoryEvaluationService:
                             delta=spec.delta or 1.0,
                             delta_unit=spec.delta_unit_enum or metrics.Unit.meters,
                         )
-                except ValueError:
+                except ValueError as exc:
                     if spec.family == "ape" and spec.pose_relation is metrics.PoseRelation.translation_part:
                         raise
+                    skipped.append(
+                        SkippedMetricRecord(
+                            candidate_source=f"{candidate.source}/{candidate.coordinate_status}",
+                            metric_family=spec.family,
+                            pose_relation=spec.pose_relation,
+                            reason=str(exc),
+                            delta=spec.delta,
+                            delta_unit=spec.delta_unit,
+                        )
+                    )
                     continue
                 matched_pairs = int(len(preview.error_values))
                 relation_token = _entity_token(spec.pose_relation.value)
@@ -380,6 +392,7 @@ class TrajectoryEvaluationService:
             candidate_trajectories=[candidate.path for candidate in candidates],
             error_series_paths=[case.error_series_path for case in cases],
             evaluation_cases=cases,
+            skipped_metrics=skipped,
         )
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
