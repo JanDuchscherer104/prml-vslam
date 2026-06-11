@@ -12,7 +12,7 @@
     table.header([Sequence], [Sim(3) $s$], [ICP fitness], [ICP inlier RMSE]),
     midrule(), [TUM `cabinet`], [$1.60$], [$0.44$],
     [$2.7 "cm"$], [R3D `29-08`], [$3.79$], [$0.015$],
-    [$3.7 "cm"$], [TUM `cabinet`], [$4.44$], [$0.47$],
+    [$3.7 "cm"$], [TUM `cabinet` LingBot], [$4.44$], [$0.47$],
     [$5.4 "cm"$], bottomrule(),
   )
   - for inlier threshold #text(fill: color.red)[$tau$=5cm].
@@ -280,10 +280,4 @@
 
 #let challenges_detail_body = none
 
-#let next_steps_detail_body = items => [
-  #meeting_detail_slide(items, title: [JD: Challenges & Roadmap])[
-    - ViSTA-SLAM, MASt3R-SLAM & LingBot-Map benchmark runs.
-    - Validate offline Record3D replay and streaming `gravity.align` / `test-tumrgbd-align-rerun`.
-    - Materialize normalized datasets for repeated runs.
-  ]
-]
+#let next_steps_detail_body = none
