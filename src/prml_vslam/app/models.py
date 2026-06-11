@@ -16,15 +16,17 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetSummary,
+    AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
+    AdvioModality,
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
 from prml_vslam.sources.datasets.record3d.record3d_models import Record3DDatasetSummary, Record3DLocalSceneStatus
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality, TumRgbdPoseSource
 from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_models import TumRgbdDatasetSummary, TumRgbdLocalSceneStatus
 from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.utils import BaseData, JsonObject
@@ -156,6 +158,12 @@ class AdvioPageState(BaseData):
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
 
+    download_preset: AdvioDownloadPreset = AdvioDownloadPreset.OFFLINE
+    """Curated modality bundle selected for download actions."""
+
+    selected_modalities: list[AdvioModality] = Field(default_factory=list)
+    """Explicit modality override for download actions."""
+
     explorer_sequence_id: int | None = None
     """Selected local sequence shown in the explorer section."""
 
@@ -180,6 +188,12 @@ class TumRgbdPageState(BaseData):
 
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
+
+    download_preset: TumRgbdDownloadPreset = TumRgbdDownloadPreset.OFFLINE
+    """Curated modality bundle selected for download actions."""
+
+    selected_modalities: list[TumRgbdModality] = Field(default_factory=list)
+    """Explicit modality override for download actions."""
 
     explorer_sequence_id: str | None = None
     """Selected local sequence shown in the explorer section."""

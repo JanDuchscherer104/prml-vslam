@@ -8,13 +8,14 @@ import numpy as np
 import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.app.models import AppState, Record3DDatasetPoseSource
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
-from prml_vslam.sources.datasets.advio import AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
 from prml_vslam.sources.datasets.record3d import Record3DLocalSceneStatus, Record3DSceneMetadata
 from prml_vslam.sources.datasets.record3d.record3d_loading import (
     Record3DArchiveFrame,
     Record3DArchiveMetadata,
     Record3DOfflineSample,
 )
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality
 
 
 class _NullContext:
@@ -143,6 +144,82 @@ def test_record3d_download_form_builds_index_request_and_syncs_state(monkeypatch
     assert form.request.overwrite is True
     assert state.record3d_dataset.selected_sequence_ids == [1]
     assert state.record3d_dataset.overwrite_existing is True
+    assert saved
+
+
+def test_advio_download_form_preserves_preset_and_modality_controls(monkeypatch) -> None:
+    saved: list[AppState] = []
+    state = AppState()
+    state.advio.selected_sequence_ids = [15]
+    state.advio.download_preset = AdvioDownloadPreset.STREAMING
+    state.advio.selected_modalities = [AdvioModality.CALIBRATION]
+    service = SimpleNamespace(
+        catalog=SimpleNamespace(scenes=[SimpleNamespace(sequence_id=15)]),
+        scene=lambda sequence_id: SimpleNamespace(display_name=f"ADVIO {sequence_id}"),
+    )
+    context = SimpleNamespace(
+        state=state,
+        store=SimpleNamespace(save=lambda current_state: saved.append(current_state.model_copy(deep=True))),
+        advio_service=service,
+    )
+
+    def fake_multiselect(label: str, **kwargs):
+        if label == "Scenes":
+            return [15]
+        return [AdvioModality.IPHONE_VIDEO]
+
+    monkeypatch.setattr(advio_page.st, "form", lambda *_args, **_kwargs: _NullContext())
+    monkeypatch.setattr(advio_page.st, "multiselect", fake_multiselect)
+    monkeypatch.setattr(advio_page.st, "selectbox", lambda _label, **_kwargs: AdvioDownloadPreset.FULL)
+    monkeypatch.setattr(advio_page.st, "toggle", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(advio_page.st, "form_submit_button", lambda *_args, **_kwargs: True)
+
+    form = advio_page._render_advio_download_form(context)
+
+    assert form.request.sequence_ids == [15]
+    assert form.request.preset is AdvioDownloadPreset.FULL
+    assert form.request.modalities == [AdvioModality.IPHONE_VIDEO]
+    assert state.advio.download_preset is AdvioDownloadPreset.FULL
+    assert state.advio.selected_modalities == [AdvioModality.IPHONE_VIDEO]
+    assert state.advio.overwrite_existing is True
+    assert saved
+
+
+def test_tum_rgbd_download_form_preserves_preset_and_modality_controls(monkeypatch) -> None:
+    saved: list[AppState] = []
+    state = AppState()
+    state.tum_rgbd.selected_sequence_ids = ["freiburg1_desk"]
+    state.tum_rgbd.download_preset = TumRgbdDownloadPreset.STREAMING
+    state.tum_rgbd.selected_modalities = [TumRgbdModality.RGB]
+    service = SimpleNamespace(
+        catalog=SimpleNamespace(scenes=[SimpleNamespace(sequence_id="freiburg1_desk")]),
+        scene=lambda sequence_id: SimpleNamespace(display_name=sequence_id),
+    )
+    context = SimpleNamespace(
+        state=state,
+        store=SimpleNamespace(save=lambda current_state: saved.append(current_state.model_copy(deep=True))),
+        tum_rgbd_service=service,
+    )
+
+    def fake_multiselect(label: str, **kwargs):
+        if label == "Scenes":
+            return ["freiburg1_desk"]
+        return [TumRgbdModality.DEPTH]
+
+    monkeypatch.setattr(advio_page.st, "form", lambda *_args, **_kwargs: _NullContext())
+    monkeypatch.setattr(advio_page.st, "multiselect", fake_multiselect)
+    monkeypatch.setattr(advio_page.st, "selectbox", lambda _label, **_kwargs: TumRgbdDownloadPreset.FULL)
+    monkeypatch.setattr(advio_page.st, "toggle", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(advio_page.st, "form_submit_button", lambda *_args, **_kwargs: True)
+
+    form = advio_page._render_tum_rgbd_download_form(context)
+
+    assert form.request.sequence_ids == ["freiburg1_desk"]
+    assert form.request.preset is TumRgbdDownloadPreset.FULL
+    assert form.request.modalities == [TumRgbdModality.DEPTH]
+    assert state.tum_rgbd.download_preset is TumRgbdDownloadPreset.FULL
+    assert state.tum_rgbd.selected_modalities == [TumRgbdModality.DEPTH]
+    assert state.tum_rgbd.overwrite_existing is True
     assert saved
 
 

@@ -369,7 +369,18 @@ class NormalizedDatasetStore:
             updates["video_path"] = None
             updates["rgb_dir"] = extracted.rgb_dir
             timestamps_path = input_root / "timestamps.json"
-            write_json(timestamps_path, {"timestamps_ns": extracted.timestamps_ns})
+            timestamps_ns = (
+                load_timestamps_ns(manifest.timestamps_path)
+                if manifest.timestamps_path is not None
+                else extracted.timestamps_ns
+            )
+            if len(timestamps_ns) != len(extracted.timestamps_ns):
+                raise RuntimeError(
+                    "SequenceManifest video timestamps do not match extracted RGB frame count: "
+                    f"{len(timestamps_ns)} timestamps in '{manifest.timestamps_path}' for "
+                    f"{len(extracted.timestamps_ns)} extracted frame(s) from '{manifest.video_path}'."
+                )
+            write_json(timestamps_path, {"timestamps_ns": timestamps_ns})
             updates["timestamps_path"] = timestamps_path
         elif manifest.rgb_dir is not None:
             updates["rgb_dir"] = _copy_path(manifest.rgb_dir, input_root / "rgb")
