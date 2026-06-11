@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 import prml_vslam.sources.datasets.batch_normalization as batch_normalization
+import prml_vslam.sources.datasets.normalized_store as normalized_store_module
 from prml_vslam.interfaces import (
     ObservationIndexEntry,
     ObservationProvenance,
@@ -779,6 +780,53 @@ def test_normalized_store_depth_stats_loader_accepts_png_payloads(tmp_path: Path
 
     assert loaded.dtype == np.float32
     np.testing.assert_allclose(loaded, depth.astype(np.float32))
+
+
+def test_normalized_store_preserves_manifest_timestamps_for_video_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class VideoSource:
+        @property
+        def label(self) -> str:
+            return "video"
+
+        def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+            output_dir.mkdir(parents=True)
+            video_path = output_dir / "frames.mov"
+            video_path.write_bytes(b"placeholder")
+            timestamps_path = output_dir / "frames.csv"
+            timestamps_path.write_text("0.000000000,1\n0.123456789,2\n", encoding="utf-8")
+            return SequenceManifest(
+                sequence_id="video-seq",
+                dataset_id=DatasetId.ADVIO,
+                video_path=video_path,
+                timestamps_path=timestamps_path,
+            )
+
+        def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+            output_dir.mkdir(parents=True)
+            return PreparedBenchmarkInputs()
+
+    extracted_rgb_dir = tmp_path / "extracted-rgb"
+    extracted_rgb_dir.mkdir()
+    monkeypatch.setattr(
+        normalized_store_module,
+        "extract_video_frames",
+        lambda *, video_path, output_dir: SimpleNamespace(rgb_dir=extracted_rgb_dir, timestamps_ns=[0, 100_000_000]),
+    )
+    store = NormalizedDatasetStore(dataset_root=tmp_path / ".data" / "advio", dataset_id=DatasetId.ADVIO)
+    profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="video-seq",
+        source_id="video-seq",
+        source_profile={"sequence_id": "video-seq"},
+    )
+
+    entry = store.create_entry_from_source(profile=profile, source=VideoSource())
+    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+
+    assert timestamps == {"timestamps_ns": [0, 123_456_789]}
 
 
 def test_normalize_dataset_batch_reuses_existing_record3d_entry(tmp_path: Path) -> None:

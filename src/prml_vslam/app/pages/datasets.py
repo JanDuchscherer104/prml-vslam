@@ -16,8 +16,10 @@ from prml_vslam.interfaces import CameraIntrinsics, Observation
 from prml_vslam.sources.dataset_query import NormalizedDatasetQuery
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
+    AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
+    AdvioModality,
     AdvioOfflineSample,
     AdvioPoseFrameMode,
     AdvioPoseSource,
@@ -38,8 +40,10 @@ from prml_vslam.sources.datasets.record3d import (
 )
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
+    TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
     TumRgbdLocalSceneStatus,
+    TumRgbdModality,
     TumRgbdOfflineSample,
     TumRgbdPoseSource,
 )
@@ -666,6 +670,8 @@ def _render_tum_rgbd_download_form(context: AppContext) -> _DownloadFormData:
         context.state,
         context.state.tum_rgbd,
         selected_sequence_ids=request.sequence_ids,
+        download_preset=request.preset,
+        selected_modalities=request.modalities,
         overwrite_existing=request.overwrite,
     )
     return _DownloadFormData(request=request, submitted=submitted)
@@ -711,9 +717,31 @@ def _render_download_form_fields(
             format_func=lambda sequence_id: service.scene(sequence_id).display_name,
             placeholder="Leave empty to download every scene, or choose a subset",
         )
+        preset_options, modality_options = _download_options_for_request(request_type)
+        preset = st.selectbox(
+            "Preset",
+            options=list(preset_options),
+            index=list(preset_options).index(page_state.download_preset),
+            format_func=lambda option: option.label,
+        )
+        modalities = st.multiselect(
+            "Modalities",
+            options=list(modality_options),
+            default=page_state.selected_modalities,
+            format_func=lambda option: option.label,
+            placeholder="Leave empty to use the selected preset",
+        )
         overwrite = st.toggle("Overwrite existing archives and extracted files", value=page_state.overwrite_existing)
         submitted = st.form_submit_button("Download scenes", type="primary", width="stretch")
-    return request_type(sequence_ids=sequence_ids, overwrite=overwrite), submitted
+    return request_type(sequence_ids=sequence_ids, preset=preset, modalities=modalities, overwrite=overwrite), submitted
+
+
+def _download_options_for_request(
+    request_type: type[DownloadRequestT],
+) -> tuple[tuple[AdvioDownloadPreset, ...] | tuple[TumRgbdDownloadPreset, ...], tuple[AdvioModality, ...] | tuple[TumRgbdModality, ...]]:
+    if request_type is AdvioDownloadRequest:
+        return tuple(AdvioDownloadPreset), tuple(AdvioModality)
+    return tuple(TumRgbdDownloadPreset), tuple(TumRgbdModality)
 
 
 def _render_advio_sequence_explorer(context: AppContext, statuses: list[AdvioLocalSceneStatus]) -> None:
