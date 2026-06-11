@@ -154,6 +154,7 @@ class TrajectoryEvaluationCase(BaseData):
     """Raw error-series artifact backing the case diagnostics."""
 
     matched_pairs: int
+    """Number of associated pose pairs used by the metric."""
 
     delta: float | None = None
     """RPE delta value; ``None`` for APE cases."""
@@ -171,8 +172,6 @@ class TrajectoryEvaluationCase(BaseData):
     @field_serializer("pose_relation", when_used="json")
     def _serialize_pose_relation(self, value: metrics.PoseRelation) -> str:
         return value.name
-
-    """Number of associated pose pairs used by the metric."""
 
 
 class TrajectoryEvaluationManifest(BaseData):
