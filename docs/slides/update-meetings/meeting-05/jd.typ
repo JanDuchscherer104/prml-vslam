@@ -1,4 +1,23 @@
 #import "../_shared/meeting-blocks.typ": meeting_detail_slide
+#import "@preview/booktabs:0.0.4": *
+
+#let alignment_results_table() = [
+  #show: booktabs-default-table-style
+  #show table.cell.where(y: 0): set text(weight: "bold")
+  #table(
+    columns: (auto, auto, auto, auto),
+    align: (left, right, right, right),
+    inset: (x: 0.34em, y: 0.24em),
+    toprule(),
+    table.header([Sequence], [Sim(3) $s$], [ICP fitness], [ICP inlier RMSE]),
+    midrule(), [TUM `cabinet`], [$1.60$], [$0.44$],
+    [$2.7 "cm"$], [R3D `29-08`], [$3.79$], [$0.015$],
+    [$3.7 "cm"$], [Lingbot `cabinet`], [$4.44$], [$0.47$],
+    [$5.4 "cm"$], bottomrule(),
+  )
+  - for inlier threshold #text(fill: color.red)[$tau$=5cm].
+  - Choice of #text(fill: color.red)[$tau$]?
+]
 
 #let done_table_row = (
   (
@@ -14,7 +33,12 @@
   (
     [WP1],
     [JD],
-    [*Record3D*: added *offline* dataset support, recorded 10 scenes],
+    [*Record3D*: added *offline* dataset support, recorded 9 scenes - #link("https://zenodo.org/records/20591352?preview=1&token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6ImRmYTc3N2U0LWMyY2ItNDRmNy1hYTYxLWRmMTc2YmQ5YjMyYSIsImRhdGEiOnt9LCJyYW5kb20iOiJlNzc2YmNmN2YyN2NiOGMwMWVhZTM4YWIxY2E0MGUwNyJ9._9NhvbXgkwR6PxjXyn6rbbx_tTUtb0wFnQt6bXBIfbIaNZIHeW6B8YDoug_Li6NoE3H5-GrzfLnNDwPXae8hDg")[Zenodo]],
+  ),
+  (
+    [WP1],
+    [JD],
+    [Added *normalized datset store* to unify dataset prep and run-time ],
   ),
   (
     [WP4.3],
@@ -34,7 +58,12 @@
   (
     [WP2.4],
     [JD],
-    [Experimental #link("https://github.com/robbyant/lingbot-map")[lingbot-map] integration as 3rd method],
+    [Implemented #link("https://github.com/robbyant/lingbot-map")[*lingbot-map*] integration as 3rd method],
+  ),
+  (
+    [WP2.1],
+    [JD],
+    [Benchmark sweep orchestration and automation.],
   ),
 )
 
@@ -48,23 +77,22 @@
   (
     [WP1/2/8],
     [JD],
-    [Source #sym.arrow.l.r vSLAM #sym.arrow.l.r Viewer frame convention & transform issues.],
+    [Source #sym.arrow.l.r vSLAM #sym.arrow.l.r Viewer frame convention & transform issues #sym.arrow.l.r  edge cases.],
   ),
 )
 
 #let next_steps_table_row = (
   [WP1],
   [JD],
-  [Merge Record3D (opt. normalized dataset caches), upload Record3D scenes.],
+  [Finalize normalized datastore - some clean-up needed.],
   [WP5],
   [JD],
-  [Run benchmarks on ViSTA and MASt3R-SLAM.],
-  [WPX],
-  [JD],
-  [Merge streaming ground alignment.],
+  [Complete and merge benchmark sweep framework.],
 )
 
 #let done_detail_body = items => [
+  #show bibliography: none
+  #bibliography("../../../references.bib")
 
   #meeting_detail_slide(items, title: [JD: ADVIO/Tango Semantics])[
     #grid(
@@ -96,10 +124,10 @@
         #text(size: 15pt)[
           *Diagnosis and fix*
 
-          - #link("https://github.com/AaltoVision/ADVIO")[ADVIO] ARKit/ARCore were not frame convention / fixed-point-issues.
+          - ADVIO ARKit/ARCore were not frame convention / fixed-point-issues.
           - Provider worlds differ from GT by yaw and scale and required explicit Sim(3) alignment.
           - `to_benchmark_inputs` now emits GT-ALIGNED and LOCAL ARKit/ARCore trajectories.
-          - Gravity-locked yaw+scale+translation fixes the up axis, so near-planar trajectories cannot flip upside down.
+          - #text(fill: color.red)[*Gravity-locked*] yaw+scale+translation fixes the up axis, so near-planar trajectories cannot flip upside down.
         ]
       ],
     )
@@ -111,29 +139,8 @@
       arg min_(s, theta, bold(t)) sum_i
       norm(bold(x)_i^"g" - (s bold(R)_"yaw" (theta) bold(x)_i^"a" + bold(t)))^2,
       quad
-      bold(R)_"yaw" bold(u) = bold(u)
+      #text(fill: color.red)[$bold(R)_"yaw" bold(u) = bold(u)$]
     $
-  ]
-
-  #meeting_detail_slide(items, title: [JD: TUM RGB-D & Dataset Prep])[
-    #grid(
-      columns: (1fr, 1fr),
-      gutter: 0.75cm,
-      [
-        *Benchmark frame*
-
-        - #link("https://cvg.cit.tum.de/data/datasets/rgbd-dataset")[TUM RGB-D] RGB-D poses and depth-derived references normalize into the first-camera benchmark world.
-        - Mocap/GT remains provenance; aligned artifacts target `tum_rgbd_world`.
-        - Shared depth-to-world helpers produce reference clouds from method-observation-compatible inputs.
-      ],
-      [
-        *Dataset preparation*
-
-        - ADVIO and TUM RGB-D downloads now expose scene selection plus overwrite/reuse only.
-        - Modality/package selection was removed from app and CLI surfaces.
-        - Full-scene readiness keeps benchmark runs from mixing partial local payloads with complete-sequence assumptions.
-      ],
-    )
   ]
 
   #meeting_detail_slide(items, title: [JD: ViSTA-Style Alignment Geometry])[
@@ -150,15 +157,14 @@
             bold(p)_j^"v" = hat(bold(T))_"c"^"v" bold(q)_j
           $
 
-          - #link("https://github.com/zhangganlin/vista-slam")[ViSTA] keeps dense pointmaps camera-local before pose-lifting them.
-          - `v` is the SLAM-local world; `w` is the benchmark world.
+          - Backprojection of dense point-maps via predicted _intrinsics_ and _extrinsics_.
+          - Backprojection with _uniform stride_ #sym.arrow _random subsampling_ to fixed number of points per frame.
 
-          *Shared anchor: the start camera*
+          *1. Shared origin (optional):*
 
-          $ bold(T)'_k = (bold(T)_0^"r")^(-1) bold(T)_k^"r" $
+          $ bold(tilde(T))^bullet_k = (bold(T)_0^bullet)^(-1) bold(T)_k^bullet $
 
-          - vSLAM starts at identity in `v`; TUM GT is relativized by its own first pose into first-camera RDF `w`.
-          - This is only a shared convention, not $bold(T)_0^"v" = bold(T)_0^"r"$; the Sim(3) still uses all timestamp-associated pairs.
+          - $bold(tilde(T))^v_k$ and $bold(tilde(T))^r_k$ should now be aligned, but differ by an unknown scale:
 
           $
             bold(S)_"v"^"w" = (s, bold(R), bold(t)) in "Sim"(3)\
@@ -166,31 +172,34 @@
           $
         ],
         [
-          *Trajectory Sim(3), then ICP*
+          *2. Trajectory Sim(3)* \@Valentin
 
           $
             bold(S)_"v"^"w*" =
-            arg min_(bold(S) in "Sim"(3)) sum_i norm(bold(x)_i^"r" - bold(S) bold(x)_i^"v")^2
+            arg min_(bold(S) in "Sim"(3)) sum_(bold(x)_i, bold(x)_j in cal(T)) norm(bold(x)_i - bold(S) bold(x)_j^"v")^2
           $
-
           $
-            bold(p)^"w" = s bold(R) bold(p)^"v" + bold(t),
-            quad
             bold(P)^"w" = bold(S)_"v"^"w"* bold(P)^"v"
           $
+          @grupp2017evo@umeyama1991least
+
+          *3. Point-cloud ICP*
 
           $
-            bold(T)_"icp"^* =
+            bold(T)_"icp"^*(bold(P), bold(Q)) =
             arg min_(bold(T) in "SE"(3)) sum_(bold(p) in bold(P)^"w")
             norm(bold(T) bold(p) - op("NN")_Q (bold(T) bold(p)))^2
           $
+          $
+            cal(C)_tau (bold(T)) =
+            { (bold(p), op("NN")_Q (bold(T) bold(p))) |
+              bold(p) in bold(P)^"w",
+              norm(bold(T) bold(p) - op("NN")_Q (bold(T) bold(p))) <= #text(fill: color.red)[$tau$] }
+          $
+          @zhang2026vistaslam@zhou2018open3d
 
-          - Associate estimate/GT samples within $0.01 "s"$; $"NN"_Q$ = nearest point in `Q`.
-          - `advio_*_world`: yaw-only about RDF gravity; `tum_rgbd_world`: full Umeyama unchanged.
-          - ADVIO-20: ARKit/ARCore now turn CW like GT; vSLAM-to-GT up-axis tilt $25.33degree -> 0.00degree$.
-          - TUM `freiburg3_large_cabinet` ($tau = 5 "cm"$): Sim(3) $s = 1.60$, 26 pairs; APE RMSE $17.6 "cm"$; ICP $"fitness"_("@"tau) = 0.44$, $"inlier RMSE"_("@"tau) = 2.7 "cm"$.
-          - ADVIO-20 contrast ($tau = 5 "cm"$): Sim(3) RMSE $1.31 "m"$; $"fitness"_("@"tau) approx 0$ --- clouds barely overlap, so the $2.8 "cm"$ inlier RMSE is uninformative.
-          - _Metrics:_ $"fitness"_("@"tau)$ = matched estimate fraction; $"inlier RMSE"_("@"tau)$ = inlier residual; APE RMSE = pose-pair error.
+          #v(0.15em)
+          #alignment_results_table()
         ],
       )
     ]
@@ -210,22 +219,15 @@
         )
       ],
       [
-        - `.rrd` recordings now show source references, SLAM output, aligned trajectories, and aligned clouds together.
-        - Rerun paths stay method-neutral through `world/slam/...` and stable source-reference entities.
-        - Export diagnostics add APE trajectories, correspondence strips, and scalar series.
-        - Live and export sinks own separate lifecycles, so export-only evidence can be added without changing live routing.
+        - `.rrd` recordings show: references, SLAM output, aligned trajectories & clouds, APE trajectories, correspondence strips, and scalar series.
 
-        #rect(
-          width: 100%,
-          height: 2.1cm,
-          stroke: (paint: rgb("#bbbbbb"), dash: "dashed"),
-          inset: 0.25cm,
-        )[
-          #align(center + horizon)[
-            *Record3D offline evidence placeholder* \
-            Expected: replay, SLAM output, Sim(3) trajectory/cloud alignment
-          ]
-        ]
+          #figure(
+            image(
+              "../../../figures/evidence/record3d-29-08-pc+traj.png",
+              width: 100%,
+            ),
+            caption: [Record3D 29-08 point-cloud and trajectory associations. GT point cloud is mint green.],
+          )
       ],
     )
   ]
@@ -239,12 +241,11 @@
         rows: (auto, auto),
         gutter: 0.22cm,
         [
-          #stage_title[1. Input]
-          #image("../../../figures/evidence/tum-cabinet-artifact-input.png")
-          #note[Normalized source frames (VSLAM input).]
-          #stage_title[2. Benchmark Artifacts]
-          #align(center)[#image("../../../figures/evidence/vista-20-artifact-benchmark.png", width: 80%)]
-          #note[Benchmark inputs (reference & GT data, ADVIO).]
+          #stage_title[1. Normalized Inputs]
+          #align(center)[#image("../../../figures/evidence/record3d-entry.png", width: 95%)]
+          #note[Normalized Record3D dataset entry.]
+          #image("../../../figures/evidence/tum-cabinet-artifact-input-benchmark.png")
+          #note[Source frames & Benchmark inputs.]
         ],
         [
           #stage_title[4. SLAM]
@@ -275,54 +276,14 @@
       )
     ]
   ]
-
-  #meeting_detail_slide(items, title: [JD: Runtime & Method Cleanup])[
-    #grid(
-      columns: (1fr, 1fr),
-      gutter: 0.75cm,
-      [
-        *Runtime surfaces*
-
-        - Streamlit live action buttons now use explicit stable keys across pipeline, #link("https://record3d.app/")[Record3D], and dataset pages.
-        - Dead `ReferencePointCloudSequenceRef` surfaces were removed.
-        - The source-stage boundary is now `ReferenceCloudRef` plus metadata.
-      ],
-      [
-        *Method artifacts*
-
-        - Offline ViSTA keyframe payloads can reach export visualization.
-        - Confidence metadata is persisted beside the native ViSTA dense cloud.
-        - Upstream confidence-filtered clouds remain unchanged; extra artifacts explain coverage and color/metric readiness.
-      ],
-    )
-  ]
 ]
 
 #let challenges_detail_body = none
 
 #let next_steps_detail_body = items => [
   #meeting_detail_slide(items, title: [JD: Challenges & Roadmap])[
-    #grid(
-      columns: (1fr, 1fr),
-      gutter: 0.75cm,
-      [
-        *Technical challenges*
-
-        - Dataset and method outputs expose different native coordinate assumptions.
-        - Near-planar ADVIO walks made full Sim(3) underconstrained around horizontal axes; gravity-locking fixes trajectory overlay, but dense-cloud overlap still needs separate evidence.
-        - Large initial cloud offsets make ICP refinement easy to over-trust.
-        - Rerun evidence only helps when paths, metadata, and artifacts describe one transform chain.
-      ],
-      [
-        *Roadmap*
-
-        - Finish ViSTA-SLAM and MASt3R-SLAM benchmark runs.
-        - Extend evo coverage and add cloud metrics over persisted PLY artifacts.
-        - Validate offline Record3D replay and streaming `gravity.align` / `test-tumrgbd-align-rerun`.
-        - Materialize normalized datasets for repeated runs.
-        - Upgrade Rerun/dependency stack in a dedicated pass.
-        - Feed colored SLAM point clouds into TSDF reconstruction on the CUDA path.
-      ],
-    )
+    - ViSTA-SLAM, MASt3R-SLAM & LingBot-Map benchmark runs.
+    - Validate offline Record3D replay and streaming `gravity.align` / `test-tumrgbd-align-rerun`.
+    - Materialize normalized datasets for repeated runs.
   ]
 ]
