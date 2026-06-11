@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import contextlib
 import importlib
-import io
 import json
 import os
-import sys
+import tempfile
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -205,28 +203,32 @@ class _LingbotRuntime:
     def infer(self, images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], Any]:
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         torch = importlib.import_module("torch")
-        self._inject_package_path()
         checkpoint = self._resolve_checkpoint()
         model_module_name = (
             "lingbot_map.models.gct_stream_window" if self._cfg.mode == "windowed" else "lingbot_map.models.gct_stream"
         )
-        with _suppress_upstream_chatter():
+        try:
             gct_stream = importlib.import_module(model_module_name).GCTStream
-        _validate_loaded_lingbot_package(self._path_config.resolve_repo_path(self._cfg.lingbot_map_dir))
+            load_and_preprocess_images = importlib.import_module("lingbot_map.utils.load_fn").load_and_preprocess_images
+        except ModuleNotFoundError as exc:
+            if exc.name is not None and exc.name.startswith("lingbot_map"):
+                raise RuntimeError(
+                    "LingBot-Map is not installed. Clone the upstream checkout to `external/lingbot-map` "
+                    "and install this project with `uv sync --extra lingbot` before running LingBot."
+                ) from exc
+            raise
         for device in self._candidate_devices(torch):
             try:
                 self._console.info(
-                    "Running LingBot-Map on %s with image_size=%d, num_scale_frames=%d, "
-                    "checkpoint_pos_embed=%s, model_dtype=%s.",
+                    "Running LingBot-Map on %s with image_size=%d and num_scale_frames=%d.",
                     device,
                     self._cfg.image_size,
                     self._cfg.num_scale_frames,
-                    self._cfg.checkpoint_pos_embed,
-                    self._cfg.model_dtype,
                 )
                 return self._infer_on_device(
                     torch=torch,
                     gct_stream=gct_stream,
+                    load_and_preprocess_images=load_and_preprocess_images,
                     checkpoint=checkpoint,
                     images_rgb=images_rgb,
                     device=device,
@@ -246,38 +248,32 @@ class _LingbotRuntime:
         *,
         torch: Any,
         gct_stream: Any,
+        load_and_preprocess_images: Callable[..., Any],
         checkpoint: Path,
         images_rgb: list[np.ndarray],
         device: str,
     ) -> tuple[dict[str, Any], Any]:
         self._console.info("Initializing LingBot-Map model; upstream checkpoint load may take tens of seconds.")
         init_started = time.monotonic()
-        with _suppress_upstream_chatter():
-            model = gct_stream(
-                img_size=self._cfg.image_size,
-                patch_size=self._cfg.patch_size,
-                enable_3d_rope=self._cfg.enable_3d_rope,
-                max_frame_num=self._cfg.max_frame_num,
-                kv_cache_sliding_window=self._cfg.kv_cache_sliding_window,
-                kv_cache_scale_frames=self._cfg.num_scale_frames,
-                kv_cache_cross_frame_special=True,
-                kv_cache_include_scale_frames=True,
-                enable_point=self._cfg.enable_point_head,
-                use_sdpa=self._cfg.use_sdpa or device == "cpu",
-                camera_num_iterations=self._cfg.camera_num_iterations,
-            )
+        model = gct_stream(
+            img_size=self._cfg.image_size,
+            patch_size=self._cfg.patch_size,
+            enable_3d_rope=self._cfg.enable_3d_rope,
+            max_frame_num=self._cfg.max_frame_num,
+            kv_cache_sliding_window=self._cfg.kv_cache_sliding_window,
+            kv_cache_scale_frames=self._cfg.num_scale_frames,
+            kv_cache_cross_frame_special=True,
+            kv_cache_include_scale_frames=True,
+            enable_point=self._cfg.enable_point_head,
+            use_sdpa=self._cfg.use_sdpa or device == "cpu",
+            camera_num_iterations=self._cfg.camera_num_iterations,
+        )
         self._console.info("LingBot-Map model initialized in %.1fs.", time.monotonic() - init_started)
 
         self._console.info("Loading LingBot-Map checkpoint from '%s' on CPU.", checkpoint)
         load_started = time.monotonic()
         state = torch.load(str(checkpoint), map_location="cpu", weights_only=True)
-        state_dict = dict(_extract_checkpoint_state_dict(state))
-        _adapt_checkpoint_state_dict(
-            torch,
-            state_dict,
-            target_state_dict=model.state_dict(),
-            pos_embed_policy=self._cfg.checkpoint_pos_embed,
-        )
+        state_dict = state.get("model", state)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         del state, state_dict
         self._console.info("LingBot-Map checkpoint loaded in %.1fs.", time.monotonic() - load_started)
@@ -290,13 +286,12 @@ class _LingbotRuntime:
         if device.startswith("cuda"):
             self._console.info("Moving LingBot-Map model to %s.", device)
             model = model.to(device=device).eval()
-            _cast_aggregator_for_inference(torch, model, dtype=_resolve_model_dtype(torch, self._cfg.model_dtype))
         else:
             model = model.to(device).eval()
 
         self._console.info("Preparing %d RGB frames for LingBot-Map inference.", len(images_rgb))
-        image_tensor = _images_to_tensor(
-            torch,
+        image_tensor = _preprocess_images_with_lingbot(
+            load_and_preprocess_images,
             images_rgb,
             device=device,
             image_size=self._cfg.image_size,
@@ -343,21 +338,6 @@ class _LingbotRuntime:
             output_device=torch.device("cpu"),
         )
 
-    def _inject_package_path(self) -> None:
-        repo_dir = self._path_config.resolve_repo_path(self._cfg.lingbot_map_dir)
-        if not repo_dir.exists():
-            raise RuntimeError(
-                f"LingBot-Map checkout not found at '{repo_dir}'. Clone Robbyant/lingbot-map there "
-                "or override `lingbot_map_dir`."
-            )
-        package_dir = repo_dir / "lingbot_map"
-        if not package_dir.exists():
-            raise RuntimeError(f"LingBot-Map package directory not found at '{package_dir}'.")
-        repo_dir_str = str(repo_dir)
-        if repo_dir_str not in sys.path:
-            sys.path.insert(0, repo_dir_str)
-        _validate_loaded_lingbot_package(repo_dir)
-
     def _resolve_checkpoint(self) -> Path:
         checkpoint = self._path_config.resolve_repo_path(self._cfg.checkpoint_path)
         if not checkpoint.exists():
@@ -375,165 +355,34 @@ class _LingbotRuntime:
         return [self._cfg.device]
 
 
-def _extract_checkpoint_state_dict(state: Any) -> Mapping[str, Any]:
-    if not isinstance(state, Mapping):
-        raise RuntimeError("LingBot-Map checkpoint did not contain a state-dict mapping.")
-    if "model" in state:
-        model_state = state["model"]
-        if not isinstance(model_state, Mapping):
-            raise RuntimeError("LingBot-Map checkpoint `model` entry did not contain a state-dict mapping.")
-        return model_state
-    return state
-
-
-@contextlib.contextmanager
-def _suppress_upstream_chatter() -> Any:
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        yield
-
-
-def _validate_loaded_lingbot_package(repo_dir: Path) -> None:
-    module = sys.modules.get("lingbot_map")
-    if module is None:
-        return
-    module_file = vars(module).get("__file__")
-    if module_file is None:
-        raise RuntimeError("Loaded LingBot-Map package does not expose `__file__`; cannot validate checkout path.")
-    module_path = Path(str(module_file)).resolve()
-    expected_root = repo_dir.resolve()
-    if not module_path.is_relative_to(expected_root):
-        raise RuntimeError(
-            f"Loaded LingBot-Map package from '{module_path}', but configured checkout is '{expected_root}'. "
-            "Restart the process or use a matching `lingbot_map_dir`."
-        )
-
-
-def _adapt_checkpoint_state_dict(
-    torch: Any,
-    state_dict: dict[str, Any],
-    *,
-    target_state_dict: Mapping[str, Any],
-    pos_embed_policy: str,
-) -> None:
-    key = "aggregator.patch_embed.pos_embed"
-    source = state_dict.get(key)
-    target = target_state_dict.get(key)
-    if source is None or target is None or tuple(source.shape) == tuple(target.shape):
-        return
-    if pos_embed_policy == "drop":
-        del state_dict[key]
-        return
-    if pos_embed_policy != "interpolate":
-        raise RuntimeError(
-            f"LingBot-Map checkpoint key '{key}' has shape {tuple(source.shape)}, but the configured model expects "
-            f'{tuple(target.shape)}. Set `checkpoint_pos_embed = "interpolate"` or `"drop"` when using '
-            "a smaller `image_size` than the checkpoint."
-        )
-    state_dict[key] = _resize_pos_embed(torch, source, target)
-
-
-def _resize_pos_embed(torch: Any, source: Any, target: Any) -> Any:
-    if len(source.shape) != 3 or len(target.shape) != 3 or source.shape[0] != 1 or target.shape[0] != 1:
-        raise RuntimeError(
-            "LingBot-Map positional embedding interpolation requires [1, num_tokens, dim] tensors; "
-            f"got {tuple(source.shape)} -> {tuple(target.shape)}."
-        )
-    if source.shape[-1] != target.shape[-1]:
-        raise RuntimeError(
-            f"LingBot-Map positional embedding dimension mismatch: {int(source.shape[-1])} -> {int(target.shape[-1])}."
-        )
-    source_grid_tokens = int(source.shape[1]) - 1
-    target_grid_tokens = int(target.shape[1]) - 1
-    source_grid = int(source_grid_tokens**0.5)
-    target_grid = int(target_grid_tokens**0.5)
-    if source_grid * source_grid != source_grid_tokens or target_grid * target_grid != target_grid_tokens:
-        raise RuntimeError(
-            "LingBot-Map positional embedding interpolation requires square patch-token grids; "
-            f"got {source_grid_tokens} -> {target_grid_tokens} patch tokens."
-        )
-    class_token = source[:, :1]
-    patch_tokens = source[:, 1:].reshape(1, source_grid, source_grid, source.shape[-1]).permute(0, 3, 1, 2)
-    resized = torch.nn.functional.interpolate(
-        patch_tokens.float(),
-        size=(target_grid, target_grid),
-        mode="bicubic",
-        align_corners=False,
-    )
-    resized = (
-        resized.to(dtype=source.dtype, device=source.device)
-        .permute(0, 2, 3, 1)
-        .reshape(1, target_grid_tokens, target.shape[-1])
-    )
-    return torch.cat([class_token, resized], dim=1)
-
-
 def _is_cuda_oom(exc: RuntimeError) -> bool:
     message = str(exc).lower()
     return "cuda out of memory" in message or ("cuda" in message and "out of memory" in message)
 
 
-def _resolve_model_dtype(torch: Any, value: str) -> Any:
-    if value == "float32":
-        return torch.float32
-    if value == "float16":
-        return torch.float16
-    if value == "bfloat16":
-        return torch.bfloat16
-    capability = torch.cuda.get_device_capability()
-    return torch.bfloat16 if capability[0] >= 8 else torch.float16
-
-
-def _cast_aggregator_for_inference(torch: Any, model: Any, *, dtype: Any) -> None:
-    if dtype == torch.float32:
-        return
-    aggregator = getattr(model, "aggregator", None)
-    if aggregator is not None:
-        model.aggregator = aggregator.to(dtype=dtype)
-
-
-def _images_to_tensor(
-    torch: Any,
+def _preprocess_images_with_lingbot(
+    load_and_preprocess_images: Callable[..., Any],
     images_rgb: list[np.ndarray],
     *,
     device: str,
     image_size: int,
     patch_size: int,
 ) -> Any:
-    tensors = []
-    for image in images_rgb:
-        tensors.append(_preprocess_image_to_tensor(torch, image, image_size=image_size, patch_size=patch_size))
-    shapes = {tuple(tensor.shape[-2:]) for tensor in tensors}
-    if len(shapes) > 1:
-        max_height = max(shape[0] for shape in shapes)
-        max_width = max(shape[1] for shape in shapes)
-        tensors = [_pad_tensor_to_shape(torch, tensor, height=max_height, width=max_width) for tensor in tensors]
-    return torch.stack(tensors, dim=0).to(device)
-
-
-def _preprocess_image_to_tensor(torch: Any, image: np.ndarray, *, image_size: int, patch_size: int) -> Any:
-    rgb = np.asarray(image, dtype=np.uint8)
-    if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"Expected RGB image shape (H, W, 3), got {rgb.shape}.")
-    height, width = rgb.shape[:2]
-    new_width = image_size
-    new_height = round(height * (new_width / width) / patch_size) * patch_size
-    new_height = max(new_height, patch_size)
-    pil_image = Image.fromarray(rgb).resize((new_width, new_height), Image.Resampling.BICUBIC)
-    tensor = torch.from_numpy(np.asarray(pil_image, dtype=np.uint8).copy()).permute(2, 0, 1).float().div(255.0)
-    if new_height > image_size:
-        start_y = (new_height - image_size) // 2
-        tensor = tensor[:, start_y : start_y + image_size, :]
-    return tensor
-
-
-def _pad_tensor_to_shape(torch: Any, tensor: Any, *, height: int, width: int) -> Any:
-    pad_height = height - int(tensor.shape[1])
-    pad_width = width - int(tensor.shape[2])
-    if pad_height <= 0 and pad_width <= 0:
-        return tensor
-    return torch.nn.functional.pad(tensor, (0, pad_width, 0, pad_height), mode="constant", value=1.0)
+    with tempfile.TemporaryDirectory(prefix="prml-lingbot-frames-") as frame_dir:
+        frame_paths: list[str] = []
+        for index, image in enumerate(images_rgb):
+            rgb = np.asarray(image, dtype=np.uint8)
+            if rgb.ndim != 3 or rgb.shape[2] != 3:
+                raise ValueError(f"Expected RGB image shape (H, W, 3), got {rgb.shape}.")
+            frame_path = Path(frame_dir) / f"{index:06d}.png"
+            Image.fromarray(rgb).save(frame_path)
+            frame_paths.append(str(frame_path))
+        return load_and_preprocess_images(
+            frame_paths,
+            mode="crop",
+            image_size=image_size,
+            patch_size=patch_size,
+        ).to(device)
 
 
 def _resolve_keyframe_interval(

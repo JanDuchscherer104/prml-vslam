@@ -42,9 +42,6 @@ sampling_interval_ms    = 1000
     method_id = "lingbot_map"
     # max_frames = 1500
 
-    # Local upstream checkout containing the importable `lingbot_map` package.
-    lingbot_map_dir = "external/lingbot-map"
-
     # Operator-managed LingBot-Map checkpoint. The main benchmark assumes the
     # long/default checkpoint used by upstream demo and benchmark examples.
     checkpoint_path = "external/lingbot-map/checkpoints/lingbot-map.pt"
@@ -58,8 +55,8 @@ sampling_interval_ms    = 1000
     mode = "streaming"
 
     # Upstream/paper default input width is 518, but the local SDPA path OOMs
-    # before frame 50 at that size on the 12 GB RTX 3080 Ti, and 448 still OOMs
-    # before frame 60. Use 392 as the highest practical fit candidate so far.
+    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the highest practical
+    # fit candidate so far.
     image_size = 392
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
@@ -92,7 +89,7 @@ sampling_interval_ms    = 1000
     use_sdpa = true
 
     # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
-    # matching the paper's default precision. TODO:
+    # matching the paper's default precision.
     use_amp = true
 
     # Cast the transformer trunk to the best CUDA inference dtype while keeping
@@ -100,7 +97,7 @@ sampling_interval_ms    = 1000
     model_dtype = "auto"
 
     # Required when using the RTX 3080 Ti fit width instead of the checkpoint's
-    # native 518-wide grid. Set to "error" when returning to image_size=518.
+    # native 518-wide grid.
     checkpoint_pos_embed = "interpolate"
 
     # Camera-head iterative refinement steps. Upstream default is 4; lowering to

@@ -629,6 +629,23 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
     )
 
 
+def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
+    pyproject = tomllib.loads((_repo_root() / "pyproject.toml").read_text(encoding="utf-8"))
+    lingbot_extra = set(pyproject["project"]["optional-dependencies"]["lingbot"])
+
+    assert lingbot_extra == {
+        "torch==2.5.1",
+        "torchvision==0.20.1",
+        "lingbot-map",
+        "flashinfer-python",
+    }
+    assert pyproject["tool"]["uv"]["sources"]["lingbot-map"] == {
+        "path": "external/lingbot-map",
+        "editable": True,
+        "extra": "lingbot",
+    }
+
+
 def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:
     config = RunConfig(
         experiment_name="missing-source",

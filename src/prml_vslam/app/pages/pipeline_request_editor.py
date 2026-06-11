@@ -660,13 +660,11 @@ def _render_lingbot_backend_settings(
         use_sdpa = st.toggle("SDPA", value=backend.use_sdpa)
 
     with st.expander("LingBot Paths", expanded=False):
-        lingbot_map_dir = _path_input("LingBot-Map Directory", backend.lingbot_map_dir)
         checkpoint_path = _path_input("Checkpoint Path", backend.checkpoint_path)
 
     return LingbotMapSlamBackendConfig(
         method_id=MethodId.LINGBOT_MAP,
         max_frames=max_frames,
-        lingbot_map_dir=lingbot_map_dir,
         checkpoint_path=checkpoint_path,
         device=device,
         mode=mode,
@@ -679,8 +677,6 @@ def _render_lingbot_backend_settings(
         keyframe_interval=keyframe_interval,
         use_sdpa=use_sdpa,
         use_amp=use_amp,
-        model_dtype=backend.model_dtype,
-        checkpoint_pos_embed=backend.checkpoint_pos_embed,
         camera_num_iterations=backend.camera_num_iterations,
         window_size=backend.window_size,
         overlap_size=backend.overlap_size,

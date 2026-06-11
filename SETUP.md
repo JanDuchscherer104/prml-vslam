@@ -190,9 +190,9 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
 
 ## LingBot/CUDA Setup
 
-LingBot-Map is operator-managed: this repository does not vendor
-`Robbyant/lingbot-map` or expose a `lingbot` package extra. Install the
-upstream checkout and checkpoint at the configured defaults:
+LingBot-Map is installed through the optional `lingbot` extra from an
+operator-managed upstream checkout. Clone the checkout, install the extra, and
+download the checkpoint at the configured default:
 
 ```bash
 mamba activate prml-vslam
@@ -202,6 +202,7 @@ export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 mkdir -p external
 git clone https://github.com/Robbyant/lingbot-map.git external/lingbot-map
+uv sync --extra lingbot
 mkdir -p external/lingbot-map/checkpoints
 curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
   -o external/lingbot-map/checkpoints/lingbot-map.pt
