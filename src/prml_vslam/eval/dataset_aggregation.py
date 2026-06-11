@@ -29,9 +29,12 @@ class MetricFilter:
 
 
 class PerSequenceRow(BaseData):
-    """One filtered metric value for a single sequence and estimate source."""
+    """One filtered metric value for a single sequence, run, and estimate source."""
 
     sequence_id: str
+    run_id: str
+    """Stable run identifier — preserved so duplicate runs on the same sequence are distinguishable."""
+
     estimate_source_base: str
     """Base method name extracted from ``estimate_source``, e.g. ``vista``."""
 
@@ -121,6 +124,7 @@ def build_per_sequence_table(
         result.append(
             PerSequenceRow(
                 sequence_id=row.sequence_id,
+                run_id=row.run_id,
                 estimate_source_base=base,
                 coordinate_status=status if status else "raw",
                 method=method_by_run_id.get(row.run_id),
@@ -141,21 +145,43 @@ def build_leaderboard(
     rows: list[PerSequenceRow],
     n_total_sequences: int,
 ) -> list[LeaderboardRow]:
-    """Aggregate per-sequence rows into a leaderboard ranked by mean value."""
+    """Aggregate per-sequence rows into a leaderboard ranked by mean value.
+
+    Multiple runs on the same sequence are averaged first so each sequence
+    contributes exactly one value per source/metric combination.
+    """
     GroupKey = tuple[str, str, str, metrics.PoseRelation, str]
-    groups: dict[GroupKey, list[float]] = defaultdict(list)
+    PerSeqKey = tuple[str, str, str, str, metrics.PoseRelation, str]
+
+    # Step 1: collect all run values per (sequence_id, source, metric)
+    per_seq_runs: dict[PerSeqKey, list[float]] = defaultdict(list)
     units: dict[GroupKey, str | None] = {}
 
     for row in rows:
-        key: GroupKey = (
+        group_key: GroupKey = (
             row.estimate_source_base,
             row.coordinate_status,
             row.metric_family,
             row.pose_relation,
             row.statistic,
         )
-        groups[key].append(row.value)
-        units[key] = row.unit
+        per_seq_key: PerSeqKey = (
+            row.sequence_id,
+            row.estimate_source_base,
+            row.coordinate_status,
+            row.metric_family,
+            row.pose_relation,
+            row.statistic,
+        )
+        per_seq_runs[per_seq_key].append(row.value)
+        units[group_key] = row.unit
+
+    # Step 2: average within each sequence, then aggregate across sequences
+    groups: dict[GroupKey, list[float]] = defaultdict(list)
+    for per_seq_key, values in per_seq_runs.items():
+        _, est_base, coord_status, fam, pose_rel, stat = per_seq_key
+        group_key = (est_base, coord_status, fam, pose_rel, stat)
+        groups[group_key].append(statistics.mean(values))
 
     result: list[LeaderboardRow] = []
     for key, values in groups.items():
@@ -214,11 +240,16 @@ def build_heatmap_data(
     all_sequence_ids: list[str],
     metric_name: str = "APE RMSE (m)",
 ) -> HeatmapData:
-    """Build a heatmap matrix of values indexed by sequence × estimate source."""
+    """Build a heatmap matrix of values indexed by sequence × estimate source.
+
+    Multiple runs on the same (sequence, source) cell are averaged so no run
+    silently overwrites another.
+    """
     estimate_sources = sorted({f"{r.estimate_source_base}/{r.coordinate_status}" for r in rows})
-    value_map: dict[tuple[str, str], float] = {
-        (r.sequence_id, f"{r.estimate_source_base}/{r.coordinate_status}"): r.value for r in rows
-    }
+    raw_map: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for r in rows:
+        raw_map[(r.sequence_id, f"{r.estimate_source_base}/{r.coordinate_status}")].append(r.value)
+    value_map: dict[tuple[str, str], float] = {key: statistics.mean(vals) for key, vals in raw_map.items()}
     values: list[list[float | None]] = [
         [value_map.get((seq_id, src)) for src in estimate_sources] for seq_id in all_sequence_ids
     ]

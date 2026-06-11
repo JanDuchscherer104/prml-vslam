@@ -31,6 +31,7 @@ def _per_sequence_rows(
             rows.append(
                 PerSequenceRow(
                     sequence_id=seq_id,
+                    run_id=f"run-{i}-{j}",
                     estimate_source_base=base,
                     coordinate_status=status,
                     metric_family="ape",

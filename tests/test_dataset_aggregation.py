@@ -279,6 +279,48 @@ def test_build_heatmap_data_fills_matrix_with_none_for_missing_entries() -> None
     assert heatmap.values[1][src_index] is None
 
 
+def test_build_leaderboard_two_runs_on_same_sequence_count_as_one() -> None:
+    """Each sequence must contribute exactly one value to the leaderboard even when
+    the same method was run twice on it; the two run values are averaged first."""
+    selection = _make_selection(
+        all_sequence_ids=["advio-01"],
+        coverage=[
+            _make_coverage(sequence_id="advio-01", run_id="run-01", method="vista"),
+            _make_coverage(sequence_id="advio-01", run_id="run-02", method="vista"),
+        ],
+        metric_rows=[
+            _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw", value=0.2),
+            _make_metric_row(run_id="run-02", sequence_id="advio-01", estimate_source="vista/raw", value=0.4),
+        ],
+    )
+    rows = build_per_sequence_table(selection, MetricFilter())
+    leaderboard = build_leaderboard(rows, n_total_sequences=1)
+
+    assert len(leaderboard) == 1
+    assert leaderboard[0].n_sequences == 1
+    assert leaderboard[0].mean == pytest.approx(0.3)
+
+
+def test_build_heatmap_data_two_runs_on_same_cell_are_averaged() -> None:
+    """Two runs on the same (sequence, source) must be averaged, not last-write-wins."""
+    selection = _make_selection(
+        all_sequence_ids=["advio-01"],
+        coverage=[
+            _make_coverage(sequence_id="advio-01", run_id="run-01", method="vista"),
+            _make_coverage(sequence_id="advio-01", run_id="run-02", method="vista"),
+        ],
+        metric_rows=[
+            _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw", value=0.2),
+            _make_metric_row(run_id="run-02", sequence_id="advio-01", estimate_source="vista/raw", value=0.6),
+        ],
+    )
+    rows = build_per_sequence_table(selection, MetricFilter())
+    heatmap = build_heatmap_data(rows, ["advio-01"])
+
+    src_index = heatmap.estimate_sources.index("vista/raw")
+    assert heatmap.values[0][src_index] == pytest.approx(0.4)
+
+
 def test_build_heatmap_data_uses_provided_metric_name() -> None:
     rows = build_per_sequence_table(
         _make_selection(
