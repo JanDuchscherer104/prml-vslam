@@ -29,10 +29,7 @@ class OfflineSequenceSource(Protocol):
     source owner while leaving orchestration to :mod:`prml_vslam.pipeline`.
     """
 
-    @property
-    @abstractmethod
-    def label(self) -> str:
-        """Return the user-facing label for the prepared sequence."""
+    label: str
 
     @abstractmethod
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
