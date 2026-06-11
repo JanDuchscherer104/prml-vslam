@@ -305,9 +305,6 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
 
     method_id: Literal[MethodId.LINGBOT_MAP] = MethodId.LINGBOT_MAP
 
-    lingbot_map_dir: Path = Path("external/lingbot-map")
-    """Path to a local LingBot-Map checkout containing the ``lingbot_map`` package."""
-
     checkpoint_path: Path = Path("external/lingbot-map/checkpoints/lingbot-map.pt")
     """Path to the LingBot-Map checkpoint weights."""
 
@@ -326,8 +323,6 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
     keyframe_interval: int | Literal["auto"] = "auto"
     use_sdpa: bool = True
     use_amp: bool = True
-    model_dtype: Literal["auto", "float32", "float16", "bfloat16"] = "auto"
-    checkpoint_pos_embed: Literal["error", "interpolate", "drop"] = "error"
     camera_num_iterations: int = Field(default=4, ge=1)
     enable_point_head: bool = False
     window_size: int = Field(default=64, ge=1)
@@ -390,7 +385,7 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
         return [
             "LingBot-Map is wired as an offline and bounded terminal-streaming repository backend.",
             "Streaming runs buffer RGB frames and emit terminal artifacts at finish, without incremental live preview.",
-            "A local LingBot-Map checkout and checkpoint are required for real runs.",
+            "Install the LingBot optional dependency group and provide the checkpoint before real runs.",
         ]
 
     @property

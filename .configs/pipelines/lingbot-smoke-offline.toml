@@ -25,7 +25,6 @@ enabled = true
     method_id  = "lingbot_map"
     max_frames = 1
 
-    lingbot_map_dir      = "external/lingbot-map"
     checkpoint_path      = "external/lingbot-map/checkpoints/lingbot-map.pt"
     device               = "cpu"
     mode                 = "streaming"

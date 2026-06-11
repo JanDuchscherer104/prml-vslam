@@ -15,9 +15,7 @@ from prml_vslam.app.pipeline_controls import PipelinePageAction, build_run_confi
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, Observation, ObservationProvenance
 from prml_vslam.methods.lingbot.adapter import (
     LingbotMapSlamBackend,
-    _adapt_checkpoint_state_dict,
     _build_lingbot_artifacts,
-    _images_to_tensor,
     _pose_camera_to_world_to_frame_transform,
     _resolve_keyframe_interval,
 )
@@ -128,6 +126,23 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     assert config.stages.slam.outputs.emit_sparse_points is False
 
 
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        ".configs/pipelines/lingbot-full.toml",
+        ".configs/pipelines/lingbot-smoke-gpu.toml",
+        ".configs/pipelines/lingbot-smoke-offline.toml",
+        ".configs/pipelines/lingbot-smoke-streaming-gpu.toml",
+    ],
+)
+def test_lingbot_tomls_use_checkpoint_native_patch_grid(config_path: str) -> None:
+    config = load_run_config_toml(path_config=PathConfig(), config_path=Path(config_path))
+
+    assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
+    assert config.stages.slam.backend.image_size == 518
+    assert config.stages.slam.backend.patch_size == 14
+
+
 def test_lingbot_config_rejects_invalid_runtime_values() -> None:
     with pytest.raises(ValueError, match="image_size"):
         LingbotMapSlamBackendConfig(image_size=225, patch_size=14)
@@ -179,8 +194,6 @@ def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest
         image_size=224,
         patch_size=14,
         num_scale_frames=1,
-        model_dtype="float32",
-        checkpoint_pos_embed="interpolate",
         camera_num_iterations=1,
         enable_point_head=True,
     )
@@ -210,8 +223,6 @@ def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest
 
     rendered = pipeline_request_editor._render_lingbot_backend_settings(backend, max_frames=backend.max_frames)
 
-    assert rendered.model_dtype == "float32"
-    assert rendered.checkpoint_pos_embed == "interpolate"
     assert (rendered.camera_num_iterations, rendered.enable_point_head) == (1, False)
 
 
@@ -280,59 +291,35 @@ def test_lingbot_auto_keyframe_interval_resolves_to_upstream_int() -> None:
     assert _resolve_keyframe_interval(3, num_frames=700, num_scale_frames=8) == 3
 
 
-def test_lingbot_preprocesses_images_to_patch_aligned_width() -> None:
-    torch = pytest.importorskip("torch")
-    rgb = np.zeros((480, 640, 3), dtype=np.uint8)
+def test_lingbot_preprocesses_images_with_upstream_loader() -> None:
+    class FakeTensor:
+        def __init__(self) -> None:
+            self.device: str | None = None
 
-    tensor = _images_to_tensor(torch, [rgb], device="cpu", image_size=518, patch_size=14)
+        def to(self, device: str) -> FakeTensor:
+            self.device = device
+            return self
 
-    assert tuple(tensor.shape) == (1, 3, 392, 518)
+    captured: dict[str, Any] = {}
 
+    def fake_load_and_preprocess_images(paths: list[str], **kwargs: Any) -> FakeTensor:
+        captured["paths"] = paths
+        captured["kwargs"] = kwargs
+        assert len(paths) == 1
+        assert Path(paths[0]).exists()
+        return FakeTensor()
 
-def test_lingbot_checkpoint_pos_embed_interpolates_to_smaller_image_grid() -> None:
-    torch = pytest.importorskip("torch")
-    source = torch.arange(1 * (37 * 37 + 1) * 4, dtype=torch.float32).reshape(1, 37 * 37 + 1, 4)
-    target = torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)
-    state_dict = {"aggregator.patch_embed.pos_embed": source.clone()}
-
-    _adapt_checkpoint_state_dict(
-        torch,
-        state_dict,
-        target_state_dict={"aggregator.patch_embed.pos_embed": target},
-        pos_embed_policy="interpolate",
+    tensor = lingbot_adapter._preprocess_images_with_lingbot(
+        fake_load_and_preprocess_images,
+        [np.zeros((480, 640, 3), dtype=np.uint8)],
+        device="cpu",
+        image_size=518,
+        patch_size=14,
     )
 
-    resized = state_dict["aggregator.patch_embed.pos_embed"]
-    assert tuple(resized.shape) == tuple(target.shape)
-    np.testing.assert_allclose(resized[:, :1].numpy(), source[:, :1].numpy())
-
-
-def test_lingbot_checkpoint_pos_embed_requires_policy_for_smaller_image_grid() -> None:
-    torch = pytest.importorskip("torch")
-    source = torch.zeros((1, 37 * 37 + 1, 4), dtype=torch.float32)
-    target = torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)
-
-    with pytest.raises(RuntimeError, match="checkpoint_pos_embed"):
-        _adapt_checkpoint_state_dict(
-            torch,
-            {"aggregator.patch_embed.pos_embed": source},
-            target_state_dict={"aggregator.patch_embed.pos_embed": target},
-            pos_embed_policy="error",
-        )
-
-
-def test_lingbot_checkpoint_pos_embed_can_be_dropped_for_smaller_image_grid() -> None:
-    torch = pytest.importorskip("torch")
-    state_dict = {"aggregator.patch_embed.pos_embed": torch.zeros((1, 37 * 37 + 1, 4), dtype=torch.float32)}
-
-    _adapt_checkpoint_state_dict(
-        torch,
-        state_dict,
-        target_state_dict={"aggregator.patch_embed.pos_embed": torch.zeros((1, 16 * 16 + 1, 4), dtype=torch.float32)},
-        pos_embed_policy="drop",
-    )
-
-    assert "aggregator.patch_embed.pos_embed" not in state_dict
+    assert tensor.device == "cpu"
+    assert captured["kwargs"] == {"mode": "crop", "image_size": 518, "patch_size": 14}
+    assert not Path(captured["paths"][0]).exists()
 
 
 def test_lingbot_backend_caps_max_frames_before_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
