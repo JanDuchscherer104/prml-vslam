@@ -76,11 +76,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         """Build the ADVIO-backed streaming source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
 
-        def sequence() -> AdvioSequence:
-            return self._sequence(sequence_id)
-
         def stream(_value: int, loop: bool, mode: ReplayMode, stream_selection: FrameSelectionConfig):
-            advio_sequence = sequence()
+            advio_sequence = self._sequence(sequence_id)
             return open_dataset_sequence_stream(
                 sequence=advio_sequence,
                 timestamps_ns=load_advio_frame_timestamps_ns(advio_sequence.paths.frame_timestamps_path).tolist(),
@@ -94,13 +91,15 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         return DatasetSequenceSource(
             sequence_id=sequence_id,
             frame_selection=selection,
-            label=lambda _value: sequence().scene.display_name,
-            manifest=lambda _value, output_dir, manifest_selection: sequence().to_sequence_manifest(
+            label=lambda value: self.scene(value).display_name,
+            manifest=lambda _value, output_dir, manifest_selection: self._sequence(sequence_id).to_sequence_manifest(
                 output_dir=output_dir,
                 frame_selection=manifest_selection,
                 dataset_serving=dataset_serving,
             ),
-            benchmark=lambda _value, output_dir, _selection: sequence().to_benchmark_inputs(output_dir=output_dir),
+            benchmark=lambda _value, output_dir, _selection: self._sequence(sequence_id).to_benchmark_inputs(
+                output_dir=output_dir
+            ),
             stream=stream,
             replay_mode=replay_mode,
             normalized_store=normalized_store,

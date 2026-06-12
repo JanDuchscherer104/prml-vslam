@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
+import prml_vslam.sources.datasets.normalization as normalization_module
 import prml_vslam.sources.datasets.normalized_store as normalized_store_module
 from prml_vslam.interfaces import (
     ObservationIndexEntry,
@@ -35,7 +37,7 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalization import source_config_for_normalization
+from prml_vslam.sources.datasets.normalization import normalize_dataset_entries, source_config_for_normalization
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
@@ -519,6 +521,40 @@ def test_source_config_for_normalization_preserves_dataset_reference_cloud_defau
     assert tum_config.reference_cloud == ReferenceCloudConfig()
     assert isinstance(record3d_config, Record3DDatasetSourceConfig)
     assert record3d_config.reference_cloud == ReferenceCloudConfig(min_confidence=1)
+
+
+def test_normalize_dataset_entries_parallelizes_multi_sequence_builds(monkeypatch, tmp_path: Path) -> None:
+    seen_workers: list[int] = []
+
+    class FakeExecutor:
+        def __init__(self, *, max_workers: int) -> None:
+            seen_workers.append(max_workers)
+
+        def __enter__(self) -> FakeExecutor:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            return None
+
+        def map(self, func, tasks):
+            return [func(task) for task in tasks]
+
+    monkeypatch.setattr(normalization_module, "ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(
+        normalization_module,
+        "_normalize_dataset_entry_worker",
+        lambda task: SimpleNamespace(sequence_id=task[2]),
+    )
+
+    entries = normalize_dataset_entries(
+        dataset_id=DatasetId.RECORD3D,
+        path_config=PathConfig(root=tmp_path),
+        sequence_ids=["a", "b", "c"],
+        workers=99,
+    )
+
+    assert seen_workers == [3]
+    assert [entry.sequence_id for entry in entries] == ["a", "b", "c"]
 
 
 def test_normalized_store_preserves_external_benchmark_observation_sources(tmp_path: Path) -> None:

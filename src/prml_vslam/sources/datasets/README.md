@@ -193,10 +193,13 @@ payloads rather than primary `SequenceManifest` input, but the matching RGB
 frames are shared with the source manifest instead of duplicated under
 `benchmark/observations/`.
 
-To build or refresh one normalized entry, use the CLI normalization command:
+To build or refresh normalized entries, use the CLI normalization command. Omit
+`--sequence` to normalize every offline-ready local sequence with one worker per
+CPU by default, or repeat `--sequence` to bound the build:
 
 ```bash
-prml-vslam dataset normalize --dataset record3d --sequence <sequence-id>
+prml-vslam dataset normalize --dataset record3d
+prml-vslam dataset normalize --dataset record3d --sequence <sequence-id> --workers 4
 ```
 
 The Streamlit Datasets page and `prml-vslam dataset summary` read persisted

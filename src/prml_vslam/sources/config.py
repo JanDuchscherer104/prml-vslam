@@ -8,7 +8,7 @@ adapters through ``setup_target(...)``. Stage policy lives in
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, Field
 
@@ -234,7 +234,7 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
         )
 
 
-SourceBackendConfig: TypeAlias = Annotated[
+SourceBackendConfig = Annotated[
     VideoSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig | Record3DDatasetSourceConfig | Record3DSourceConfig,
     Field(discriminator="source_id"),
 ]
