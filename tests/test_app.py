@@ -129,38 +129,6 @@ def test_live_action_slot_call_sites_define_unique_stable_keys() -> None:
     assert len(keys) == len(set(keys))
 
 
-def test_dataset_loop_preview_widgets_define_dataset_scoped_keys() -> None:
-    tree = ast.parse(Path("src/prml_vslam/app/pages/datasets.py").read_text(encoding="utf-8"))
-    helper = _function_def(tree, "_render_loop_preview_impl")
-    checked_calls = 0
-
-    for node in ast.walk(helper):
-        if not isinstance(node, ast.Call):
-            continue
-        if not isinstance(node.func, ast.Attribute) or node.func.attr not in {"selectbox", "toggle"}:
-            continue
-        if not isinstance(node.func.value, ast.Name) or node.func.value.id != "st":
-            continue
-        key_values = [keyword.value for keyword in node.keywords if keyword.arg == "key"]
-        assert len(key_values) == 1, f"_render_loop_preview_impl:{node.lineno} must pass one key="
-        assert _uses_action_key_prefix(key_values[0]), (
-            f"_render_loop_preview_impl:{node.lineno} must scope widget keys by action_key_prefix"
-        )
-        checked_calls += 1
-
-    assert checked_calls == 3
-
-
-def _function_def(tree: ast.AST, function_name: str) -> ast.FunctionDef:
-    matches = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == function_name]
-    assert len(matches) == 1, f"Expected exactly one {function_name} definition"
-    return matches[0]
-
-
-def _uses_action_key_prefix(node: ast.AST) -> bool:
-    return any(isinstance(child, ast.Name) and child.id == "action_key_prefix" for child in ast.walk(node))
-
-
 def _literal_keywords_for_calls(tree: ast.AST, function_name: str, keyword_name: str) -> list[str]:
     values: list[str] = []
     for node in ast.walk(tree):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,6 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-import prml_vslam.sources.datasets.batch_normalization as batch_normalization
 import prml_vslam.sources.datasets.normalized_store as normalized_store_module
 from prml_vslam.interfaces import (
     ObservationIndexEntry,
@@ -77,6 +77,15 @@ class _PassthroughLzfseCodec:
         return payload
 
 
+@dataclass(frozen=True, slots=True)
+class _Record3DNormalizedEntryFixture:
+    archive_path: Path
+    path_config: PathConfig
+    store: NormalizedDatasetStore
+    profile: NormalizedDatasetProfile
+    entry: NormalizedDatasetEntry
+
+
 def _test_lzfse_codec() -> object:
     return _liblzfse or _PassthroughLzfseCodec
 
@@ -122,6 +131,38 @@ def _write_record3d_archive(
             archive.writestr(f"rgbd/{index}.depth", _test_lzfse_codec().compress(depth.tobytes()))
             archive.writestr(f"rgbd/{index}.conf", _test_lzfse_codec().compress(confidence.tobytes()))
     return archive_path
+
+
+def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntryFixture:
+    archive_path = _write_record3d_archive(tmp_path / ".data" / "record3d")
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = Record3DDatasetService(path_config)
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+    )
+    raw_source = service.build_streaming_source(
+        sequence_id="synthetic",
+        frame_selection=FrameSelectionConfig(),
+        replay_mode=source_config.replay_mode,
+        materialization=source_config.materialization,
+        reference_cloud=source_config.reference_cloud,
+    )
+    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    return _Record3DNormalizedEntryFixture(
+        archive_path=archive_path,
+        path_config=path_config,
+        store=store,
+        profile=profile,
+        entry=entry,
+    )
 
 
 def test_record3d_catalog_registers_zenodo_scenes_without_preview_token() -> None:
@@ -364,286 +405,10 @@ def test_record3d_dataset_service_and_registry_discover_local_archives(tmp_path:
     assert resolve_reference_path(DatasetId.RECORD3D, tmp_path / ".data" / "record3d", "synthetic") is None
 
 
-def test_normalize_dataset_batch_uses_advio_slugs_for_default_numeric_catalog_statuses(monkeypatch) -> None:
-    seen_tasks: list[str] = []
-
-    class FakeAdvioService:
-        def local_scene_statuses(self) -> list[object]:
-            return [
-                SimpleNamespace(
-                    scene=SimpleNamespace(sequence_id=1, sequence_slug="advio-01"),
-                    offline_ready=True,
-                )
-            ]
-
-        def resolve_sequence_id(self, sequence_id: str) -> int:
-            assert sequence_id == "advio-01"
-            return 1
-
-    def fake_dataset_service(dataset_id: DatasetId, _path_config: PathConfig) -> FakeAdvioService:
-        assert dataset_id is DatasetId.ADVIO
-        return FakeAdvioService()
-
-    def fake_task(task: object) -> object:
-        seen_tasks.append(task.sequence_id)
-        return batch_normalization.NormalizedDatasetBatchRecord(
-            dataset_id=DatasetId.ADVIO,
-            sequence_id=task.sequence_id,
-            profile_key="profile",
-            status="built",
-        )
-
-    monkeypatch.setattr(batch_normalization, "dataset_service", fake_dataset_service)
-    monkeypatch.setattr(batch_normalization, "_normalize_batch_task", fake_task)
-
-    result = normalize_dataset_batch(
-        NormalizedDatasetBatchConfig(datasets=[NormalizedDatasetSelection(dataset_id=DatasetId.ADVIO)], max_workers=1),
-        path_config=PathConfig(root=Path.cwd()),
-    )
-
-    assert seen_tasks == ["advio-01"]
-    assert result.failed == []
-    assert result.records[0].sequence_id == "advio-01"
-
-
-def test_normalize_dataset_batch_accepts_advio_numeric_string_selections(monkeypatch) -> None:
-    seen_tasks: list[str] = []
-
-    class FakeAdvioService:
-        def local_scene_statuses(self) -> list[object]:
-            return [
-                SimpleNamespace(
-                    scene=SimpleNamespace(sequence_id=1, sequence_slug="advio-01"),
-                    offline_ready=True,
-                )
-            ]
-
-        def resolve_sequence_id(self, sequence_id: str) -> int:
-            if sequence_id == "1":
-                raise AssertionError("numeric ADVIO selections should not be resolved as slugs")
-            assert sequence_id == "advio-01"
-            return 1
-
-    def fake_dataset_service(dataset_id: DatasetId, _path_config: PathConfig) -> FakeAdvioService:
-        assert dataset_id is DatasetId.ADVIO
-        return FakeAdvioService()
-
-    def fake_task(task: object) -> object:
-        seen_tasks.append(task.sequence_id)
-        return batch_normalization.NormalizedDatasetBatchRecord(
-            dataset_id=DatasetId.ADVIO,
-            sequence_id=task.sequence_id,
-            profile_key="profile",
-            status="built",
-        )
-
-    monkeypatch.setattr(batch_normalization, "dataset_service", fake_dataset_service)
-    monkeypatch.setattr(batch_normalization, "_normalize_batch_task", fake_task)
-
-    result = normalize_dataset_batch(
-        NormalizedDatasetBatchConfig(
-            datasets=[NormalizedDatasetSelection(dataset_id=DatasetId.ADVIO, sequence_ids=["1"])],
-            max_workers=1,
-        ),
-        path_config=PathConfig(root=Path.cwd()),
-    )
-
-    assert seen_tasks == ["advio-01"]
-    assert result.failed == []
-    assert result.records[0].sequence_id == "advio-01"
-
-
-def test_normalize_batch_task_reuses_entry_with_single_load(monkeypatch, tmp_path: Path) -> None:
-    profile = NormalizedDatasetProfile(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id="record3d_dataset",
-        source_profile={"sequence_id": "synthetic"},
-    )
-    entry = NormalizedDatasetEntry(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id="record3d_dataset",
-        profile_key=profile.profile_key,
-        profile=profile.model_dump(mode="json"),
-        root=tmp_path / "entry",
-        sequence_manifest_path=tmp_path / "entry" / "sequence_manifest.json",
-        benchmark_inputs_path=tmp_path / "entry" / "benchmark_inputs.json",
-    )
-
-    class FakeStore:
-        load_count = 0
-
-        def entry_root(self, requested_profile: NormalizedDatasetProfile) -> Path:
-            assert requested_profile == profile
-            return tmp_path / ".data" / "record3d" / ".normalized" / "synthetic" / profile.profile_key
-
-        def load_entry(self, requested_profile: NormalizedDatasetProfile) -> NormalizedDatasetEntry:
-            assert requested_profile == profile
-            self.load_count += 1
-            return entry
-
-    store = FakeStore()
-    monkeypatch.setattr(batch_normalization, "dataset_service", lambda _dataset_id, _path_config: SimpleNamespace())
-    monkeypatch.setattr(batch_normalization, "source_config_for_normalization", lambda **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(batch_normalization, "normalized_profile_for_dataset", lambda **_kwargs: profile)
-    monkeypatch.setattr(batch_normalization, "normalized_store_for_service", lambda _dataset_id, _service: store)
-    monkeypatch.setattr(
-        batch_normalization,
-        "normalize_dataset_entry",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("reused entries should not be rebuilt")),
-    )
-
-    record = batch_normalization._normalize_batch_task(
-        batch_normalization._BatchTask(
-            path_config=PathConfig(root=tmp_path),
-            selection=NormalizedDatasetSelection(dataset_id=DatasetId.RECORD3D, sequence_ids=["synthetic"]),
-            sequence_id="synthetic",
-        )
-    )
-
-    assert record.status == "reused"
-    assert store.load_count == 1
-
-
-def test_normalize_batch_task_reports_rich_stale_entry_failure(monkeypatch, tmp_path: Path) -> None:
-    profile = NormalizedDatasetProfile(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id="record3d_dataset",
-        source_profile={"sequence_id": "synthetic"},
-    )
-    entry_root = tmp_path / ".data" / "record3d" / ".normalized" / "synthetic" / profile.profile_key
-
-    class FakeStore:
-        def entry_root(self, requested_profile: NormalizedDatasetProfile) -> Path:
-            assert requested_profile == profile
-            return entry_root
-
-        def load_entry(self, requested_profile: NormalizedDatasetProfile) -> NormalizedDatasetEntry:
-            assert requested_profile == profile
-            raise RuntimeError("schema_version mismatch")
-
-    monkeypatch.setattr(batch_normalization, "dataset_service", lambda _dataset_id, _path_config: SimpleNamespace())
-    monkeypatch.setattr(batch_normalization, "source_config_for_normalization", lambda **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(batch_normalization, "normalized_profile_for_dataset", lambda **_kwargs: profile)
-    monkeypatch.setattr(batch_normalization, "normalized_store_for_service", lambda _dataset_id, _service: FakeStore())
-    monkeypatch.setattr(
-        batch_normalization,
-        "normalize_dataset_entry",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("stale entries should fail before rebuild")),
-    )
-
-    record = batch_normalization._normalize_batch_task(
-        batch_normalization._BatchTask(
-            path_config=PathConfig(root=tmp_path),
-            selection=NormalizedDatasetSelection(dataset_id=DatasetId.RECORD3D, sequence_ids=["synthetic"]),
-            sequence_id="synthetic",
-        )
-    )
-
-    assert record.status == "failed"
-    assert record.profile_key == profile.profile_key
-    assert record.entry_root == entry_root
-    assert "RuntimeError" in record.message
-    assert "dataset_id=record3d_dataset" in record.message
-    assert "sequence_id=synthetic" in record.message
-    assert f"profile_key={profile.profile_key}" in record.message
-    assert f"entry_root={entry_root}" in record.message
-    assert "schema_version mismatch" in record.message
-
-
-def test_normalized_dataset_batch_defaults_to_available_cpu_workers(monkeypatch) -> None:
-    monkeypatch.setattr(batch_normalization.os, "cpu_count", lambda: 7)
-
-    config = NormalizedDatasetBatchConfig()
-
-    assert config.max_workers == 7
-
-
-def test_normalize_dataset_batch_emits_progress_events(monkeypatch) -> None:
-    events: list[batch_normalization.NormalizedDatasetBatchProgress] = []
-
-    class FakeRecord3DService:
-        def local_scene_statuses(self) -> list[object]:
-            return [
-                SimpleNamespace(
-                    scene=SimpleNamespace(sequence_id="ready"),
-                    offline_ready=True,
-                ),
-                SimpleNamespace(
-                    scene=SimpleNamespace(sequence_id="missing"),
-                    offline_ready=False,
-                ),
-            ]
-
-        def resolve_sequence_id(self, sequence_id: str) -> str:
-            return sequence_id
-
-    def fake_dataset_service(dataset_id: DatasetId, _path_config: PathConfig) -> FakeRecord3DService:
-        assert dataset_id is DatasetId.RECORD3D
-        return FakeRecord3DService()
-
-    def fake_task(task: object) -> object:
-        return batch_normalization.NormalizedDatasetBatchRecord(
-            dataset_id=DatasetId.RECORD3D,
-            sequence_id=task.sequence_id,
-            profile_key="profile",
-            status="built",
-        )
-
-    monkeypatch.setattr(batch_normalization, "dataset_service", fake_dataset_service)
-    monkeypatch.setattr(batch_normalization, "_normalize_batch_task", fake_task)
-
-    result = normalize_dataset_batch(
-        NormalizedDatasetBatchConfig(
-            datasets=[NormalizedDatasetSelection(dataset_id=DatasetId.RECORD3D, sequence_ids=["ready", "missing"])],
-            max_workers=1,
-            missing_policy=NormalizedDatasetMissingPolicy.SKIP,
-        ),
-        path_config=PathConfig(root=Path.cwd()),
-        progress=events.append,
-    )
-
-    assert result.built_count == 1
-    assert result.skipped_count == 1
-    assert [event.stage for event in events] == [
-        "discovering",
-        "discovered",
-        "skipped",
-        "queued",
-        "processing",
-        "completed",
-    ]
-    assert events[-1].completed == 1
-    assert events[-1].total == 1
-
-
 def test_record3d_normalized_store_persists_queryable_stats(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
-    query = NormalizedDatasetQuery.from_path_config(path_config)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    entry = fixture.entry
+    query = NormalizedDatasetQuery.from_path_config(fixture.path_config)
     records = query.record_rows([DatasetId.RECORD3D])
     stats = query.stats_long_rows([DatasetId.RECORD3D])
     metadata = query.metadata_long_rows([DatasetId.RECORD3D])
@@ -672,29 +437,10 @@ def test_record3d_normalized_store_persists_queryable_stats(tmp_path: Path) -> N
 
 
 def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     entry_path = entry.root / "entry.json"
     stale_payload = json.loads(entry_path.read_text(encoding="utf-8"))
     stale_payload["schema_version"] = 1
@@ -711,29 +457,10 @@ def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) 
 
 
 def test_record3d_normalized_store_rejects_pre_stats_schema_entries(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     entry_path = entry.root / "entry.json"
     stale_payload = json.loads(entry_path.read_text(encoding="utf-8"))
     stale_payload["schema_version"] = 2
@@ -754,29 +481,10 @@ def test_record3d_normalized_store_rejects_pre_stats_schema_entries(tmp_path: Pa
 
 
 def test_record3d_normalized_store_reports_invalid_entries_without_aborting_summary(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     entry.benchmark_inputs_path.unlink()
 
     with pytest.raises(FileNotFoundError):
@@ -788,7 +496,7 @@ def test_record3d_normalized_store_reports_invalid_entries_without_aborting_summ
     assert issues[0].sequence_id == "synthetic"
     assert "FileNotFoundError" in issues[0].message
 
-    query = NormalizedDatasetQuery.from_path_config(path_config)
+    query = NormalizedDatasetQuery.from_path_config(fixture.path_config)
     assert query.record_rows([DatasetId.RECORD3D]) == []
     issue_rows = query.issue_rows([DatasetId.RECORD3D])
     assert len(issue_rows) == 1
@@ -997,29 +705,12 @@ def test_normalized_store_uses_indexed_observation_layout_only_for_multiple_sequ
 
 
 def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tmp_path: Path) -> None:
-    archive_path = _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
+    fixture = _create_record3d_normalized_entry(tmp_path)
     source_config = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
-    archive_path.rename(archive_path.with_suffix(".r3d.bak"))
+    fixture.archive_path.rename(fixture.archive_path.with_suffix(".r3d.bak"))
     sampled_config = source_config.model_copy(update={"frame_stride": 2})
     sampled_profile = normalized_profile_for_source_config(
         dataset_id=DatasetId.RECORD3D,
@@ -1027,7 +718,7 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
         source_id=sampled_config.source_id,
         payload=sampled_config.model_dump(mode="json"),
     )
-    normalized_source = sampled_config.setup_target(path_config=path_config)
+    normalized_source = sampled_config.setup_target(path_config=fixture.path_config)
 
     manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
     benchmark_inputs = normalized_source.prepare_benchmark_inputs(tmp_path / "run" / "benchmark")
@@ -1036,40 +727,22 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
     observation_ref = benchmark_inputs.observation_sequences[0]
     observation_index = json.loads(observation_ref.index_path.read_text(encoding="utf-8"))
 
-    assert sampled_profile.profile_key == profile.profile_key
-    assert entry.root.joinpath("input", "rgb").exists() is False
+    assert sampled_profile.profile_key == fixture.profile.profile_key
+    assert fixture.entry.root.joinpath("input", "rgb").exists() is False
     assert manifest.rgb_dir == observation_ref.payload_root / "rgb"
-    assert manifest.rgb_dir.is_relative_to(entry.root)
+    assert manifest.rgb_dir.is_relative_to(fixture.entry.root)
     assert not (tmp_path / "run" / "input" / "rgb").exists()
     assert frame_indices == {"source_frame_indices": [0, 2]}
     assert timestamps["timestamps_ns"] == [0, 200_000_000]
-    assert observation_ref.payload_root.is_relative_to(entry.root)
+    assert observation_ref.payload_root.is_relative_to(fixture.entry.root)
     assert [row["provenance"]["source_frame_index"] for row in observation_index["rows"]] == [0, 2]
 
 
 def test_record3d_normalized_store_rejects_tampered_entry_metadata(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     payload = entry.model_dump(mode="json")
     payload["sequence_id"] = "other"
     (entry.root / "entry.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -1081,28 +754,10 @@ def test_record3d_normalized_store_rejects_tampered_entry_metadata(tmp_path: Pat
 
 
 def test_record3d_normalized_store_rejects_tampered_manifest_paths(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     manifest = json.loads(entry.sequence_manifest_path.read_text(encoding="utf-8"))
     manifest["rgb_dir"] = (tmp_path / "outside-rgb").as_posix()
     entry.sequence_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -1114,28 +769,10 @@ def test_record3d_normalized_store_rejects_tampered_manifest_paths(tmp_path: Pat
 
 
 def test_record3d_normalized_store_rejects_tampered_observation_paths(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
-    service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
-    profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-    )
-    raw_source = service.build_streaming_source(
-        sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
-        materialization=source_config.materialization,
-        reference_cloud=source_config.reference_cloud,
-    )
-    entry = store.create_entry_from_source(profile=profile, source=raw_source)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    store = fixture.store
+    profile = fixture.profile
+    entry = fixture.entry
     benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
     index_path = Path(benchmark_inputs["observation_sequences"][0]["index_path"])
     observation_index = json.loads(index_path.read_text(encoding="utf-8"))

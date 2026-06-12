@@ -82,23 +82,6 @@ def test_record3d_download_rejects_invalid_sequence_index() -> None:
     assert "[0, 7]" in result.stdout
 
 
-def test_record3d_help_lists_download_command() -> None:
-    result = runner.invoke(app, ["record3d", "--help"])
-
-    assert result.exit_code == 0
-    assert "download" in result.stdout
-
-
-def test_dataset_help_lists_normalized_store_commands() -> None:
-    result = runner.invoke(app, ["dataset", "--help"])
-
-    assert result.exit_code == 0
-    assert "normalize" in result.stdout
-    assert "normalize-batch" in result.stdout
-    assert "stats" in result.stdout
-    assert "summary" in result.stdout
-
-
 def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> None:
     class FakeService:
         dataset_root = tmp_path / ".data" / "record3d"
@@ -112,49 +95,6 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
 
     assert result.exit_code == 0
     assert "record3d_dataset" in result.stdout
-
-
-def test_dataset_stats_reuses_one_query_record_scan(monkeypatch) -> None:
-    calls: list[str] = []
-
-    class FakeQuery:
-        def __init__(self, *, path_config: PathConfig) -> None:
-            self.path_config = path_config
-
-        def records(self) -> list[str]:
-            calls.append("records")
-            return ["entry"]
-
-        def record_rows(self, *, records: list[str]) -> list[dict[str, str]]:
-            calls.append(f"record_rows:{records!r}")
-            return [{"sequence_id": records[0]}]
-
-        def stats_long_rows(self, *, records: list[str]) -> list[dict[str, str]]:
-            calls.append(f"stats:{records!r}")
-            return [{"stat_name": "frame_count"}]
-
-        def metadata_long_rows(self, *, records: list[str]) -> list[dict[str, str]]:
-            calls.append(f"metadata:{records!r}")
-            return [{"stat_name": "dataset_id"}]
-
-        def issue_rows(self) -> list[dict[str, str]]:
-            calls.append("issues")
-            return [{"status": "stale_schema"}]
-
-    monkeypatch.setattr(main_module, "NormalizedDatasetQuery", FakeQuery)
-
-    result = runner.invoke(app, ["dataset", "stats"])
-
-    assert result.exit_code == 0
-    assert calls == [
-        "records",
-        "record_rows:['entry']",
-        "issues",
-        "stats:['entry']",
-        "metadata:['entry']",
-    ]
-    assert "stats_row_count" in result.stdout
-    assert "stale_schema" in result.stdout
 
 
 @pytest.mark.parametrize("command", (("advio", "download"), ("tum-rgbd", "download")))

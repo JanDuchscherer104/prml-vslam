@@ -15,6 +15,7 @@ from prml_vslam.interfaces import (
     ObservationProvenance,
     ObservationSequenceIndex,
     ObservationSequenceRef,
+    write_camera_intrinsics_yaml,
 )
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
@@ -121,7 +122,7 @@ class Record3DSequence(BaseData):
             cv2.imwrite(str(target_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
             selected_timestamps.append(sample.timestamps_ns[frame.index])
         timestamps_path = record3d_loading.write_timestamps_json(selected_timestamps, output / "timestamps.json")
-        intrinsics_path = record3d_loading.write_intrinsics_yaml(sample.rgb_intrinsics, output / "intrinsics.yaml")
+        intrinsics_path = write_camera_intrinsics_yaml(sample.rgb_intrinsics, output / "intrinsics.yaml")
         return SequenceManifest(
             sequence_id=sample.sequence_id,
             dataset_id=DatasetId.RECORD3D,
