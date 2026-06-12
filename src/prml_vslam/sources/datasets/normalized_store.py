@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 import cv2
 import numpy as np
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from prml_vslam.interfaces import ObservationSequenceIndex, ObservationSequenceRef, write_camera_intrinsics_yaml
 from prml_vslam.sources.contracts import (
@@ -202,7 +202,7 @@ class NormalizedDatasetStore:
             entry = build(temp_root)
             self._validate_entry(entry=entry, profile=profile, entry_path=temp_root / ENTRY_FILENAME)
             self._validate_entry_payloads(entry)
-            _rewrite_json_path_prefixes(temp_root, old_root=temp_root, new_root=root)
+            _rebase_entry_metadata_paths(temp_root, old_root=temp_root, new_root=root)
             _publish_entry_root(temp_root=temp_root, final_root=root)
             return self.load_entry(profile)
         finally:
@@ -640,22 +640,56 @@ def _cleanup_temporary_entry_root(temp_root: Path) -> None:
         shutil.rmtree(temp_root)
 
 
-def _rewrite_json_path_prefixes(root: Path, *, old_root: Path, new_root: Path) -> None:
-    old_prefix = old_root.resolve().as_posix()
-    new_prefix = new_root.resolve().as_posix()
-    for path in sorted(root.rglob("*.json")):
-        payload: JsonValue = json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps(_rebase_json_paths(payload, old_prefix, new_prefix), indent=2), encoding="utf-8")
+def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) -> None:
+    sequence_manifest_path = root / SEQUENCE_MANIFEST_FILENAME
+    benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
+    entry_path = root / ENTRY_FILENAME
+    sequence_manifest = _rebase_model_paths(
+        SequenceManifest.model_validate_json(sequence_manifest_path.read_text(encoding="utf-8")),
+        old_root=old_root,
+        new_root=new_root,
+    )
+    benchmark_inputs = _rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(benchmark_inputs_path.read_text(encoding="utf-8")),
+        old_root=old_root,
+        new_root=new_root,
+    )
+    entry = _rebase_model_paths(
+        NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+        old_root=old_root,
+        new_root=new_root,
+    )
+    write_json(sequence_manifest_path, sequence_manifest)
+    write_json(benchmark_inputs_path, benchmark_inputs)
+    write_json(entry_path, entry)
 
 
-def _rebase_json_paths(value: JsonValue, old_prefix: str, new_prefix: str) -> JsonValue:
-    if isinstance(value, str) and value.startswith(old_prefix):
-        return f"{new_prefix}{value.removeprefix(old_prefix)}"
+def _rebase_model_paths(model: BaseModel, *, old_root: Path, new_root: Path) -> BaseModel:
+    return type(model).model_validate(_rebase_path_values(model.model_dump(mode="python"), old_root, new_root))
+
+
+def _rebase_path_values(value: object, old_root: Path, new_root: Path) -> object:
+    if isinstance(value, Path):
+        return _rebase_path(value, old_root=old_root, new_root=new_root)
+    if isinstance(value, BaseModel):
+        return _rebase_model_paths(value, old_root=old_root, new_root=new_root)
     if isinstance(value, list):
-        return [_rebase_json_paths(item, old_prefix, new_prefix) for item in value]
+        return [_rebase_path_values(item, old_root, new_root) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_rebase_path_values(item, old_root, new_root) for item in value)
     if isinstance(value, dict):
-        return {key: _rebase_json_paths(item, old_prefix, new_prefix) for key, item in value.items()}
+        return {key: _rebase_path_values(item, old_root, new_root) for key, item in value.items()}
     return value
+
+
+def _rebase_path(path: Path, *, old_root: Path, new_root: Path) -> Path:
+    resolved = path.resolve()
+    old_resolved = old_root.resolve()
+    try:
+        relative_path = resolved.relative_to(old_resolved)
+    except ValueError:
+        return path
+    return (new_root.resolve() / relative_path).resolve()
 
 
 def _publish_entry_root(*, temp_root: Path, final_root: Path) -> None:
