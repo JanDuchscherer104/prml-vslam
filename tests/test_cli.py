@@ -97,7 +97,7 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
     result = runner.invoke(app, ["dataset", "summary", "--dataset", "record3d"])
 
     assert result.exit_code == 0
-    assert "record3d_dataset" in result.stdout
+    assert "record3d" in result.stdout
     assert "vslam-datastore" in result.stdout
     assert "record3d" in result.stdout
 

@@ -52,7 +52,7 @@ class Record3DSceneMetadata(BaseData):
 class Record3DCatalog(BaseData):
     """Small catalog wrapper used by the shared dataset service base."""
 
-    dataset_id: Literal["record3d_dataset"] = "record3d_dataset"
+    dataset_id: Literal["record3d"] = "record3d"
     dataset_label: str = "Record3D"
     scenes: list[Record3DSceneMetadata] = Field(default_factory=list)
 
