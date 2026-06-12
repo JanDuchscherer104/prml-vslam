@@ -1456,10 +1456,32 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
         _frame_transform_from_vista_pose(pose)
 
 
-def test_vista_config_models_ignore_removed_dead_knobs() -> None:
+def test_vista_config_models_accept_keyframe_policy_knobs() -> None:
     config = VistaSlamBackendConfig.model_validate({"stride": 5, "keyframe_detection": "stride"})
-    assert not hasattr(config, "stride")
-    assert not hasattr(config, "keyframe_detection")
+    assert config.stride == 5
+    assert config.keyframe_detection == "stride"
 
     with pytest.raises(ValidationError):
         VistaSlamBackendConfig.model_validate({"device": "tpu"})
+
+    with pytest.raises(ValidationError):
+        VistaSlamBackendConfig.model_validate({"stride": 0})
+
+    with pytest.raises(ValidationError):
+        VistaSlamBackendConfig.model_validate({"keyframe_detection": "flow_stride"})
+
+
+def test_vista_stride_keyframe_policy_matches_upstream_offline_indexing() -> None:
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
+
+    session = object.__new__(VistaSlamRuntime)
+    session._keyframe_detection = "stride"
+    session._stride = 3
+    grayscale = np.zeros((4, 4), dtype=np.uint8)
+
+    selected = [
+        session._is_keyframe(source_frame_index=source_frame_index, grayscale=grayscale)
+        for source_frame_index in range(10)
+    ]
+
+    assert selected == [False, True, False, False, True, False, False, True, False, False]
