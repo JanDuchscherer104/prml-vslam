@@ -3,6 +3,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from prml_vslam.sources.datasets.contracts import DatasetDownloadResult
 from prml_vslam.sources.datasets.download_helpers import (
     normalize_archive_member,
     relative_sequence_path,
@@ -22,7 +23,6 @@ from .advio_layout import (
 from .advio_models import (
     AdvioCatalog,
     AdvioDownloadRequest,
-    AdvioDownloadResult,
     AdvioLocalSceneStatus,
     AdvioSceneMetadata,
 )
@@ -64,7 +64,7 @@ class AdvioDownloadManager:
             )
         return statuses
 
-    def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
+    def download(self, request: AdvioDownloadRequest) -> DatasetDownloadResult[int]:
         """Download selected ADVIO scenes and extract complete scene payloads."""
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         self.archive_root.mkdir(parents=True, exist_ok=True)
@@ -88,7 +88,7 @@ class AdvioDownloadManager:
                 )
             )
 
-        return AdvioDownloadResult(
+        return DatasetDownloadResult[int](
             sequence_ids=sequence_ids,
             downloaded_archive_count=downloaded_archive_count,
             reused_archive_count=reused_archive_count,

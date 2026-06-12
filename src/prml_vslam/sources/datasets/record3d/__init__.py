@@ -6,8 +6,6 @@ from .record3d_loading import Record3DOfflineSample
 from .record3d_models import (
     Record3DCatalog,
     Record3DDownloadRequest,
-    Record3DDownloadResult,
-    Record3DLocalSceneStatus,
     Record3DMaterializationConfig,
     Record3DPoseFrameMode,
     Record3DSceneMetadata,
@@ -21,8 +19,6 @@ __all__ = [
     "Record3DCatalog",
     "Record3DDatasetService",
     "Record3DDownloadRequest",
-    "Record3DDownloadResult",
-    "Record3DLocalSceneStatus",
     "Record3DMaterializationConfig",
     "Record3DOfflineSample",
     "Record3DPoseFrameMode",

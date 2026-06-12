@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import Field, field_validator
 
-from prml_vslam.sources.datasets.contracts import DatasetDownloadResult, DatasetSummary, LocalSceneStatus
+from prml_vslam.sources.datasets.contracts import LocalSceneStatus
 from prml_vslam.utils import BaseConfig, BaseData, FactoryConfig
 
 if TYPE_CHECKING:
@@ -113,10 +113,6 @@ class AdvioDownloadRequest(BaseConfig):
         return normalized
 
 
-class AdvioDownloadResult(DatasetDownloadResult[int]):
-    """Summary of one explicit ADVIO download action."""
-
-
 class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata]):
     """Local availability summary for one ADVIO scene."""
 
@@ -125,10 +121,6 @@ class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata]):
 
     arkit_ready: bool = False
     """Whether ARKit pose data is available for consumption-time provider selection."""
-
-
-class AdvioDatasetSummary(DatasetSummary):
-    """High-level summary of committed and local ADVIO coverage."""
 
 
 class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):

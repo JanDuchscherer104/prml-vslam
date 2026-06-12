@@ -5,7 +5,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import numpy as np
 import streamlit as st
@@ -21,7 +21,7 @@ from prml_vslam.sources.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary
+from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary, LocalSceneStatus
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
@@ -33,15 +33,15 @@ from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import (
     Record3DDatasetService,
     Record3DDownloadRequest,
-    Record3DLocalSceneStatus,
     Record3DOfflineSample,
+    Record3DSceneMetadata,
 )
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
-    TumRgbdLocalSceneStatus,
     TumRgbdOfflineSample,
     TumRgbdPoseSource,
+    TumRgbdSceneMetadata,
 )
 from prml_vslam.utils import BaseConfig, JsonObject, PathConfig
 
@@ -81,14 +81,6 @@ from ..ui import render_page_intro
 
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
-
-
-SequenceId: TypeAlias = int | str
-StatusList: TypeAlias = list[AdvioLocalSceneStatus] | list[TumRgbdLocalSceneStatus] | list[Record3DLocalSceneStatus]
-ExplorerSample: TypeAlias = AdvioOfflineSample | TumRgbdOfflineSample | Record3DOfflineSample
-DatasetPageState: TypeAlias = AdvioPageState | TumRgbdPageState | Record3DDatasetPageState
-DatasetService: TypeAlias = AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService
-DownloadRequest: TypeAlias = AdvioDownloadRequest | TumRgbdDownloadRequest
 
 
 @dataclass(slots=True)
@@ -171,7 +163,7 @@ def _render_tum_rgbd_tab(context: AppContext) -> None:
     _render_summary_metrics(page_data.summary)
     _render_normalized_characterization(normalized)
     page_data.rows = _rows_with_normalized_status(DatasetId.TUM_RGBD, page_data.rows, normalized)
-    tum_statuses = cast(list[TumRgbdLocalSceneStatus], page_data.statuses)
+    tum_statuses = cast(list[LocalSceneStatus[TumRgbdSceneMetadata]], page_data.statuses)
     _render_tum_rgbd_sequence_explorer(context, tum_statuses)
     _render_tum_rgbd_loop_preview(context, tum_statuses)
     _render_catalog(page_data.rows)
@@ -193,7 +185,7 @@ def _render_record3d_tab(context: AppContext) -> None:
     _render_summary_metrics(page_data.summary)
     _render_normalized_characterization(normalized)
     page_data.rows = _record3d_rows_with_normalized_status(page_data.rows, normalized)
-    record3d_statuses = cast(list[Record3DLocalSceneStatus], page_data.statuses)
+    record3d_statuses = cast(list[LocalSceneStatus[Record3DSceneMetadata]], page_data.statuses)
     _render_record3d_sequence_explorer(context, record3d_statuses)
     _render_record3d_loop_preview(context, record3d_statuses, normalized)
     _render_catalog(page_data.rows)
@@ -272,7 +264,7 @@ def _build_record3d_page_data(context: AppContext, form: Record3DDownloadFormDat
     )
 
 
-def _record3d_scene_rows(statuses: list[Record3DLocalSceneStatus]) -> list[DatasetTableRow]:
+def _record3d_scene_rows(statuses: list[LocalSceneStatus[Record3DSceneMetadata]]) -> list[DatasetTableRow]:
     rows: list[DatasetTableRow] = []
     for status in statuses:
         rows.append(
@@ -685,7 +677,9 @@ def _render_advio_sequence_explorer(context: AppContext, statuses: list[AdvioLoc
     )
 
 
-def _render_tum_rgbd_sequence_explorer(context: AppContext, statuses: list[TumRgbdLocalSceneStatus]) -> None:
+def _render_tum_rgbd_sequence_explorer(
+    context: AppContext, statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]]
+) -> None:
     _render_sequence_explorer_impl(
         context=context,
         statuses=statuses,
@@ -697,7 +691,9 @@ def _render_tum_rgbd_sequence_explorer(context: AppContext, statuses: list[TumRg
     )
 
 
-def _render_record3d_sequence_explorer(context: AppContext, statuses: list[Record3DLocalSceneStatus]) -> None:
+def _render_record3d_sequence_explorer(
+    context: AppContext, statuses: list[LocalSceneStatus[Record3DSceneMetadata]]
+) -> None:
     _render_sequence_explorer_impl(
         context=context,
         statuses=statuses,
@@ -712,12 +708,18 @@ def _render_record3d_sequence_explorer(context: AppContext, statuses: list[Recor
 def _render_sequence_explorer_impl(
     *,
     context: AppContext,
-    statuses: StatusList,
-    page_state: DatasetPageState,
-    service: DatasetService,
+    statuses: (
+        list[AdvioLocalSceneStatus]
+        | list[LocalSceneStatus[TumRgbdSceneMetadata]]
+        | list[LocalSceneStatus[Record3DSceneMetadata]]
+    ),
+    page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     dataset_label: str,
-    load_sample: Callable[[SequenceId], tuple[ExplorerSample | None, str | None]],
-    render_details: Callable[[ExplorerSample], None],
+    load_sample: Callable[
+        [int | str], tuple[AdvioOfflineSample | TumRgbdOfflineSample | Record3DOfflineSample | None, str | None]
+    ],
+    render_details: Callable[[AdvioOfflineSample | TumRgbdOfflineSample | Record3DOfflineSample], None],
 ) -> None:
     del context
     offline_ids = [status.scene.sequence_id for status in statuses if status.offline_ready]
@@ -942,7 +944,7 @@ def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSce
     )
 
 
-def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[TumRgbdLocalSceneStatus]) -> None:
+def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]]) -> None:
     _render_loop_preview_impl(
         statuses=statuses,
         page_state=context.state.tum_rgbd,
@@ -968,7 +970,7 @@ def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[TumRgbdLoc
 
 def _render_record3d_loop_preview(
     context: AppContext,
-    statuses: list[Record3DLocalSceneStatus],
+    statuses: list[LocalSceneStatus[Record3DSceneMetadata]],
     normalized: NormalizedDatasetSnapshot,
 ) -> None:
     normalized_statuses = [
@@ -999,17 +1001,21 @@ def _render_record3d_loop_preview(
 
 def _render_loop_preview_impl(
     *,
-    statuses: StatusList,
-    page_state: DatasetPageState,
-    service: DatasetService,
+    statuses: (
+        list[AdvioLocalSceneStatus]
+        | list[LocalSceneStatus[TumRgbdSceneMetadata]]
+        | list[LocalSceneStatus[Record3DSceneMetadata]]
+    ),
+    page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     pose_source_type: type[StrEnum],
-    pose_source_options: Callable[[SequenceId], list[StrEnum]] | None,
+    pose_source_options: Callable[[int | str], list[StrEnum]] | None,
     caption: str,
     option_label: str,
     option_key: str,
     initial_option_value: bool,
     action_key_prefix: str,
-    action: Callable[[SequenceId, StrEnum, bool, bool, bool], str | None],
+    action: Callable[[int | str, StrEnum, bool, bool, bool], str | None],
     sync_snapshot: Callable[[], AdvioPreviewSnapshot],
 ) -> None:
     previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]

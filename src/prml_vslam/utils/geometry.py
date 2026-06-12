@@ -11,13 +11,12 @@ import numpy as np
 import open3d as o3d
 from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 from evo.tools import file_interface  # type: ignore[import-untyped]
+from numpy.typing import NDArray
 from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.utils.console import get_console
 
 if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
 
@@ -70,6 +69,35 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
     if not valid:
         raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
     return trajectory
+
+
+def trajectory_relative_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
+    """Express every pose relative to the first pose."""
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
+    if not poses:
+        return trajectory
+    T_first_world = np.linalg.inv(poses[0])
+    return trajectory_from_pose_matrices(
+        [T_first_world @ pose for pose in poses],
+        np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
+
+
+def trajectory_from_pose_matrices(
+    poses_se3: list[NDArray[np.float64]],
+    timestamps_s: NDArray[np.float64],
+) -> PoseTrajectory3D:
+    """Build an evo trajectory from homogeneous camera-pose matrices."""
+    from prml_vslam.interfaces import FrameTransform
+
+    return PoseTrajectory3D(
+        positions_xyz=np.asarray([pose[:3, 3] for pose in poses_se3], dtype=np.float64),
+        orientations_quat_wxyz=np.asarray(
+            [FrameTransform.from_matrix(pose).quaternion_xyzw()[[3, 0, 1, 2]] for pose in poses_se3],
+            dtype=np.float64,
+        ),
+        timestamps=timestamps_s,
+    )
 
 
 def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:

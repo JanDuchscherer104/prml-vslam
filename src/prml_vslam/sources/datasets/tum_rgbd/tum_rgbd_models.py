@@ -13,12 +13,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.sources.datasets.contracts import (
-    DatasetDownloadResult,
-    DatasetSummary,
-    LocalSceneStatus,
-    ReferenceCloudConfig,
-)
+from prml_vslam.sources.datasets.contracts import ReferenceCloudConfig
 from prml_vslam.utils import BaseConfig, BaseData
 
 
@@ -62,18 +57,6 @@ class TumRgbdDownloadRequest(BaseConfig):
 
     sequence_ids: list[str] = Field(default_factory=list)
     overwrite: bool = False
-
-
-class TumRgbdDownloadResult(DatasetDownloadResult[str]):
-    """Summary of one explicit TUM RGB-D download action."""
-
-
-class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata]):
-    """Local availability summary for one TUM RGB-D scene."""
-
-
-class TumRgbdDatasetSummary(DatasetSummary):
-    """High-level summary of committed and local TUM RGB-D coverage."""
 
 
 class TumRgbdSequenceConfig(BaseConfig):

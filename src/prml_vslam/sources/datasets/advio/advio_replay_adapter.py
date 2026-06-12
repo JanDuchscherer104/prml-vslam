@@ -14,6 +14,7 @@ from prml_vslam.sources.datasets.contracts import (
     AdvioServingConfig,
     selected_advio_pose_source,
 )
+from prml_vslam.utils.geometry import trajectory_relative_to_first_pose
 
 from .advio_frames import transform_advio_trajectory_to_rdf
 from .advio_geometry import interpolate_trajectory_poses
@@ -38,19 +39,6 @@ def resolve_advio_pose_csv_path(
     }[pose_source]
 
 
-def _load_pose_trajectory(
-    paths: AdvioSequencePaths,
-    scene: AdvioSceneMetadata,
-    pose_source: AdvioPoseSource,
-) -> PoseTrajectory3D | None:
-    path = resolve_advio_pose_csv_path(paths=paths, pose_source=pose_source)
-    if path is None:
-        if pose_source is AdvioPoseSource.NONE:
-            return None
-        raise FileNotFoundError(f"Sequence {scene.sequence_slug} does not include {pose_source.label} pose data.")
-    return transform_advio_trajectory_to_rdf(load_advio_trajectory(path), source=pose_source)
-
-
 def load_advio_served_trajectory(
     *,
     paths: AdvioSequencePaths,
@@ -59,9 +47,12 @@ def load_advio_served_trajectory(
 ) -> PoseTrajectory3D:
     """Load one ADVIO trajectory using the requested serving semantics."""
     pose_source = selected_advio_pose_source(dataset_serving)
-    trajectory = _load_pose_trajectory(paths, scene, pose_source)
-    if trajectory is None:
+    path = resolve_advio_pose_csv_path(paths=paths, pose_source=pose_source)
+    if path is None:
+        if pose_source is not AdvioPoseSource.NONE:
+            raise FileNotFoundError(f"Sequence {scene.sequence_slug} does not include {pose_source.label} pose data.")
         raise ValueError("ADVIO serving config must resolve to a real pose provider.")
+    trajectory = transform_advio_trajectory_to_rdf(load_advio_trajectory(path), source=pose_source)
     return serve_loaded_advio_trajectory(
         trajectory=trajectory,
         pose_frame_mode=(
@@ -80,7 +71,7 @@ def serve_loaded_advio_trajectory(
         case AdvioPoseFrameMode.PROVIDER_WORLD:
             return trajectory
         case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
-            return _rebase_trajectory_to_first_pose(trajectory)
+            return trajectory_relative_to_first_pose(trajectory)
 
 
 def _poses_for_frame_timestamps(
@@ -124,30 +115,3 @@ def _advio_camera_frame(pose_source: AdvioPoseSource) -> str:
         AdvioPoseSource.ARCORE: "advio_pixel_camera",
         AdvioPoseSource.ARKIT: "advio_iphone_camera",
     }.get(pose_source, f"advio_{pose_source.value}_camera")
-
-
-def _rebase_trajectory_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
-    if len(trajectory.poses_se3) == 0:
-        return trajectory
-    first_pose_inv = np.linalg.inv(np.asarray(trajectory.poses_se3[0], dtype=np.float64))
-    rebased_poses = [first_pose_inv @ np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
-    return _trajectory_from_pose_matrices(rebased_poses, trajectory.timestamps)
-
-
-def _trajectory_from_pose_matrices(
-    poses_se3: list[np.ndarray],
-    timestamps_s: NDArray[np.float64] | list[float],
-) -> PoseTrajectory3D:
-    positions_xyz = np.asarray([pose[:3, 3] for pose in poses_se3], dtype=np.float64)
-    orientations_quat_wxyz = np.asarray(
-        [
-            FrameTransform.from_matrix(np.asarray(pose, dtype=np.float64)).quaternion_xyzw()[[3, 0, 1, 2]]
-            for pose in poses_se3
-        ],
-        dtype=np.float64,
-    )
-    return PoseTrajectory3D(
-        positions_xyz=positions_xyz,
-        orientations_quat_wxyz=orientations_quat_wxyz,
-        timestamps=np.asarray(timestamps_s, dtype=np.float64),
-    )
