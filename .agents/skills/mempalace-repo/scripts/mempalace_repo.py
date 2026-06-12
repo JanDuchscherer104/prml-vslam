@@ -10,8 +10,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from shutil import which
 
-DOC_SUFFIXES = {".md", ".typ", ".bib", ".txt"}
+DOC_SUFFIXES = {".md", ".typ", ".bib", ".bbl", ".json", ".tex", ".txt"}
+EXTERNAL_PAPER_SUFFIXES = {".bib", ".bbl", ".json", ".tex"}
+EXTERNAL_PAPER_SKIP_PARTS = {"fig", "figure", "figures", "plot", "plots"}
 ROOT_DOC_FILES = ("README.md", "SETUP.md", "AGENTS.md")
 PACKAGE_DOC_NAMES = {"README.md", "REQUIREMENTS.md", "AGENTS.md"}
 DOCS_WING = "prml-vslam-docs"
@@ -24,8 +27,14 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def venv_python() -> Path:
-    return repo_root() / ".venv" / "bin" / "python"
+def mempalace_executable() -> str:
+    configured = os.environ.get("MEMPALACE")
+    if configured:
+        return configured
+    executable = which("mempalace")
+    if executable is None:
+        raise RuntimeError("Missing `mempalace` executable on PATH.")
+    return executable
 
 
 def palace_path() -> Path:
@@ -119,8 +128,8 @@ def _mempalace_env() -> dict[str, str]:
     return env
 
 
-def run_python_module(module: str, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
-    command = [str(venv_python()), "-m", module, *args]
+def run_mempalace(*args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+    command = [mempalace_executable(), "--palace", str(palace_path()), *args]
     return subprocess.run(
         command,
         cwd=repo_root(),
@@ -132,10 +141,7 @@ def run_python_module(module: str, *args: str, capture_output: bool = False) -> 
 
 
 def ensure_runtime() -> None:
-    if not venv_python().exists():
-        raise RuntimeError(f"Missing repo venv python at {venv_python()}")
-    command = [str(venv_python()), "-c", "import mempalace"]
-    subprocess.run(command, cwd=repo_root(), env=_mempalace_env(), text=True, check=True)
+    run_mempalace("--version", capture_output=True)
 
 
 def _clear_directory(path: Path) -> None:
@@ -148,6 +154,31 @@ def _copy_file(source: Path, dest_root: Path) -> None:
     destination = dest_root / relative_path
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+
+
+def _write_external_paper_text_source(source: Path, dest_root: Path) -> Path:
+    relative_path = source.relative_to(repo_root() / "docs" / "literature" / "tex-src")
+    destination = dest_root / "external-papers" / relative_path.with_suffix(relative_path.suffix + ".txt")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    text = source.read_text(encoding="utf-8", errors="replace")
+    destination.write_text(
+        "\n".join(
+            [
+                f"Source path: docs/literature/tex-src/{relative_path.as_posix()}",
+                "",
+                text,
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _is_external_paper_text_source(path: Path, literature_root: Path) -> bool:
+    if not path.is_file() or path.suffix not in EXTERNAL_PAPER_SUFFIXES:
+        return False
+    relative_parts = set(path.relative_to(literature_root).parts)
+    return not bool(relative_parts & EXTERNAL_PAPER_SKIP_PARTS)
 
 
 def _iter_docs_files() -> list[Path]:
@@ -166,6 +197,11 @@ def _iter_docs_files() -> list[Path]:
         for path in package_dir.rglob("*"):
             if path.is_file() and path.name in PACKAGE_DOC_NAMES:
                 docs_files.add(path)
+    raw_dir = repo_root() / "raw"
+    if raw_dir.exists():
+        for path in raw_dir.rglob("*"):
+            if path.is_file() and path.suffix in DOC_SUFFIXES:
+                docs_files.add(path)
     return sorted(docs_files)
 
 
@@ -176,6 +212,12 @@ def sync_docs_sources() -> list[Path]:
     for source in _iter_docs_files():
         _copy_file(source, target_root)
         copied.append(source)
+    literature_root = repo_root() / "docs" / "literature" / "tex-src"
+    if literature_root.exists():
+        for source in sorted(literature_root.rglob("*")):
+            if _is_external_paper_text_source(source, literature_root):
+                _write_external_paper_text_source(source, target_root)
+                copied.append(source)
     return copied
 
 
@@ -224,12 +266,11 @@ def initialize_docs_source() -> None:
     docs_root = docs_source_root()
     if (docs_root / "mempalace.yaml").exists():
         return
-    run_python_module("mempalace", "init", str(docs_root), "--yes")
+    run_mempalace("init", str(docs_root), "--yes", "--no-llm")
 
 
 def mine_docs() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(docs_source_root()),
         "--wing",
@@ -240,8 +281,7 @@ def mine_docs() -> None:
 
 
 def mine_chats() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(chats_source_root()),
         "--mode",
@@ -268,22 +308,22 @@ def refresh() -> None:
 
 def status() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "status")
+    run_mempalace("status")
 
 
 def search(query: str) -> None:
     ensure_runtime()
-    run_python_module("mempalace", "search", query)
+    run_mempalace("search", query)
 
 
 def wake_up() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "wake-up")
+    run_mempalace("wake-up")
 
 
 def mcp() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "--palace", str(palace_path()), "mcp")
+    run_mempalace("mcp")
 
 
 def _build_parser() -> argparse.ArgumentParser:
