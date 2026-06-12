@@ -48,10 +48,8 @@ class NormalizedDatasetSelection(BaseConfig):
     sequence_ids: list[str] = Field(default_factory=list)
     """Dataset-specific ids or slugs; empty means every locally offline-ready scene."""
 
-    record3d_reference_cloud: ReferenceCloudConfig = Field(
-        default_factory=lambda: ReferenceCloudConfig(depth_stride_px=8, max_points=100_000, min_confidence=1)
-    )
-    """Byte-affecting Record3D reference-cloud settings included in the profile key."""
+    reference_cloud: ReferenceCloudConfig | None = None
+    """Optional source-prepared reference-cloud settings included in the profile key."""
 
     @field_validator("dataset_id", mode="before")
     @classmethod
@@ -345,9 +343,7 @@ def _normalize_batch_task(task: _BatchTask) -> NormalizedDatasetBatchRecord:
         source_config = source_config_for_normalization(
             dataset_id=task.selection.dataset_id,
             sequence_id=task.sequence_id,
-            record3d_reference_cloud_pixel_stride=task.selection.record3d_reference_cloud.depth_stride_px,
-            record3d_reference_cloud_min_confidence=task.selection.record3d_reference_cloud.min_confidence,
-            record3d_reference_cloud_max_points=task.selection.record3d_reference_cloud.max_points,
+            reference_cloud=task.selection.reference_cloud,
         )
         profile = normalized_profile_for_dataset(
             dataset_id=task.selection.dataset_id, service=service, source_config=source_config

@@ -16,7 +16,7 @@ sequence_ids = []
 dataset_id = "record3d"
 sequence_ids = []
 
-[datasets.record3d_reference_cloud]
+[datasets.reference_cloud]
 depth_stride_px = 8
 max_points = 100000
 min_confidence = 1

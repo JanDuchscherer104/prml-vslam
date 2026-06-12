@@ -23,7 +23,11 @@ from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.sources import FileObservationSequenceLoader
-from prml_vslam.sources.config import Record3DDatasetSourceConfig, normalized_profile_for_source_config
+from prml_vslam.sources.config import (
+    Record3DDatasetSourceConfig,
+    TumRgbdSourceConfig,
+    normalized_profile_for_source_config,
+)
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudSource,
@@ -38,6 +42,7 @@ from prml_vslam.sources.datasets.batch_normalization import (
     normalize_dataset_batch,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalization import source_config_for_normalization
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
@@ -569,7 +574,7 @@ def test_normalize_dataset_batch_reuses_existing_record3d_entry(tmp_path: Path) 
             NormalizedDatasetSelection(
                 dataset_id=DatasetId.RECORD3D,
                 sequence_ids=["synthetic"],
-                record3d_reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+                reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
             )
         ],
         max_workers=1,
@@ -584,6 +589,45 @@ def test_normalize_dataset_batch_reuses_existing_record3d_entry(tmp_path: Path) 
     assert first.failed == []
     assert second.records[0].status == "reused"
     assert first.records[0].entry_root == second.records[0].entry_root
+
+
+def test_normalized_dataset_batch_uses_shared_reference_cloud_config() -> None:
+    config = NormalizedDatasetBatchConfig.from_toml(
+        """
+        [[datasets]]
+        dataset_id = "tum_rgbd"
+        sequence_ids = ["freiburg1_desk"]
+
+        [datasets.reference_cloud]
+        depth_stride_px = 4
+        max_points = 64
+        random_seed = 5
+
+        [[datasets]]
+        dataset_id = "record3d"
+        sequence_ids = ["synthetic"]
+
+        [datasets.reference_cloud]
+        depth_stride_px = 2
+        max_points = 32
+        min_confidence = 1
+        """
+    )
+
+    tum, record3d = config.datasets
+
+    assert tum.reference_cloud == ReferenceCloudConfig(depth_stride_px=4, max_points=64, random_seed=5)
+    assert record3d.reference_cloud == ReferenceCloudConfig(depth_stride_px=2, max_points=32, min_confidence=1)
+
+
+def test_source_config_for_normalization_preserves_dataset_reference_cloud_defaults() -> None:
+    tum_config = source_config_for_normalization(dataset_id=DatasetId.TUM_RGBD, sequence_id="freiburg1_desk")
+    record3d_config = source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id="synthetic")
+
+    assert isinstance(tum_config, TumRgbdSourceConfig)
+    assert tum_config.reference_cloud == ReferenceCloudConfig()
+    assert isinstance(record3d_config, Record3DDatasetSourceConfig)
+    assert record3d_config.reference_cloud == ReferenceCloudConfig(min_confidence=1)
 
 
 def test_normalized_store_preserves_external_benchmark_observation_sources(tmp_path: Path) -> None:

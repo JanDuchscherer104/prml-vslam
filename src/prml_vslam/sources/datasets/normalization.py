@@ -58,24 +58,20 @@ def source_config_for_normalization(
     *,
     dataset_id: DatasetId,
     sequence_id: str,
-    record3d_reference_cloud_pixel_stride: int = 8,
-    record3d_reference_cloud_min_confidence: int | None = 1,
-    record3d_reference_cloud_max_points: int = 100_000,
+    reference_cloud: ReferenceCloudConfig | None = None,
 ) -> DatasetSourceConfig:
     """Build the source config whose byte-affecting fields define one store profile."""
     match dataset_id:
         case DatasetId.ADVIO:
             return AdvioSourceConfig(sequence_id=sequence_id)
         case DatasetId.TUM_RGBD:
-            return TumRgbdSourceConfig(sequence_id=sequence_id)
+            return TumRgbdSourceConfig(
+                sequence_id=sequence_id, reference_cloud=reference_cloud or ReferenceCloudConfig()
+            )
         case DatasetId.RECORD3D:
             return Record3DDatasetSourceConfig(
                 sequence_id=sequence_id,
-                reference_cloud=ReferenceCloudConfig(
-                    depth_stride_px=record3d_reference_cloud_pixel_stride,
-                    max_points=record3d_reference_cloud_max_points,
-                    min_confidence=record3d_reference_cloud_min_confidence,
-                ),
+                reference_cloud=reference_cloud or ReferenceCloudConfig(min_confidence=1),
             )
 
 

@@ -59,6 +59,7 @@ from prml_vslam.sources.datasets.batch_normalization import (
     NormalizedDatasetBatchProgress,
     normalize_dataset_batch,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalize_dataset_entry,
@@ -1073,18 +1074,18 @@ def dataset_normalize(
         typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
     ],
     sequence: Annotated[str, typer.Option("--sequence", help="Dataset sequence id or local Record3D archive stem.")],
-    record3d_reference_cloud_pixel_stride: Annotated[
-        int,
-        typer.Option("--record3d-reference-cloud-pixel-stride", min=1),
-    ] = 8,
-    record3d_reference_cloud_min_confidence: Annotated[
+    reference_cloud_pixel_stride: Annotated[
         int | None,
-        typer.Option("--record3d-reference-cloud-min-confidence", min=0, max=255),
-    ] = 1,
-    record3d_reference_cloud_max_points: Annotated[
-        int,
-        typer.Option("--record3d-reference-cloud-max-points", min=1),
-    ] = 100_000,
+        typer.Option("--reference-cloud-pixel-stride", "--record3d-reference-cloud-pixel-stride", min=1),
+    ] = None,
+    reference_cloud_min_confidence: Annotated[
+        int | None,
+        typer.Option("--reference-cloud-min-confidence", "--record3d-reference-cloud-min-confidence", min=0, max=255),
+    ] = None,
+    reference_cloud_max_points: Annotated[
+        int | None,
+        typer.Option("--reference-cloud-max-points", "--record3d-reference-cloud-max-points", min=1),
+    ] = None,
 ) -> None:
     """Create or replace one full-frame normalized dataset entry."""
     path_config = get_path_config()
@@ -1093,12 +1094,24 @@ def dataset_normalize(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     service = dataset_service(dataset_id, path_config)
+    default_reference_cloud = (
+        ReferenceCloudConfig(min_confidence=1) if dataset_id is DatasetId.RECORD3D else ReferenceCloudConfig()
+    )
+    reference_cloud = default_reference_cloud.model_copy(
+        update={
+            key: value
+            for key, value in {
+                "depth_stride_px": reference_cloud_pixel_stride,
+                "min_confidence": reference_cloud_min_confidence,
+                "max_points": reference_cloud_max_points,
+            }.items()
+            if value is not None
+        }
+    )
     source_config = source_config_for_normalization(
         dataset_id=dataset_id,
         sequence_id=sequence,
-        record3d_reference_cloud_pixel_stride=record3d_reference_cloud_pixel_stride,
-        record3d_reference_cloud_min_confidence=record3d_reference_cloud_min_confidence,
-        record3d_reference_cloud_max_points=record3d_reference_cloud_max_points,
+        reference_cloud=None if dataset_id is DatasetId.ADVIO else reference_cloud,
     )
     entry = normalize_dataset_entry(dataset_id=dataset_id, service=service, source_config=source_config)
     console.plog({"entry": entry.model_dump(mode="json")})
