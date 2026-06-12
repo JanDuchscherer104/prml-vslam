@@ -98,8 +98,8 @@ enabled = true
 # memory_bytes = 2147483648  # 2GB
 
     [stages.reconstruction.backend]
-    method_id    = "open3d_tsdf"
-    extract_mesh = true
+    method_id    = "nksr"
+    voxel_size   = 0.01
 
 [stages.evaluate_cloud]
 enabled = false
