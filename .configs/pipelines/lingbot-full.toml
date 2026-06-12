@@ -137,7 +137,7 @@ enabled = true
 
 [stages.align_cloud]
 enabled                       = true
-max_correspondence_distance_m = 0.1
+max_correspondence_distance_m = 0.05
 
 [stages.reconstruction]
 enabled = false
@@ -159,7 +159,7 @@ log_diagnostic_preview                      = false
 log_camera_image_rgb                        = true
 show_tracking_trajectory                    = true
 trajectory_pose_axis_length                 = 0.0
-point_cloud_decimation_keep_ratio           = 0.05
-reference_point_cloud_decimation_keep_ratio = 0.95
+point_cloud_decimation_keep_ratio           = 0.5
+reference_point_cloud_decimation_keep_ratio = 0.5
 mesh_decimation_keep_ratio                  = 0.25
 decimation_random_seed                      = 0
