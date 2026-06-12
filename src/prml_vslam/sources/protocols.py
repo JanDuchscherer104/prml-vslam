@@ -1,11 +1,3 @@
-"""Repo-wide source-provider seams for offline and streaming execution.
-
-These protocols define how dataset adapters, video adapters, and live sources
-hand normalized data into :mod:`prml_vslam.pipeline`. They intentionally stop
-at source preparation and streaming packet delivery; planning, stage order, and
-artifact ownership remain in :mod:`prml_vslam.pipeline`.
-"""
-
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -61,10 +53,3 @@ class StreamingSequenceSource(OfflineSequenceSource, Protocol):
     @abstractmethod
     def open_stream(self, *, loop: bool) -> ObservationStream:
         """Open the frame stream that feeds the active SLAM session."""
-
-
-__all__ = [
-    "BenchmarkInputSource",
-    "OfflineSequenceSource",
-    "StreamingSequenceSource",
-]

@@ -94,6 +94,3 @@ def _redact_url_for_log(url: str) -> str:
         ]
     )
     return urlunsplit((split.scheme, split.netloc, split.path, query, split.fragment))
-
-
-__all__ = ["Record3DDownloadManager"]

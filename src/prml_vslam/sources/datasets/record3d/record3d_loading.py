@@ -231,22 +231,3 @@ def _load_liblzfse() -> Any:
             "Install the project dependencies or run `uv sync` in the helper-managed environment."
         ) from exc
     return liblzfse
-
-
-__all__ = [
-    "Record3DArchiveFrame",
-    "Record3DArchiveMetadata",
-    "Record3DOfflineSample",
-    "build_depth_intrinsics",
-    "build_rgb_intrinsics",
-    "decode_confidence_frame",
-    "decode_depth_frame_m",
-    "decode_rgb_frame",
-    "index_archive_frames",
-    "pose_from_metadata_row",
-    "poses_from_metadata",
-    "read_archive_metadata",
-    "resize_rgb_to_depth",
-    "timestamps_ns_from_metadata",
-    "write_timestamps_json",
-]

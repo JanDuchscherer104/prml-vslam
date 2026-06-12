@@ -59,8 +59,3 @@ def _nearest_timestamp_indices(
         source_timestamps_s[nearest_indices] - target_timestamps_s
     )
     return np.where(pick_previous, previous_indices, nearest_indices)
-
-
-__all__ = [
-    "interpolate_trajectory_poses",
-]
