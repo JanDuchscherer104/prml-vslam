@@ -1,4 +1,4 @@
-# Canonical ViSTA-SLAM Pipeline Configuration
+# Canonical MASt3R-SLAM Pipeline Configuration
 # -------------------------------------------
 # This file defines a complete pipeline run config, including the source, SLAM
 # backend overrides, stage-local evaluation/reconstruction policy, and
@@ -40,16 +40,43 @@ sampling_interval_ms    = 1000
 
     [stages.slam.outputs]
 
-    # ViSTA only emits dense pointmaps
+    # MASt3R-SLAM exports dense pointmaps, not a separate sparse landmark cloud.
     emit_dense_points  = true
     emit_sparse_points = false
 
     [stages.slam.backend]
     method_id = "mast3r"
-    # Frame cap to stop the backend after N frames.
+    # Comparable to ViSTA `max_frames`: shared pipeline frame cap before backend-specific
+    # keyframe selection and graph construction.
     # max_frames = 1500
-    img_size             = 224
-    keyframe_buffer_size = 64
+
+    # Paper/upstream MASt3R-SLAM no-calibration preset.
+    # Comparable to ViSTA's explicit backend graph/keyframe parameters below:
+    # this YAML owns MASt3R tracking, local optimization, matching, retrieval,
+    # and relocalization thresholds.
+    yaml_config_path = "external/mast3r-slam/config/base.yaml"
+
+    # Comparable to ViSTA's intrinsic-free STA frontend. Keep false for the
+    # uncalibrated benchmark; ViSTA estimates intrinsics internally instead of
+    # consuming source calibration.
+    use_calib = false
+
+    # Upstream model/runtime defaults used for reported MASt3R-SLAM results.
+    # Comparable to ViSTA's fixed 224x224 model raster. Do not force these equal:
+    # each backend's pretrained frontend expects its own native resolution.
+    img_size = 512
+
+    # Comparable to ViSTA `max_view_num`: upper bound on retained/preallocated
+    # keyframes before the backend would be capacity-limited.
+    # Upstream/default MASt3R-SLAM buffer is 512
+    # (`SharedKeyframes(..., buffer=512)`); this low-VRAM run intentionally
+    # reduces it to 32. For paper-faithful comparison, use 512 and set ViSTA
+    # `max_view_num = 400` from the TUM-RGBD paper/eval preset.
+    keyframe_buffer_size = 32
+
+    # Comparable to ViSTA `point_conf_thres`: confidence filter used when
+    # exporting dense reconstruction points.
+    c_conf_threshold = 1.5
 
 [stages.align_ground]
 enabled = true
@@ -60,7 +87,9 @@ enabled = true
 
 [stages.align_cloud]
 enabled = true
-max_correspondence_distance_m = 0.05
+# Tight ICP correspondence gate for cluttered SLAM clouds; larger values can
+# pull the aligned cloud toward wrong nearby surfaces.
+max_correspondence_distance_m = 0.02
 
 [stages.evaluate_trajectory]
 enabled = true
@@ -69,12 +98,17 @@ enabled = true
 enabled = true
 
     [stages.reconstruction.input_selection]
+    # Reconstruct from the ICP-refined SLAM cloud published by cloud alignment:
+    # evaluation/point_cloud_sim3_icp_aligned.ply. This mode does not integrate
+    # RGB-D depth frames into TSDF.
     source_kind = "evaluation_aligned_cloud"
 
     [stages.reconstruction.backend]
-    method_id       = "open3d_tsdf"
-    extract_mesh    = true
-    integrate_color = true
+    method_id              = "poisson"
+    depth                  = 8
+    density_quantile       = 0.02
+    normal_radius_m        = 0.05
+    normal_max_nn          = 30
 
 [stages.evaluate_cloud]
 enabled = false

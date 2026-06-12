@@ -45,42 +45,80 @@ sampling_interval_ms    = 1000
 
     [stages.slam.backend]
     method_id = "vista"
-    # Frame cap to stop the backend after N frames.
+    # Comparable to MASt3R `max_frames`: shared pipeline frame cap before
+    # backend-specific keyframe selection and graph construction.
     # max_frames = 1500
 
-    # Maximum number of keyframes the pose graph may hold.
-    max_view_num = 512
+    # ViSTA-SLAM TUM-RGBD paper/eval backend preset. The upstream paper/eval
+    # script uses stride=3 on the original TUM-RGBD frame index stream.
+    # Comparable to MASt3R `keyframe_buffer_size`: upper bound on retained
+    # keyframes before the backend would be capacity-limited.
+    # Upstream/paper ViSTA TUM-RGBD value is 400; this low-VRAM comparison cap
+    # mirrors MASt3R `keyframe_buffer_size = 32`.
+    max_view_num = 128
+
+    # Comparable to MASt3R's internal `FrameTracker` keyframe decision. MASt3R
+    # does not expose a stride/flow selector in this repo; keep source sampling
+    # shared when comparing effective input cadence.
+    keyframe_detection = "stride"
+
+    # Comparable to shared source `frame_stride` plus MASt3R's internal accepted
+    # keyframe density. MASt3R has no backend-local stride knob; use the shared
+    # source sampling policy for strict input-cadence control.
+    stride = 3
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
     # and test true backpressure.
-    flow_thres = 20
+    # Comparable to MASt3R tracking thresholds in `tracking.*` inside
+    # `external/mast3r-slam/config/base.yaml`, especially match-fraction gates.
+    flow_thres = 5.0
 
     # Number of temporal-neighbor edges per keyframe in the pose graph.
+    # Closest MASt3R concept: consecutive keyframe factors in graph construction
+    # plus `local_opt.min_match_frac` in the YAML.
     neighbor_edge_num = 3
 
     # Maximum number of loop-closure edges added per keyframe.
-    loop_edge_num = 3
+    # Closest MASt3R concept: `retrieval.k`, the number of retrieved loop
+    # candidates considered for graph factors.
+    loop_edge_num = 2
 
     # Minimum frame distance for a valid loop-closure candidate.
+    # Closest MASt3R concept: retrieval/relocalization filtering in
+    # `retrieval.min_thresh` and `reloc.*`; MASt3R has no explicit frame-gap
+    # TOML knob here.
     loop_dist_min = 40
 
     # Non-maximum suppression window for loop-closure candidates.
+    # Closest MASt3R concept: retrieval candidate filtering; no direct exposed
+    # MASt3R NMS window is available in this repo config.
     loop_nms = 40
 
     # Loop candidate must share more neighbours than this threshold.
+    # Closest MASt3R concept: `retrieval.min_thresh` plus relocalization
+    # `min_match_frac`.
     loop_cand_thresh_neighbor = 5
 
     # Minimum point-confidence score retained in the reconstruction.
+    # Comparable to MASt3R `c_conf_threshold`: dense point export confidence
+    # filter.
     point_conf_thres = 4.2
 
     # Maximum relative-pose uncertainty accepted for an edge.
+    # Closest MASt3R concept: tracking/local-opt match confidence and
+    # match-fraction thresholds in the YAML; not a one-to-one parameter.
     rel_pose_thres = 0.75
 
     # Pose-graph optimisation interval in keyframes.
+    # Closest MASt3R concept: queued local/global optimization over accepted
+    # keyframes; MASt3R controls this through backend graph construction and
+    # `local_opt.*` rather than an exposed interval.
     pgo_every = 500
 
     # Random seed set before model initialisation for reproducibility.
+    # No matching MASt3R TOML parameter is currently exposed; use process-level
+    # seeding if bit-level repeatability becomes part of the benchmark protocol.
     random_seed = 43
 
 [stages.align_ground]
@@ -92,7 +130,9 @@ enabled = true
 
 [stages.align_cloud]
 enabled = true
-max_correspondence_distance_m = 0.05
+# Tight ICP correspondence gate for cluttered SLAM clouds; larger values can
+# pull the aligned cloud toward wrong nearby surfaces.
+max_correspondence_distance_m = 0.02
 
 [stages.evaluate_trajectory]
 enabled = true
@@ -101,12 +141,18 @@ enabled = true
 enabled = true
 
     [stages.reconstruction.input_selection]
+    # Reconstruct from the ICP-refined SLAM cloud published by cloud alignment:
+    # evaluation/point_cloud_sim3_icp_aligned.ply. This mode does not integrate
+    # RGB-D depth frames into TSDF.
     source_kind = "evaluation_aligned_cloud"
 
     [stages.reconstruction.backend]
-    method_id       = "open3d_tsdf"
-    extract_mesh    = true
-    integrate_color = true
+    # nksr / poisson
+    method_id              = "nksr"
+    voxel_size             = 0.01
+    normal_radius_m        = 0.05
+    normal_max_nn          = 30
+    preprocess_normals     = true
 
 [stages.evaluate_cloud]
 enabled = false
@@ -154,6 +200,6 @@ show_tracking_trajectory = true
 trajectory_pose_axis_length = 0.0
 
 # Reduce geometry logged to Rerun while preserving full benchmark artifacts.
-point_cloud_decimation_keep_ratio = 0.25
-mesh_decimation_keep_ratio        = 0.25
+point_cloud_decimation_keep_ratio = 0.05
+mesh_decimation_keep_ratio        = 0.05
 decimation_random_seed            = 0
