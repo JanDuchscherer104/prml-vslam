@@ -1,0 +1,164 @@
+# Main LingBot-Map benchmark configuration
+# ----------------------------------------
+# This config favors the upstream/paper default quality path over the smaller
+# GPU-survival smoke settings while fitting the local 12 GB RTX 3080 Ti SDPA
+# path. It keeps the TUM cabinet sequence inside LingBot's 320-frame
+# direct-mode training range after source sampling.
+
+experiment_name          = "lingbot-tum-cabinet-full"
+mode                     = "offline"
+output_dir               = ".artifacts"
+ray_local_head_lifecycle = "ephemeral"
+
+[stages.source]
+enabled = true
+
+    [stages.source.backend]
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
+    # LingBot is trained/evaluated most directly within roughly 320 direct-mode
+    # views. The cabinet subset has about 1000 RGB frames, so stride 5 keeps
+    # this benchmark near 200 processed frames while preserving
+    # the same dataset and normalized source artifacts.
+    frame_stride = 5
+    replay_mode  = "fast_as_possible"
+
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+affinity = "gpu-node"
+
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id = "lingbot_map"
+    # max_frames = 1500
+
+    # Operator-managed LingBot-Map checkpoint. The main benchmark assumes the
+    # long/default checkpoint used by upstream demo and benchmark examples.
+    checkpoint_path = "external/lingbot-map/checkpoints/lingbot-map.pt"
+
+    # Run real inference on the RTX 3080 Ti. Use "auto" only for exploratory
+    # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
+    device = "cuda"
+
+    # Upstream calls Direct Output Mode "streaming": frames are processed
+    # causally with anchor context, trajectory memory, and a local pose window.
+    mode = "streaming"
+
+    # Upstream/paper default input width is 518, but the local SDPA path OOMs
+    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the highest practical
+    # fit candidate so far.
+    image_size = 392
+
+    # DINO/GCT patch size. Keep at 14 so the processed raster remains
+    # patch-grid aligned with upstream.
+    patch_size = 14
+
+    # LingBot's video RoPE is part of the long-range geometric context model.
+    enable_3d_rope = true
+
+    # Model's configured frame-position capacity. This matches upstream default
+    # and is safely above the source-strided cabinet benchmark frame count.
+    max_frame_num = 1024
+
+    # Number of bidirectional anchor/scale frames. The paper default is 8, but
+    # upstream recommends 2 as the first limited-VRAM adjustment; 8 OOMs on the
+    # local 12 GB RTX 3080 Ti before completing this benchmark.
+    num_scale_frames = 2
+
+    # Local pose-reference window size k. Paper and upstream benchmark use 64.
+    kv_cache_sliding_window = 64
+
+    # Keep every second processed frame in the KV cache while still producing a
+    # pose/depth prediction for every processed frame. This keeps FlashInfer
+    # trajectory metrics comparable to the local SDPA reference on TUM cabinet.
+    keyframe_interval = 2
+
+    # Use LingBot's FlashInfer backend. The repo worktree helper exposes the
+    # mamba CUDA driver stub to FlashInfer's JIT linker.
+    use_sdpa = false
+
+    # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
+    # matching the paper's default precision.
+    use_amp = true
+
+    # Cast the transformer trunk to the best CUDA inference dtype while keeping
+    # prediction heads in fp32, mirroring upstream memory guidance.
+    model_dtype = "auto"
+
+    # Required when using the RTX 3080 Ti fit width instead of the checkpoint's
+    # native 518-wide grid.
+    checkpoint_pos_embed = "interpolate"
+
+    # Camera-head iterative refinement steps. Upstream default is 4; lowering to
+    # 1 is a speed-only tradeoff that costs pose accuracy.
+    camera_num_iterations = 4
+
+    # Upstream benchmark exports point clouds by back-projecting predicted depth;
+    # the maintained checkpoint path is not run with the point head enabled.
+    enable_point_head = false
+
+    # Upstream visibility threshold for depth-confidence filtering.
+    confidence_threshold = 0.5
+
+    # Spatial stride when materializing the durable PLY from dense depth maps.
+    # This affects artifact size/export time only, not model inference.
+    point_stride = 4
+
+    # Cap the persisted PLY for stable Rerun/export size while retaining enough
+    # cabinet geometry for alignment/evaluation inspection.
+    max_points = 200000
+
+    # Reject implausibly far monocular depth before point-cloud export.
+    max_depth_m = 100.0
+
+[stages.align_ground]
+enabled = true
+
+    [stages.align_ground.ground]
+    strategy       = "ransac_point_cloud"
+    min_confidence = 0.6
+
+[stages.evaluate_trajectory]
+enabled = true
+
+[stages.align_trajectory]
+enabled = true
+
+[stages.align_cloud]
+enabled                       = true
+max_correspondence_distance_m = 0.1
+
+[stages.reconstruction]
+enabled = false
+
+[stages.evaluate_cloud]
+enabled = false
+
+[stages.summary]
+enabled = true
+
+[visualization]
+connect_live_viewer                         = false
+export_viewer_rrd                           = true
+grpc_url                                    = "rerun+http://127.0.0.1:9876/proxy"
+viewer_blueprint_path                       = ".configs/visualization/vista_blueprint.rbl"
+preserve_native_rerun                       = false
+log_source_rgb                              = false
+log_diagnostic_preview                      = false
+log_camera_image_rgb                        = true
+show_tracking_trajectory                    = true
+trajectory_pose_axis_length                 = 0.0
+point_cloud_decimation_keep_ratio           = 0.05
+reference_point_cloud_decimation_keep_ratio = 0.95
+mesh_decimation_keep_ratio                  = 0.25
+decimation_random_seed                      = 0

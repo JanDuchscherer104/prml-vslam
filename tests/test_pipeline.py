@@ -57,7 +57,12 @@ from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, observation_metadata_for_transport
-from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
+from prml_vslam.pipeline.ray_runtime.substrate import (
+    _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES,
+    _local_object_store_memory_bytes,
+    build_runtime_env,
+    prepare_ray_environment,
+)
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
@@ -2266,6 +2271,42 @@ def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkey
     assert captured["stdout"] is fake_log_handle
     assert fake_log_handle.closed
     assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
+
+
+def test_local_object_store_memory_env_falls_back_on_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "not-an-int")
+
+    assert _local_object_store_memory_bytes(console) == _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    assert warnings == [
+        "Ignoring invalid PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES='not-an-int'; using "
+        f"{_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES}."
+    ]
+
+
+def test_local_object_store_memory_env_falls_back_on_non_positive_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "0")
+
+    assert _local_object_store_memory_bytes(console) == _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    assert warnings == [
+        "Ignoring non-positive PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES=0; using "
+        f"{_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES}."
+    ]
+
+
+def test_local_object_store_memory_env_uses_positive_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "2048")
+
+    assert _local_object_store_memory_bytes(console) == 2048
+    assert warnings == []
 
 
 def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:

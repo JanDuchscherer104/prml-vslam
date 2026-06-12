@@ -35,6 +35,10 @@ class SlamStageConfig(StageConfig):
             if self.outputs.emit_sparse_points or self.outputs.emit_dense_points:
                 artifact_paths.append(run_paths.point_cloud_path)
             return artifact_paths
+        if self.backend.method_id is MethodId.LINGBOT_MAP:
+            if self.outputs.emit_dense_points:
+                artifact_paths.append(run_paths.point_cloud_path)
+            return artifact_paths
         if self.backend.method_id is MethodId.MAST3R:
             if self.outputs.emit_dense_points:
                 artifact_paths.append(run_paths.dense_points_path)
@@ -54,11 +58,11 @@ class SlamStageConfig(StageConfig):
             return False, f"{backend.display_name} does not support offline execution."
         if context.run_config.mode is PipelineMode.STREAMING and not backend.supports_streaming:
             return False, f"{backend.display_name} does not support streaming execution."
-        if backend.method_id is MethodId.MAST3R and self.outputs.emit_sparse_points:
+        if backend.method_id in {MethodId.MAST3R, MethodId.LINGBOT_MAP} and self.outputs.emit_sparse_points:
             return (
                 False,
-                "MASt3R-SLAM does not expose a separate sparse point-cloud artifact; "
-                "disable `emit_sparse_points` for MASt3R runs.",
+                f"{backend.display_name} does not expose a separate sparse point-cloud artifact; "
+                f"disable `emit_sparse_points` for {backend.kind} runs.",
             )
         return True, None
 

@@ -237,6 +237,7 @@ docs/slides/**/*.svgz
 .artifacts/
 .data/
 .logs/
+external/lingbot-map
 
 # Generated local documentation exports
 README_files/

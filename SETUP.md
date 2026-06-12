@@ -1,7 +1,7 @@
 # PRML VSLAM Setup
 
 This file owns local environment setup for development, the Streamlit workbench,
-and optional ViSTA-SLAM or MASt3R-SLAM GPU execution.
+and optional ViSTA-SLAM, MASt3R-SLAM, or LingBot-Map GPU execution.
 
 ## Requirements
 
@@ -175,7 +175,7 @@ uv pip install torchcodec==0.1
 
 ### MASt3R Pretrained Files
 
-Download the upstream NaverLabs checkpoints (weigths) into
+Download the upstream NaverLabs checkpoints (weights) into
 `external/mast3r-slam/checkpoints/`:
 
 ```bash
@@ -188,23 +188,33 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
   -P external/mast3r-slam/checkpoints/
 ```
 
+## LingBot/CUDA Setup
+
+LingBot-Map is installed through the optional `lingbot` extra from an
+operator-managed upstream checkout. Clone the checkout, install the extra, and
+download the checkpoint at the configured default:
+
+```bash
+mamba activate prml-vslam
+unset VIRTUAL_ENV
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+mkdir -p external
+git clone https://github.com/Robbyant/lingbot-map.git external/lingbot-map
+uv sync --extra lingbot
+mkdir -p external/lingbot-map/checkpoints
+curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
+  -o external/lingbot-map/checkpoints/lingbot-map.pt
+```
+
 ## Streamlit Workbench
 
 For the Streamlit app without ViSTA:
 
 ```bash
-uv sync --extra streaming
-uv run streamlit run streamlit_app.py
+uv run prml-vslam app
 ```
-
-For the Streamlit app with ViSTA and Rerun support, complete the ViSTA/CUDA setup
-above, then run:
-
-```bash
-mamba activate prml-vslam
-uv run --extra vista --extra streaming streamlit run streamlit_app.py
-```
-
 
 ## Codex History Utilities
 

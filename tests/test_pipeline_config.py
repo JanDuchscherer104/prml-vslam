@@ -511,12 +511,21 @@ def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path
     write_json(run_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
     run_paths.trajectory_path.parent.mkdir(parents=True)
     run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    run_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_paths.point_cloud_path.write_text("ply\n", encoding="utf-8")
+    run_paths.depth_maps_path.write_text("depth\n", encoding="utf-8")
+    run_paths.point_maps_path.write_text("points\n", encoding="utf-8")
+    run_paths.point_cloud_confidences_path.write_text("conf\n", encoding="utf-8")
 
     results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
 
     assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
-    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.dense_points_path
+    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.point_cloud_path
+    assert results[StageKey.SLAM].outcome.artifacts["depth_maps_npz"].path == run_paths.depth_maps_path
+    assert results[StageKey.SLAM].outcome.artifacts["point_maps_npz"].path == run_paths.point_maps_path
+    assert (
+        results[StageKey.SLAM].outcome.artifacts["point_cloud_confidences_npz"].path
+        == run_paths.point_cloud_confidences_path
+    )
     missing_paths = RunArtifactPaths.build(tmp_path / "missing-benchmark")
     write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
     with pytest.raises(FileNotFoundError, match="benchmark inputs"):
@@ -618,6 +627,23 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
     assert any(
         requirement.startswith("pyrealsense2; sys_platform == 'linux'") for requirement in metadata["MAST3R-SLAM"]
     )
+
+
+def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
+    pyproject = tomllib.loads((_repo_root() / "pyproject.toml").read_text(encoding="utf-8"))
+    lingbot_extra = set(pyproject["project"]["optional-dependencies"]["lingbot"])
+
+    assert lingbot_extra == {
+        "torch==2.5.1",
+        "torchvision==0.20.1",
+        "lingbot-map",
+        "flashinfer-python",
+    }
+    assert pyproject["tool"]["uv"]["sources"]["lingbot-map"] == {
+        "path": "external/lingbot-map",
+        "editable": True,
+        "extra": "lingbot",
+    }
 
 
 def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:
