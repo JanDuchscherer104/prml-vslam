@@ -11,21 +11,11 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
     [mcp_servers.code-index]
     command = "uvx"
-    args    = ["code-index-mcp", "--project-path", "/home/jd/repos/prml-vslam"]
+    args    = ["code-index-mcp", "--project-path", "."]
 
     [mcp_servers.graphify]
-    command = "uv"
-    args = [
-        "run",
-        "--preview-features",
-        "extra-build-dependencies",
-        "--group",
-        "dev",
-        "python",
-        "-m",
-        "graphify.serve",
-        "graphify-out/graph.json",
-    ]
+    command = "python3"
+    args    = [".agents/scripts/graphify_repo.py", "mcp"]
 
     [mcp_servers.mempalace]
     command = "python3"
@@ -55,4 +45,8 @@ enabled = true
 
 [[skills.config]]
 path    = "../.agents/skills/rerun-slam-integration"
+enabled = true
+
+[[skills.config]]
+path    = "../.agents/skills/scientific-writing"
 enabled = true

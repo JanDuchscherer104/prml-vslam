@@ -18,6 +18,8 @@
 - `/isl-org/open3d` - 3D data processing and evaluation
 - `/michaelgrupp/evo` - Trajectory evaluation for odometry and SLAM
 - `/rerun-io/rerun` - Rerun visualization stack for robotics and spatial data
+- `/safishamsi/graphify` - Graphify codebase knowledge graph, MCP server, and hook usage
+- `/mempalace/mempalace` - MemPalace local memory CLI, mining, wake-up, and MCP usage
 
 ## Primary Sources
 
@@ -33,6 +35,8 @@
 - evo plot helpers (`traj_colormap`, trajectory plotting internals): <https://github.com/MichaelGrupp/evo/blob/master/evo/tools/plot.py>
 - Rerun docs.rs crate docs: <https://docs.rs/rerun/latest/rerun/>
 - Rerun repo: <https://github.com/rerun-io/rerun>
+- Graphify repo: <https://github.com/safishamsi/graphify>
+- MemPalace repo: <https://github.com/mempalace/mempalace>
 - Nerfstudio docs: <https://docs.nerf.studio/>
 - Nerfstudio data conventions: <https://docs.nerf.studio/quickstart/data_conventions.html>
 - ViSTA-SLAM GH pages: <https://ganlinzhang.xyz/vista-slam/>

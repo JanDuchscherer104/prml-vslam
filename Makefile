@@ -21,6 +21,7 @@ GRAPHIFY_GRAPH ?= $(GRAPHIFY_DIR)/graph.json
 GRAPHIFY_HTML ?= $(GRAPHIFY_DIR)/graph.html
 GRAPHIFY_PYTHON ?= $(UV_RUN) --preview-features extra-build-dependencies --group dev python
 GRAPHIFY_CLI ?= $(UV_RUN) --preview-features extra-build-dependencies --group dev graphify
+GRAPHIFY_HELPER ?= .agents/scripts/graphify_repo.py
 
 BIB_FILE ?= docs/references.bib
 BIB_CACHE_DIR ?= .cache/bib
@@ -99,21 +100,10 @@ open3d-stubs: ## Regenerate repo-local Open3D .pyi files
 graphify: graphify-status ## Show a concise graphify dashboard
 
 graphify-status: ## Check graphify artifacts and Python runtime availability
-	@test -d "$(GRAPHIFY_DIR)" || { echo "Missing graphify directory: $(GRAPHIFY_DIR)"; exit 1; }
-	@test -f "$(GRAPHIFY_REPORT)" || { echo "Missing graphify report: $(GRAPHIFY_REPORT)"; exit 1; }
-	@test -f "$(GRAPHIFY_GRAPH)" || { echo "Missing graphify graph data: $(GRAPHIFY_GRAPH)"; exit 1; }
-	@printf "graphify artifacts: %s\n" "$(GRAPHIFY_DIR)"
-	@printf "report: %s\n" "$(GRAPHIFY_REPORT)"
-	@printf "graph data: %s\n" "$(GRAPHIFY_GRAPH)"
-	@test ! -f "$(GRAPHIFY_HTML)" || printf "viewer: %s\n" "$(GRAPHIFY_HTML)"
-	@$(GRAPHIFY_PYTHON) -c 'from importlib.metadata import version; print("runtime: available (graphifyy " + version("graphifyy") + ")")'
-	@$(GRAPHIFY_PYTHON) -c 'import json, re; from pathlib import Path; report = Path("$(GRAPHIFY_REPORT)").read_text(encoding="utf-8"); graph = json.loads(Path("$(GRAPHIFY_GRAPH)").read_text(encoding="utf-8")); date = re.search(r"^# Graph Report - .*\(([^)]*)\)", report, re.M); summary = re.search(r"^- (\d+) nodes .+? (\d+) edges .+? (\d+) communities detected", report, re.M); nodes = graph.get("nodes", []); links = graph.get("links", graph.get("edges", [])); print("graph date: " + (date.group(1) if date else "unknown")); print("nodes: " + (summary.group(1) if summary else str(len(nodes)))); print("links: " + (summary.group(2) if summary else str(len(links)))); print("communities: " + (summary.group(3) if summary else "unknown"))'
-	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then dirty=$$(git status --short -- "$(GRAPHIFY_REPORT)" "$(GRAPHIFY_GRAPH)" "$(GRAPHIFY_HTML)"); if [ -n "$$dirty" ]; then echo "artifact dirty state: modified"; else echo "artifact dirty state: clean"; fi; fi
-	@printf "next: make graphify-report | make graphify-rebuild | make graphify-hook-install\n"
+	@$(GRAPHIFY_PYTHON) $(GRAPHIFY_HELPER) status
 
 graphify-report: ## Print the top of the graphify report
-	@test -f "$(GRAPHIFY_REPORT)" || { echo "Missing graphify report: $(GRAPHIFY_REPORT)"; exit 1; }
-	@$(GRAPHIFY_PYTHON) -c 'import re; from pathlib import Path; report = Path("$(GRAPHIFY_REPORT)").read_text(encoding="utf-8"); print(report.splitlines()[0]); wanted = ("Corpus Check", "Summary", "Suggested Questions"); [print("\n## " + name + "\n" + match.group(1).strip()) for name in wanted for match in [re.search(r"^## " + re.escape(name) + r"\n(.*?)(?=^## |\Z)", report, re.M | re.S)] if match]'
+	@$(GRAPHIFY_PYTHON) $(GRAPHIFY_HELPER) report
 
 graphify-rebuild: ## Rebuild graphify code artifacts for this repository
 	$(GRAPHIFY_CLI) update .
