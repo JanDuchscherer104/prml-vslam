@@ -8,12 +8,7 @@ from typing import Literal
 
 from pydantic import ConfigDict, Field, field_validator
 
-from prml_vslam.sources.datasets.contracts import (
-    DatasetDownloadResult,
-    DatasetSummary,
-    LocalSceneStatus,
-    ReferenceCloudConfig,
-)
+from prml_vslam.sources.datasets.contracts import ReferenceCloudConfig
 from prml_vslam.utils import BaseConfig, BaseData
 
 
@@ -83,24 +78,9 @@ class Record3DDownloadRequest(BaseConfig):
         return normalized
 
 
-class Record3DDownloadResult(DatasetDownloadResult[int]):
-    """Summary of one explicit Record3D archive download action."""
-
-
-class Record3DLocalSceneStatus(LocalSceneStatus[Record3DSceneMetadata]):
-    """Local availability summary for one Record3D archive."""
-
-
-class Record3DDatasetSummary(DatasetSummary):
-    """Summary of local Record3D archive coverage."""
-
-
 __all__ = [
     "Record3DCatalog",
-    "Record3DDatasetSummary",
     "Record3DDownloadRequest",
-    "Record3DDownloadResult",
-    "Record3DLocalSceneStatus",
     "Record3DMaterializationConfig",
     "Record3DPoseFrameMode",
     "Record3DSceneMetadata",

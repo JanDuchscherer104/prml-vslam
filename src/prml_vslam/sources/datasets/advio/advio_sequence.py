@@ -23,8 +23,8 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.contracts import (
     AdvioPoseSource,
+    AdvioServingConfig,
     DatasetId,
-    DatasetServingConfig,
     FrameSelectionConfig,
     selected_advio_pose_source,
 )
@@ -161,7 +161,7 @@ class AdvioSequence(BaseData):
         *,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
-        dataset_serving: DatasetServingConfig | None = None,
+        dataset_serving: AdvioServingConfig | None = None,
     ) -> SequenceManifest:
         del frame_selection
         paths = self._resolve_paths(require_arcore=False)
@@ -244,7 +244,7 @@ class AdvioSequence(BaseData):
     def open_stream(
         self,
         *,
-        dataset_serving: DatasetServingConfig | None = None,
+        dataset_serving: AdvioServingConfig | None = None,
         pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
         stride: int = 1,
         loop: bool = True,
@@ -258,7 +258,7 @@ class AdvioSequence(BaseData):
         effective_serving = (
             dataset_serving
             if dataset_serving is not None
-            else DatasetServingConfig(dataset_id="advio", pose_source=pose_source)
+            else AdvioServingConfig(dataset_id="advio", pose_source=pose_source)
         )
         pose_target_frame, _native_pose_source_frame = advio_pose_frames(
             pose_source=effective_serving.pose_source,

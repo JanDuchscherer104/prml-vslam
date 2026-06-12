@@ -505,12 +505,10 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     assert observations[0].provenance.world_frame == "tum_rgbd_world"
 
 
-def test_relativize_trajectory_to_first_pose_anchors_first_pose_at_identity() -> None:
+def test_trajectory_relative_to_first_pose_anchors_first_pose_at_identity() -> None:
     from evo.core.trajectory import PoseTrajectory3D
 
-    from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import (
-        relativize_trajectory_to_first_pose,
-    )
+    from prml_vslam.utils.geometry import trajectory_relative_to_first_pose
 
     first = np.eye(4)
     first[:3, :3] = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # +90deg about z
@@ -519,7 +517,7 @@ def test_relativize_trajectory_to_first_pose_anchors_first_pose_at_identity() ->
     second[:3, 3] = [4.0, 6.0, 8.0]
     trajectory = PoseTrajectory3D(poses_se3=[first, second], timestamps=np.array([0.0, 1.0]))
 
-    relativized = relativize_trajectory_to_first_pose(trajectory)
+    relativized = trajectory_relative_to_first_pose(trajectory)
 
     # VISTA loadtum parity: first pose -> identity, others -> inv(T_0) @ T_k.
     np.testing.assert_allclose(relativized.poses_se3[0], np.eye(4), atol=1e-9)

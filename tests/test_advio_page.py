@@ -9,7 +9,8 @@ import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.app.models import AppState, Record3DDatasetPoseSource
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.sources.datasets.advio import AdvioPoseSource
-from prml_vslam.sources.datasets.record3d import Record3DLocalSceneStatus, Record3DSceneMetadata
+from prml_vslam.sources.datasets.contracts import LocalSceneStatus
+from prml_vslam.sources.datasets.record3d import Record3DSceneMetadata
 from prml_vslam.sources.datasets.record3d.record3d_loading import (
     Record3DArchiveFrame,
     Record3DArchiveMetadata,
@@ -105,7 +106,7 @@ def test_record3d_download_form_builds_index_request_and_syncs_state(monkeypatch
 
 
 def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
-    status = Record3DLocalSceneStatus(
+    status = LocalSceneStatus[Record3DSceneMetadata](
         scene=Record3DSceneMetadata(
             sequence_id="local-capture",
             archive_name="local-capture.r3d",
@@ -147,8 +148,8 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
 
 
 def test_record3d_loop_preview_requires_default_normalized_profile(monkeypatch) -> None:
-    captured: dict[str, list[Record3DLocalSceneStatus]] = {}
-    status = Record3DLocalSceneStatus(
+    captured: dict[str, list[LocalSceneStatus[Record3DSceneMetadata]]] = {}
+    status = LocalSceneStatus[Record3DSceneMetadata](
         scene=Record3DSceneMetadata(
             sequence_id="capture",
             archive_name="capture.r3d",

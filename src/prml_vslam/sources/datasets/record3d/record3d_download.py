@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from prml_vslam.sources.datasets.contracts import DatasetDownloadResult
 from prml_vslam.sources.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
 from .record3d_models import (
     Record3DCatalog,
     Record3DDownloadRequest,
-    Record3DDownloadResult,
     Record3DSceneMetadata,
 )
 
@@ -27,7 +27,7 @@ class Record3DDownloadManager:
         self.console = console
         self._fetch_helper = DatasetFetchHelper()
 
-    def download(self, request: Record3DDownloadRequest) -> Record3DDownloadResult:
+    def download(self, request: Record3DDownloadRequest) -> DatasetDownloadResult[int]:
         """Download selected Record3D `.r3d` archives with SHA-256 verification."""
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         scenes = self._selected_scenes(request.sequence_ids)
@@ -41,7 +41,7 @@ class Record3DDownloadManager:
             reused_archive_count += int(not downloaded)
             written_paths.add(archive_path)
 
-        return Record3DDownloadResult(
+        return DatasetDownloadResult[int](
             sequence_ids=[scene.sequence_index for scene in scenes if scene.sequence_index is not None],
             downloaded_archive_count=downloaded_archive_count,
             reused_archive_count=reused_archive_count,

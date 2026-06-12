@@ -11,7 +11,6 @@ from ..contracts import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from .advio_loading import load_advio_calibration
 from .advio_models import (
     AdvioCatalog,
-    AdvioDatasetSummary,
     AdvioDownloadRequest,
     AdvioEnvironment,
     AdvioLocalSceneStatus,
@@ -21,12 +20,11 @@ from .advio_models import (
     AdvioUpstreamMetadata,
 )
 from .advio_sequence import AdvioOfflineSample, AdvioSequence
-from .advio_service import AdvioDatasetService, AdvioStreamingSourceConfig
+from .advio_service import AdvioDatasetService
 
 __all__ = [
     "AdvioCatalog",
     "AdvioDatasetService",
-    "AdvioDatasetSummary",
     "AdvioDownloadRequest",
     "AdvioEnvironment",
     "AdvioLocalSceneStatus",
@@ -38,7 +36,6 @@ __all__ = [
     "AdvioSequence",
     "AdvioSequenceConfig",
     "AdvioServingConfig",
-    "AdvioStreamingSourceConfig",
     "AdvioUpstreamMetadata",
     "load_advio_calibration",
 ]

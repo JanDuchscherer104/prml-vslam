@@ -8,16 +8,13 @@ of the package.
 from __future__ import annotations
 
 from ...replay import ReplayMode
-from ..contracts import FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
+from ..contracts import DatasetSummary, FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
 from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
 from .tum_rgbd_download import TumRgbdDownloadManager
 from .tum_rgbd_layout import load_tum_rgbd_catalog
 from .tum_rgbd_loading import load_tum_rgbd_associations
-from .tum_rgbd_models import (
-    TumRgbdDatasetSummary,
-    TumRgbdSequenceConfig,
-)
+from .tum_rgbd_models import TumRgbdSequenceConfig
 from .tum_rgbd_sequence import TumRgbdSequence
 
 
@@ -25,7 +22,7 @@ class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
     """Provide the main TUM RGB-D service surface for app and pipeline code."""
 
     catalog_loader = staticmethod(load_tum_rgbd_catalog)
-    summary_model = TumRgbdDatasetSummary
+    summary_model = DatasetSummary
     sequence_config_model = TumRgbdSequenceConfig
     sequence_model = TumRgbdSequence
 

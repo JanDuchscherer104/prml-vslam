@@ -7,13 +7,11 @@ from prml_vslam.sources.datasets.sources import DatasetSequenceSource, DatasetSe
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import Console, PathConfig
 
-from ..contracts import FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
+from ..contracts import DatasetSummary, FrameSelectionConfig, LocalSceneStatus, ReferenceCloudConfig, SequenceKey
 from . import record3d_layout
 from .record3d_download import Record3DDownloadManager
 from .record3d_models import (
     Record3DCatalog,
-    Record3DDatasetSummary,
-    Record3DLocalSceneStatus,
     Record3DMaterializationConfig,
     Record3DSceneMetadata,
     Record3DSequenceConfig,
@@ -25,7 +23,7 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
     """Provide app and pipeline service helpers for local Record3D archives."""
 
     catalog_loader = staticmethod(record3d_layout.load_record3d_catalog)
-    summary_model = Record3DDatasetSummary
+    summary_model = DatasetSummary
     sequence_config_model = Record3DSequenceConfig
     sequence_model = Record3DSequence
 
@@ -44,15 +42,15 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
     def scene(self, sequence_slug: SequenceKey) -> Record3DSceneMetadata:
         return record3d_layout.scene_for_sequence_id(self.catalog, self.dataset_root, str(sequence_slug))
 
-    def local_scene_statuses(self) -> list[Record3DLocalSceneStatus]:
-        statuses: list[Record3DLocalSceneStatus] = []
+    def local_scene_statuses(self) -> list[LocalSceneStatus[Record3DSceneMetadata]]:
+        statuses: list[LocalSceneStatus[Record3DSceneMetadata]] = []
         seen_sequence_ids: set[str] = set()
         for scene in self.catalog.scenes:
             archive_path = record3d_layout.archive_path_for_sequence(self.dataset_root, scene.sequence_id)
             archive_exists = archive_path.exists()
             seen_sequence_ids.add(scene.sequence_id)
             statuses.append(
-                Record3DLocalSceneStatus(
+                LocalSceneStatus[Record3DSceneMetadata](
                     scene=scene,
                     sequence_dir=archive_path.parent if archive_exists else None,
                     archive_path=archive_path if archive_exists else None,
@@ -66,7 +64,7 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
             scene = record3d_layout.scene_for_sequence_id(self.catalog, self.dataset_root, sequence_id)
             archive_path = record3d_layout.archive_path_for_sequence(self.dataset_root, sequence_id)
             statuses.append(
-                Record3DLocalSceneStatus(
+                LocalSceneStatus[Record3DSceneMetadata](
                     scene=scene,
                     sequence_dir=archive_path.parent,
                     archive_path=archive_path,

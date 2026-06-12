@@ -28,7 +28,6 @@ from prml_vslam.sources.datasets.advio import (
     AdvioSequence,
     AdvioSequenceConfig,
     AdvioServingConfig,
-    AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
 )
 from prml_vslam.sources.datasets.advio.advio_frames import (
@@ -41,6 +40,7 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
+from prml_vslam.sources.datasets.contracts import FrameSelectionConfig
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
 
@@ -551,15 +551,15 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     )
 
 
-def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
-    _write_advio_sequence(tmp_path)
+def test_advio_dataset_service_builds_streaming_source(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / "advio")
 
-    source = AdvioStreamingSourceConfig(
-        dataset_root=tmp_path,
+    service = AdvioDatasetService(PathConfig(root=tmp_path, data_dir=tmp_path))
+    source = service.build_streaming_source(
         sequence_id=15,
         dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.GROUND_TRUTH),
-        frame_stride=1,
-    ).setup_target()
+        frame_selection=FrameSelectionConfig(frame_stride=1),
+    )
 
     assert source is not None
     assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"

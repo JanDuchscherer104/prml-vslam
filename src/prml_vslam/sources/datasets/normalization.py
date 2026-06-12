@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypeAlias
 
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
@@ -24,9 +23,6 @@ from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdP
 from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.utils.path_config import PathConfig
 
-DatasetService: TypeAlias = AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService
-DatasetSourceConfig: TypeAlias = AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig
-
 
 def parse_dataset_id(value: str) -> DatasetId:
     """Parse CLI-facing dataset aliases into canonical dataset ids."""
@@ -38,7 +34,9 @@ def parse_dataset_id(value: str) -> DatasetId:
         raise ValueError("Expected one of: advio, tum_rgbd, record3d.") from exc
 
 
-def dataset_service(dataset_id: DatasetId, path_config: PathConfig) -> DatasetService:
+def dataset_service(
+    dataset_id: DatasetId, path_config: PathConfig
+) -> AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService:
     """Build the service that owns one dataset's local layout and raw loading."""
     match dataset_id:
         case DatasetId.ADVIO:
@@ -49,7 +47,9 @@ def dataset_service(dataset_id: DatasetId, path_config: PathConfig) -> DatasetSe
             return Record3DDatasetService(path_config)
 
 
-def normalized_store_for_service(dataset_id: DatasetId, service: DatasetService) -> NormalizedDatasetStore:
+def normalized_store_for_service(
+    dataset_id: DatasetId, service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService
+) -> NormalizedDatasetStore:
     """Build the normalized store colocated with a dataset service root."""
     return NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=dataset_id)
 
@@ -59,7 +59,7 @@ def source_config_for_normalization(
     dataset_id: DatasetId,
     sequence_id: str,
     reference_cloud: ReferenceCloudConfig | None = None,
-) -> DatasetSourceConfig:
+) -> AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig:
     """Build the source config whose byte-affecting fields define one store profile."""
     match dataset_id:
         case DatasetId.ADVIO:
@@ -78,8 +78,8 @@ def source_config_for_normalization(
 def normalized_profile_for_dataset(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
-    source_config: DatasetSourceConfig,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizedDatasetProfile:
     """Return the normalized-store profile for a dataset source config."""
     canonical_sequence_id = canonical_sequence_id_for_dataset(
@@ -98,8 +98,8 @@ def normalized_profile_for_dataset(
 def normalized_entry_exists(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
-    source_config: DatasetSourceConfig,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> bool:
     """Return whether the normalized store contains the source config's profile."""
     profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
@@ -109,8 +109,8 @@ def normalized_entry_exists(
 def normalize_dataset_entry(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
-    source_config: DatasetSourceConfig,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizedDatasetEntry:
     """Create or replace one full-frame normalized entry from raw local dataset data."""
     profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
@@ -124,8 +124,8 @@ def normalize_dataset_entry(
 def open_normalized_dataset_stream(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
-    source_config: DatasetSourceConfig,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
     include_depth: bool,
     output_dir: Path | None = None,
 ) -> ObservationStream:
@@ -146,7 +146,7 @@ def open_normalized_dataset_stream(
 def canonical_sequence_id_for_dataset(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     sequence_id: str,
 ) -> str:
     """Resolve a dataset sequence id into the normalized-store canonical id."""
@@ -159,8 +159,8 @@ def canonical_sequence_id_for_dataset(
 def raw_dataset_source(
     *,
     dataset_id: DatasetId,
-    service: DatasetService,
-    source_config: DatasetSourceConfig,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizableDatasetSource:
     """Build the raw local source used only to ingest a normalized entry."""
     canonical_sequence_id = canonical_sequence_id_for_dataset(

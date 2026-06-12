@@ -11,7 +11,6 @@ from .tum_rgbd_loading import TumRgbdOfflineSample
 from .tum_rgbd_models import (
     TumRgbdCatalog,
     TumRgbdDownloadRequest,
-    TumRgbdLocalSceneStatus,
     TumRgbdPoseSource,
     TumRgbdSceneMetadata,
     TumRgbdSequenceConfig,
@@ -23,7 +22,6 @@ __all__ = [
     "TumRgbdCatalog",
     "TumRgbdDatasetService",
     "TumRgbdDownloadRequest",
-    "TumRgbdLocalSceneStatus",
     "TumRgbdOfflineSample",
     "TumRgbdPoseSource",
     "TumRgbdSceneMetadata",

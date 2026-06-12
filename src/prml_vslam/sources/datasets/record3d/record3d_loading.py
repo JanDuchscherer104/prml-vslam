@@ -170,7 +170,7 @@ def decode_depth_frame_m(
     """Decode one LZFSE-compressed depth payload into meters."""
     with zipfile.ZipFile(archive_path) as archive:
         payload = archive.read(frame.depth_name)
-    decompressed = _decompress_lzfse(payload)
+    decompressed = _load_liblzfse().decompress(payload)
     depth = np.frombuffer(decompressed, dtype=np.float32)
     expected = metadata.dh * metadata.dw
     if depth.size != expected:
@@ -186,7 +186,7 @@ def decode_confidence_frame(
     """Decode one LZFSE-compressed confidence payload."""
     with zipfile.ZipFile(archive_path) as archive:
         payload = archive.read(frame.confidence_name)
-    decompressed = _decompress_lzfse(payload)
+    decompressed = _load_liblzfse().decompress(payload)
     confidence = np.frombuffer(decompressed, dtype=np.uint8)
     expected = metadata.dh * metadata.dw
     if confidence.size != expected:
@@ -220,11 +220,6 @@ def _names_by_index(names: set[str], suffix: str) -> dict[int, str]:
         except ValueError:
             continue
     return result
-
-
-def _decompress_lzfse(payload: bytes) -> bytes:
-    liblzfse = _load_liblzfse()
-    return liblzfse.decompress(payload)
 
 
 def _load_liblzfse() -> Any:

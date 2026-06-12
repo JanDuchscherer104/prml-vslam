@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 
@@ -15,35 +15,32 @@ from prml_vslam.pipeline.config import BackendSpec
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.sources.datasets.advio import (
-    AdvioDatasetSummary,
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary
-from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
-from prml_vslam.sources.datasets.record3d.record3d_models import Record3DDatasetSummary, Record3DLocalSceneStatus
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_models import TumRgbdDatasetSummary, TumRgbdLocalSceneStatus
+from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary, LocalSceneStatus
+from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest, Record3DSceneMetadata
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource, TumRgbdSceneMetadata
 from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
 from prml_vslam.utils import BaseData, JsonObject
 
 from .preview_runtime import PacketSessionSnapshot
 
-DatasetTableValue: TypeAlias = str | int | float | bool | None
-DatasetTableRow: TypeAlias = dict[str, DatasetTableValue]
-DatasetPageSummary: TypeAlias = AdvioDatasetSummary | TumRgbdDatasetSummary | Record3DDatasetSummary | DatasetSummary
-DatasetStatusList: TypeAlias = (
-    list[AdvioLocalSceneStatus] | list[TumRgbdLocalSceneStatus] | list[Record3DLocalSceneStatus]
-)
+DatasetTableValue = str | int | float | bool | None
+DatasetTableRow = dict[str, DatasetTableValue]
 
 
 class DatasetPageData(BaseData):
     """Computed dataset-tab render payload."""
 
-    summary: DatasetPageSummary
-    statuses: DatasetStatusList
+    summary: DatasetSummary
+    statuses: (
+        list[AdvioLocalSceneStatus]
+        | list[LocalSceneStatus[TumRgbdSceneMetadata]]
+        | list[LocalSceneStatus[Record3DSceneMetadata]]
+    )
     rows: list[DatasetTableRow]
     notice_level: Literal["error", "warning", "success"] | None = None
     notice_message: str = ""
@@ -138,7 +135,7 @@ class AdvioPreviewFormData(BaseData):
 class AdvioPageData(BaseData):
     """Computed ADVIO page render payload."""
 
-    summary: AdvioDatasetSummary
+    summary: DatasetSummary
     statuses: list[AdvioLocalSceneStatus]
     rows: list[DatasetTableRow]
     notice_level: Literal["error", "warning", "success"] | None = None

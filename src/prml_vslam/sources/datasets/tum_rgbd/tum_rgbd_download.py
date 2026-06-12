@@ -3,6 +3,7 @@ from __future__ import annotations
 import tarfile
 from pathlib import Path
 
+from prml_vslam.sources.datasets.contracts import DatasetDownloadResult, LocalSceneStatus
 from prml_vslam.sources.datasets.download_helpers import (
     normalize_archive_member,
     relative_sequence_path,
@@ -19,8 +20,6 @@ from .tum_rgbd_layout import (
 from .tum_rgbd_models import (
     TumRgbdCatalog,
     TumRgbdDownloadRequest,
-    TumRgbdDownloadResult,
-    TumRgbdLocalSceneStatus,
     TumRgbdSceneMetadata,
 )
 
@@ -39,11 +38,11 @@ class TumRgbdDownloadManager:
     def scene(self, sequence_id: str) -> TumRgbdSceneMetadata:
         return scene_for_sequence_id(self.catalog, sequence_id)
 
-    def local_scene_statuses(self) -> list[TumRgbdLocalSceneStatus]:
-        statuses: list[TumRgbdLocalSceneStatus] = []
+    def local_scene_statuses(self) -> list[LocalSceneStatus[TumRgbdSceneMetadata]]:
+        statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]] = []
         for scene in self.catalog.scenes:
             statuses.append(
-                TumRgbdLocalSceneStatus(
+                LocalSceneStatus[TumRgbdSceneMetadata](
                     scene=scene,
                     sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
                     archive_path=self._existing_archive_path(scene),
@@ -53,7 +52,7 @@ class TumRgbdDownloadManager:
             )
         return statuses
 
-    def download(self, request: TumRgbdDownloadRequest) -> TumRgbdDownloadResult:
+    def download(self, request: TumRgbdDownloadRequest) -> DatasetDownloadResult[str]:
         """Download selected TUM RGB-D scenes and extract complete scene payloads."""
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         self.archive_root.mkdir(parents=True, exist_ok=True)
@@ -76,7 +75,7 @@ class TumRgbdDownloadManager:
                 )
             )
 
-        return TumRgbdDownloadResult(
+        return DatasetDownloadResult[str](
             sequence_ids=sequence_ids,
             downloaded_archive_count=downloaded_archive_count,
             reused_archive_count=reused_archive_count,

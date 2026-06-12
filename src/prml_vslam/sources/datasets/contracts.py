@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Generic, Literal, TypeAlias, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import Field, model_validator
 
@@ -79,9 +79,6 @@ class AdvioServingConfig(BaseConfig):
         return self
 
 
-DatasetServingConfig: TypeAlias = AdvioServingConfig
-
-
 class FrameSelectionConfig(BaseConfig):
     frame_stride: int = Field(default=1, ge=1)
     target_fps: float | None = Field(default=None, gt=0.0)
@@ -143,7 +140,7 @@ class DatasetSummary(BaseData):
 
 
 def selected_advio_pose_source(
-    dataset_serving: DatasetServingConfig | None,
+    dataset_serving: AdvioServingConfig | None,
     *,
     default: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
 ) -> AdvioPoseSource:
@@ -157,7 +154,6 @@ __all__ = [
     "AdvioServingConfig",
     "DatasetDownloadResult",
     "DatasetId",
-    "DatasetServingConfig",
     "DatasetSummary",
     "FrameSelectionConfig",
     "LocalSceneStatus",

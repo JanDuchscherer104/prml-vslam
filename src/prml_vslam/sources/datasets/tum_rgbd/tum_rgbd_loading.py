@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform, write_camera_intrinsics_yaml
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.geometry import load_tum_trajectory, write_tum_trajectory
+from prml_vslam.utils.geometry import load_tum_trajectory, trajectory_relative_to_first_pose, write_tum_trajectory
 
 
 @runtime_checkable
@@ -26,7 +26,7 @@ class TumRgbdSamplePaths(Protocol):
 
 # TUM benchmark outputs are expressed in the first-camera RDF optical frame, matching the
 # SLAM estimate's convention. The raw mocap Z-up frame is kept only as ``native_frame``
-# provenance. See ``relativize_trajectory_to_first_pose`` and the VISTA ``loadtum`` parity.
+# provenance. See ``trajectory_relative_to_first_pose`` and the VISTA ``loadtum`` parity.
 TUM_RGBD_WORLD_FRAME = "tum_rgbd_world"
 TUM_RGBD_NATIVE_WORLD_FRAME = "tum_rgbd_mocap_world"
 TUM_RGBD_CAMERA_FRAME = CAMERA_RDF_FRAME
@@ -97,28 +97,9 @@ def load_tum_rgbd_ground_truth(path: Path) -> PoseTrajectory3D:
         return load_tum_trajectory(canonical_path)
 
 
-def relativize_trajectory_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
-    """Express every pose relative to the first pose (VISTA ``loadtum`` convention).
-
-    Mirrors ``external/vista-slam`` ``SLAM_TUMRGBD.loadtum``: ``T'_k = inv(T_0) @ T_k`` with
-    the first pose mapped to identity. This places the trajectory in the first-camera RDF
-    optical frame, the same convention the SLAM estimate already uses, so the benchmark
-    frame no longer disagrees with the estimate by the raw mocap Z-up basis.
-    """
-    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
-    if not poses:
-        return trajectory
-    inv_first = np.linalg.inv(poses[0])
-    relative_poses = [inv_first @ pose for pose in poses]
-    return PoseTrajectory3D(
-        poses_se3=relative_poses,
-        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
-    )
-
-
 def load_tum_rgbd_ground_truth_rdf(path: Path) -> PoseTrajectory3D:
     """Load TUM ground truth relativized to the first pose (first-camera RDF frame)."""
-    return relativize_trajectory_to_first_pose(load_tum_rgbd_ground_truth(path))
+    return trajectory_relative_to_first_pose(load_tum_rgbd_ground_truth(path))
 
 
 def load_tum_rgbd_associations(
@@ -215,7 +196,7 @@ def ensure_ground_truth_tum(sequence_dir: Path, target_path: Path) -> Path:
     if target_path.exists():
         return target_path.resolve()
     source_path = resolve_ground_truth_path(sequence_dir)
-    trajectory = relativize_trajectory_to_first_pose(load_tum_rgbd_ground_truth(source_path))
+    trajectory = trajectory_relative_to_first_pose(load_tum_rgbd_ground_truth(source_path))
     poses = [
         FrameTransform.from_matrix(
             np.asarray(pose, dtype=np.float64),
