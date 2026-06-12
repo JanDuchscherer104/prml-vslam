@@ -12,6 +12,10 @@ sequence_ids = []
 dataset_id = "tum_rgbd"
 sequence_ids = []
 
+[datasets.reference_cloud]
+depth_stride_px = 8
+max_points = 100000
+
 [[datasets]]
 dataset_id = "record3d"
 sequence_ids = []

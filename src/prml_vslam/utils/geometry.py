@@ -72,6 +72,47 @@ def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
     return trajectory
 
 
+def load_canonical_tum_trajectory(path: Path) -> PoseTrajectory3D:
+    """Load raw TUM rows with deterministic timestamp sorting and deduplication."""
+    rows = _read_tum_trajectory_rows(path)
+    deduplicated: dict[float, list[float]] = {}
+    for timestamp, pose_row in sorted(rows, key=lambda item: item[0]):
+        deduplicated.setdefault(timestamp, pose_row)
+
+    timestamps = np.asarray(list(deduplicated), dtype=np.float64)
+    pose_array = np.asarray(list(deduplicated.values()), dtype=np.float64)
+    quaternions_xyzw = pose_array[:, 3:]
+    quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
+    if np.any(np.isclose(quaternion_norms, 0.0, atol=1e-12)):
+        raise ValueError(f"TUM trajectory file '{path}' contains a zero-norm quaternion.")
+    trajectory = PoseTrajectory3D(
+        positions_xyz=pose_array[:, :3],
+        orientations_quat_wxyz=np.roll(quaternions_xyzw / quaternion_norms, 1, axis=1),
+        timestamps=timestamps,
+    )
+    valid, details = trajectory.check()
+    if not valid:
+        raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
+    return trajectory
+
+
+def _read_tum_trajectory_rows(path: Path) -> list[tuple[float, list[float]]]:
+    if path.stat().st_size == 0:
+        raise ValueError(f"TUM trajectory file '{path}' is empty.")
+    rows: list[tuple[float, list[float]]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split()
+        if len(fields) != 8:
+            raise ValueError(f"Invalid TUM trajectory row in {path}: {line!r}")
+        rows.append((float(fields[0]), [float(field) for field in fields[1:]]))
+    if not rows:
+        raise ValueError(f"TUM trajectory file '{path}' does not contain any poses.")
+    return rows
+
+
 def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
     quaternions = np.asarray(trajectory.orientations_quat_wxyz, dtype=np.float64)
     norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
@@ -447,6 +488,7 @@ __all__ = [
     "DEFAULT_REFERENCE_CLOUD_MAX_POINTS",
     "DEFAULT_REFERENCE_CLOUD_RANDOM_SEED",
     "depth_map_to_world_points",
+    "load_canonical_tum_trajectory",
     "load_point_cloud_ply",
     "load_point_cloud_ply_with_colors",
     "load_tum_trajectory",

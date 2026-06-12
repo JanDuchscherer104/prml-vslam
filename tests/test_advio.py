@@ -571,15 +571,12 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
 
 
-def test_advio_source_config_uses_raw_local_dataset_without_normalized_entry(tmp_path: Path) -> None:
+def test_advio_source_config_requires_normalized_store_entry(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
     source = AdvioSourceConfig(sequence_id="advio-15").setup_target(path_config=PathConfig(root=tmp_path))
 
-    manifest = source.prepare_sequence_manifest(tmp_path / "prepared")
-
-    assert manifest.sequence_id == "advio-15"
-    assert manifest.video_path is not None and manifest.video_path.is_file()
-    assert manifest.timestamps_path is not None and manifest.timestamps_path.is_file()
+    with pytest.raises(FileNotFoundError, match="prml-vslam dataset normalize --dataset advio"):
+        source.prepare_sequence_manifest(tmp_path / "prepared")
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:

@@ -4,7 +4,6 @@ import zipfile
 from pathlib import Path
 
 from prml_vslam.sources.datasets.download_helpers import (
-    modalities_present,
     normalize_archive_member,
     relative_sequence_path,
 )
@@ -12,21 +11,19 @@ from prml_vslam.sources.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
 from .advio_layout import (
-    archive_member_matches,
     arcore_ready,
     arkit_ready,
-    local_modalities,
+    offline_ready,
+    replay_ready,
     resolve_calibration_path,
     resolve_existing_sequence_dir,
     scene_for_sequence_id,
 )
 from .advio_models import (
     AdvioCatalog,
-    AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioDownloadResult,
     AdvioLocalSceneStatus,
-    AdvioModality,
     AdvioSceneMetadata,
 )
 
@@ -54,15 +51,13 @@ class AdvioDownloadManager:
         statuses: list[AdvioLocalSceneStatus] = []
         for scene in self.catalog.scenes:
             sequence_dir = resolve_existing_sequence_dir(self.dataset_root, scene.sequence_slug)
-            modalities = self._local_modalities(scene)
             statuses.append(
                 AdvioLocalSceneStatus(
                     scene=scene,
                     sequence_dir=sequence_dir,
-                    local_modalities=modalities,
                     archive_path=self._existing_archive_path(scene),
-                    replay_ready=modalities_present(modalities, AdvioDownloadPreset.STREAMING.modalities),
-                    offline_ready=modalities_present(modalities, AdvioDownloadPreset.OFFLINE.modalities),
+                    replay_ready=replay_ready(self.dataset_root, scene),
+                    offline_ready=offline_ready(self.dataset_root, scene),
                     arcore_ready=arcore_ready(sequence_dir, scene),
                     arkit_ready=arkit_ready(sequence_dir, scene),
                 )
@@ -70,44 +65,35 @@ class AdvioDownloadManager:
         return statuses
 
     def download(self, request: AdvioDownloadRequest) -> AdvioDownloadResult:
-        """Download selected ADVIO scenes and extract the requested modalities."""
+        """Download selected ADVIO scenes and extract complete scene payloads."""
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         self.archive_root.mkdir(parents=True, exist_ok=True)
 
         sequence_ids = request.sequence_ids or [scene.sequence_id for scene in self.catalog.scenes]
-        modalities = request.resolved_modalities()
-        archive_modalities = tuple(modality for modality in modalities if modality is not AdvioModality.CALIBRATION)
         downloaded_archive_count = 0
         reused_archive_count = 0
         written_paths: set[Path] = set()
 
         for sequence_id in sequence_ids:
             scene = self.scene(sequence_id)
-            if AdvioModality.CALIBRATION in modalities:
-                written_paths.add(self._ensure_calibration(scene, overwrite=request.overwrite))
-            if archive_modalities:
-                archive_path, downloaded = self._ensure_archive(scene, overwrite=request.overwrite)
-                downloaded_archive_count += int(downloaded)
-                reused_archive_count += int(not downloaded)
-                written_paths.update(
-                    self._extract_modalities(
-                        scene=scene,
-                        archive_path=archive_path,
-                        modalities=archive_modalities,
-                        overwrite=request.overwrite,
-                    )
+            written_paths.add(self._ensure_calibration(scene, overwrite=request.overwrite))
+            archive_path, downloaded = self._ensure_archive(scene, overwrite=request.overwrite)
+            downloaded_archive_count += int(downloaded)
+            reused_archive_count += int(not downloaded)
+            written_paths.update(
+                self._extract_full_scene(
+                    scene=scene,
+                    archive_path=archive_path,
+                    overwrite=request.overwrite,
                 )
+            )
 
         return AdvioDownloadResult(
             sequence_ids=sequence_ids,
-            modalities=list(modalities),
             downloaded_archive_count=downloaded_archive_count,
             reused_archive_count=reused_archive_count,
             written_path_count=len(written_paths),
         )
-
-    def _local_modalities(self, scene: AdvioSceneMetadata) -> list[AdvioModality]:
-        return local_modalities(self.dataset_root, scene)
 
     def _ensure_archive(self, scene: AdvioSceneMetadata, *, overwrite: bool) -> tuple[Path, bool]:
         archive_path = self.archive_root / f"{scene.sequence_slug}.zip"
@@ -133,12 +119,11 @@ class AdvioDownloadManager:
         archive_path = self.archive_root / f"{scene.sequence_slug}.zip"
         return archive_path if archive_path.exists() else None
 
-    def _extract_modalities(
+    def _extract_full_scene(
         self,
         *,
         scene: AdvioSceneMetadata,
         archive_path: Path,
-        modalities: tuple[AdvioModality, ...],
         overwrite: bool,
     ) -> set[Path]:
         written_paths: set[Path] = set()
@@ -151,7 +136,7 @@ class AdvioDownloadManager:
                 if normalized is None:
                     continue
                 relative_path = relative_sequence_path(normalized, scene.sequence_slug)
-                if relative_path is None or not archive_member_matches(relative_path, scene, modalities):
+                if relative_path is None or not relative_path.parts:
                     continue
                 matched_members += 1
                 target_path = self.dataset_root / Path(*normalized)
@@ -162,8 +147,7 @@ class AdvioDownloadManager:
                 written_paths.add(target_path)
 
         if matched_members == 0:
-            requested = ", ".join(modality.value for modality in modalities)
-            msg = f"Archive {archive_path} did not contain any members for requested modalities: {requested}"
+            msg = f"Archive {archive_path} did not contain any members for scene {scene.sequence_slug}."
             raise ValueError(msg)
         return written_paths
 

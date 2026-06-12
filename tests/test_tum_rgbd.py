@@ -23,7 +23,6 @@ from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdSequence,
     TumRgbdSequenceConfig,
 )
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_ground_truth
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
@@ -371,14 +370,12 @@ def test_dataset_sequence_source_reference_cloud_uses_manifest_frame_selection(t
     assert not (output_dir / "selected_associations.tum_rgbd.json").exists()
 
 
-def test_tum_rgbd_source_config_uses_raw_local_dataset_without_normalized_entry(tmp_path: Path) -> None:
+def test_tum_rgbd_source_config_requires_normalized_store_entry(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", sequence_id="freiburg1_desk")
     source = TumRgbdSourceConfig(sequence_id="freiburg1_desk").setup_target(path_config=PathConfig(root=tmp_path))
 
-    manifest = source.prepare_sequence_manifest(tmp_path / "prepared")
-
-    assert manifest.sequence_id == "freiburg1_desk"
-    assert manifest.rgb_dir.is_dir()
+    with pytest.raises(FileNotFoundError, match="prml-vslam dataset normalize --dataset tum_rgbd"):
+        source.prepare_sequence_manifest(tmp_path / "prepared")
 
 
 def test_tum_rgbd_stream_loops_rgbd_frames_with_pose_metadata(tmp_path: Path) -> None:
@@ -528,25 +525,3 @@ def test_relativize_trajectory_to_first_pose_anchors_first_pose_at_identity() ->
     np.testing.assert_allclose(relativized.poses_se3[0], np.eye(4), atol=1e-9)
     np.testing.assert_allclose(relativized.poses_se3[1], np.linalg.inv(first) @ second, atol=1e-9)
     np.testing.assert_allclose(relativized.timestamps, [0.0, 1.0])
-
-
-def test_load_tum_rgbd_ground_truth_sorts_and_deduplicates_raw_timestamps(tmp_path: Path) -> None:
-    path = tmp_path / "groundtruth.txt"
-    path.write_text(
-        "\n".join(
-            [
-                "# timestamp tx ty tz qx qy qz qw",
-                "2.0 2.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "1.0 1.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "1.0 99.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "3.0 3.0 0.0 0.0 0.0 0.0 0.0 1.0",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    trajectory = load_tum_rgbd_ground_truth(path)
-
-    np.testing.assert_allclose(trajectory.timestamps, [1.0, 2.0, 3.0])
-    np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [1.0, 2.0, 3.0])

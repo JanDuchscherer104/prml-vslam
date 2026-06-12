@@ -15,7 +15,9 @@ from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.datasets.advio import AdvioDownloadRequest
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadRequest
 from prml_vslam.utils import PathConfig
 
 runner = CliRunner()
@@ -98,7 +100,7 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize("command", (("advio", "download"), ("tum-rgbd", "download")))
-def test_dataset_download_commands_keep_selective_modality_options(command: tuple[str, str]) -> None:
+def test_dataset_download_commands_expose_only_full_scene_options(command: tuple[str, str]) -> None:
     result = runner.invoke(app, [*command, "--help"])
     help_text = strip_ansi(result.stdout)
 
@@ -106,8 +108,70 @@ def test_dataset_download_commands_keep_selective_modality_options(command: tupl
     assert "--sequence" in help_text
     assert "--overwrite" in help_text
     assert "--reuse" in help_text
-    assert "--preset" in help_text
-    assert "--modality" in help_text
+    assert "--" + "preset" not in help_text
+    assert "--" + "modality" not in help_text
+
+
+def test_advio_download_command_builds_full_scene_request(monkeypatch) -> None:
+    seen_requests: list[AdvioDownloadRequest] = []
+
+    class FakeService:
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def download(self, request: AdvioDownloadRequest) -> SimpleNamespace:
+            seen_requests.append(request)
+            return SimpleNamespace(
+                model_dump=lambda *, mode: {
+                    "sequence_ids": request.sequence_ids,
+                    "overwrite": request.overwrite,
+                    "downloaded_archive_count": 1,
+                    "reused_archive_count": 0,
+                    "written_path_count": 3,
+                    "mode": mode,
+                }
+            )
+
+        def summarize(self) -> SimpleNamespace:
+            return SimpleNamespace(model_dump=lambda *, mode: {"total_scene_count": 1, "mode": mode})
+
+    monkeypatch.setattr(main_module, "AdvioDatasetService", FakeService)
+
+    result = runner.invoke(app, ["advio", "download", "--sequence", "15", "--overwrite"])
+
+    assert result.exit_code == 0
+    assert seen_requests == [AdvioDownloadRequest(sequence_ids=[15], overwrite=True)]
+
+
+def test_tum_rgbd_download_command_builds_full_scene_request(monkeypatch) -> None:
+    seen_requests: list[TumRgbdDownloadRequest] = []
+
+    class FakeService:
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def download(self, request: TumRgbdDownloadRequest) -> SimpleNamespace:
+            seen_requests.append(request)
+            return SimpleNamespace(
+                model_dump=lambda *, mode: {
+                    "sequence_ids": request.sequence_ids,
+                    "overwrite": request.overwrite,
+                    "downloaded_archive_count": 1,
+                    "reused_archive_count": 0,
+                    "written_path_count": 3,
+                    "mode": mode,
+                }
+            )
+
+        def summarize(self) -> SimpleNamespace:
+            return SimpleNamespace(model_dump=lambda *, mode: {"total_scene_count": 1, "mode": mode})
+
+    monkeypatch.setattr(main_module, "TumRgbdDatasetService", FakeService)
+
+    result = runner.invoke(app, ["tum-rgbd", "download", "--sequence", "freiburg1_desk", "--overwrite"])
+
+    assert result.exit_code == 0
+    assert seen_requests == [TumRgbdDownloadRequest(sequence_ids=["freiburg1_desk"], overwrite=True)]
 
 
 def test_dotted_run_config_overrides_parse_json_and_deep_merge(tmp_path: Path) -> None:

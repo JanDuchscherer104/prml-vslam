@@ -55,8 +55,6 @@ def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest
         context.state,
         context.state.advio,
         selected_sequence_ids=request.sequence_ids,
-        download_preset=request.preset,
-        selected_modalities=request.modalities,
         overwrite_existing=request.overwrite,
     )
 

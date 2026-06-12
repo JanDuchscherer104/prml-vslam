@@ -37,52 +37,6 @@ class TumRgbdPoseSource(StrEnum):
         }[self]
 
 
-class TumRgbdModality(StrEnum):
-    """Name the downloadable TUM RGB-D modality bundles."""
-
-    RGB = "rgb"
-    DEPTH = "depth"
-    GROUND_TRUTH = "ground_truth"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing modality label shown in TUM RGB-D controls."""
-        return {
-            self.RGB: "RGB Frames",
-            self.DEPTH: "Depth Frames",
-            self.GROUND_TRUTH: "Ground Truth",
-        }[self]
-
-
-class TumRgbdDownloadPreset(StrEnum):
-    """Describe curated modality bundles for common TUM RGB-D workflows."""
-
-    STREAMING = "streaming"
-    OFFLINE = "offline"
-    FULL = "full"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing preset label shown in TUM RGB-D download controls."""
-        return self.value.capitalize()
-
-    @property
-    def modalities(self) -> tuple[TumRgbdModality, ...]:
-        """Return the effective modality bundle for the selected preset."""
-        return {
-            self.STREAMING: (
-                TumRgbdModality.RGB,
-                TumRgbdModality.GROUND_TRUTH,
-            ),
-            self.OFFLINE: (
-                TumRgbdModality.RGB,
-                TumRgbdModality.DEPTH,
-                TumRgbdModality.GROUND_TRUTH,
-            ),
-            self.FULL: tuple(TumRgbdModality),
-        }[self]
-
-
 class TumRgbdSceneMetadata(BaseData):
     """Describe one TUM RGB-D scene committed into the repository catalog."""
 
@@ -107,25 +61,15 @@ class TumRgbdDownloadRequest(BaseConfig):
     """Describe one explicit TUM RGB-D download selection."""
 
     sequence_ids: list[str] = Field(default_factory=list)
-    preset: TumRgbdDownloadPreset = TumRgbdDownloadPreset.OFFLINE
-    modalities: list[TumRgbdModality] = Field(default_factory=list)
     overwrite: bool = False
 
-    def resolved_modalities(self) -> tuple[TumRgbdModality, ...]:
-        """Return the effective modality bundle for the request."""
-        return tuple(self.modalities) if self.modalities else self.preset.modalities
 
-
-class TumRgbdDownloadResult(DatasetDownloadResult[str, TumRgbdModality]):
+class TumRgbdDownloadResult(DatasetDownloadResult[str]):
     """Summary of one explicit TUM RGB-D download action."""
 
-    modalities: list[TumRgbdModality] = Field(default_factory=list)
 
-
-class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata, TumRgbdModality]):
+class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata]):
     """Local availability summary for one TUM RGB-D scene."""
-
-    local_modalities: list[TumRgbdModality] = Field(default_factory=list)
 
 
 class TumRgbdDatasetSummary(DatasetSummary):
