@@ -62,7 +62,7 @@ sequenceDiagram
     Proxy-->>Coord: StageResult
 
     opt trajectory evaluation enabled and no stop/error
-        Coord->>RtmMgr: runtime_for(evaluate.trajectory)
+        Coord->>RtmMgr: runtime_for(eval.trajectory)
         RtmMgr-->>Coord: TrajectoryEvaluationRuntime
         Coord->>TrajectoryEvaluationRuntime: run_offline(...)
         TrajectoryEvaluationRuntime-->>Coord: StageResult

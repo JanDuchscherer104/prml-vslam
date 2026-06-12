@@ -18,13 +18,16 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
+from prml_vslam.alignment.stage.contracts import GroundAlignmentKeyframeSample
 from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
+from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage import SlamStageRuntime
 from prml_vslam.methods.stage.backend_config import SlamBackendConfig
+from prml_vslam.methods.stage.visualization import POINTMAP_REF, ROLE_KEYFRAME_POINTMAP
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
@@ -130,6 +133,7 @@ class RunCoordinatorActor:
         self._source_actor: ActorHandle | None = None
         self._streaming_runtime_manager: RuntimeManager | None = None
         self._slam_runtime_proxy: StageRuntimeHandle | None = None
+        self._ground_alignment_runtime_proxy: StageRuntimeHandle | None = None
         self._run_config: RunConfig | None = None
         self._plan: RunPlan | None = None
         self._slam_backend: SlamBackendConfig | None = None
@@ -162,6 +166,7 @@ class RunCoordinatorActor:
         self._source_actor = None
         self._streaming_runtime_manager = None
         self._slam_runtime_proxy = None
+        self._ground_alignment_runtime_proxy = None
         self._streaming_error = None
         self._result_store = StageResultStore()
         self._stage_runner = StageRunner(self._result_store)
@@ -196,6 +201,8 @@ class RunCoordinatorActor:
             self._source_actor.stop.remote()
         if self._slam_runtime_proxy is not None:
             self._slam_runtime_proxy.stop()
+        if self._ground_alignment_runtime_proxy is not None:
+            self._ground_alignment_runtime_proxy.stop()
         if self._streaming_done.is_set() and self._snapshot.state not in {RunState.COMPLETED, RunState.FAILED}:
             self._record_event(RunStopped(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns()))
 
@@ -231,6 +238,8 @@ class RunCoordinatorActor:
                 pass
         if self._slam_runtime_proxy is not None:
             self._slam_runtime_proxy.stop()
+        if self._ground_alignment_runtime_proxy is not None:
+            self._ground_alignment_runtime_proxy.stop()
         if self._worker is not None:
             self._worker.join(timeout=5.0)
         self._close_rerun_sinks()
@@ -335,17 +344,25 @@ class RunCoordinatorActor:
         self,
         *,
         updates: list[StageRuntimeUpdate],
+        ground_updates: list[StageRuntimeUpdate] | None = None,
+        cache_payloads: bool = True,
     ) -> None:
         """Forward live SLAM runtime updates to observer sinks."""
-        self._cache_slam_runtime_payloads(updates)
+        if cache_payloads:
+            self._cache_slam_runtime_payloads(updates)
+        ground_updates = [] if ground_updates is None else ground_updates
         with self._lock:
             for update in updates:
+                self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
+            for update in ground_updates:
                 self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
         if not self._has_rerun_sinks():
             return
         payload_resolver = self._self_actor_handle()
         for update in updates:
             self._submit_rerun_update(update=update, payload_resolver=payload_resolver)
+        for update in ground_updates:
+            self._submit_rerun_update(update=update, payload_resolver=None)
 
     def _submit_frame_to_slam_runtime(
         self,
@@ -387,8 +404,15 @@ class RunCoordinatorActor:
     def _publish_slam_runtime_updates(self, updates: list[StageRuntimeUpdate]) -> None:
         if not updates:
             return
+        ground_updates: list[StageRuntimeUpdate] = []
         try:
-            self.on_slam_runtime_updates(updates=updates)
+            self._cache_slam_runtime_payloads(updates)
+            ground_updates = self._submit_slam_updates_to_ground_alignment(updates)
+        except Exception as exc:
+            self._record_ground_alignment_streaming_failure(exc)
+            return
+        try:
+            self.on_slam_runtime_updates(updates=updates, ground_updates=ground_updates, cache_payloads=False)
         except Exception as exc:  # pragma: no cover - best-effort observer routing
             self._console.warning("Failed to route live SLAM runtime updates for run '%s': %s", self._run_id, exc)
 
@@ -402,6 +426,82 @@ class RunCoordinatorActor:
                     payload = runtime.read_payload(ref)
                     if payload is not None:
                         self._remember_handle(ref.handle_id, payload)
+
+    def _submit_slam_updates_to_ground_alignment(self, updates: list[StageRuntimeUpdate]) -> list[StageRuntimeUpdate]:
+        if self._ground_alignment_runtime_proxy is None:
+            return []
+        for sample in self._ground_alignment_samples_from_slam_updates(updates):
+            self._stage_runner.submit_stream_item(runtime=self._ground_alignment_runtime_proxy, item=sample)
+        return self._ground_alignment_runtime_proxy.drain_runtime_updates(max_items=None)
+
+    def _record_ground_alignment_streaming_failure(self, exc: Exception) -> None:
+        if self._ground_alignment_runtime_proxy is None:
+            return
+        error_message = str(exc)
+        self._streaming_error = error_message
+        self._source_finished = True
+        if self._source_actor is not None:
+            self._source_actor.stop.remote()
+
+        stage_key = StageKey.GRAVITY_ALIGNMENT
+        config_hash = ""
+        input_fingerprint = ""
+        stage_config = self._require_run_config().stages.section(stage_key)
+        runtime_manager = self._require_streaming_runtime_manager()
+        context = self._stage_execution_context(run_config=self._require_run_config(), plan=self._require_plan())
+        stage_spec = runtime_manager.stage_spec(stage_key)
+        config_hash, input_fingerprint = self._stage_runner.failure_hash_inputs(
+            stage_config=stage_config,
+            stage_spec=stage_spec,
+            context=context,
+        )
+        outcome = stage_config.failure_outcome(
+            error_message=error_message,
+            config_hash=config_hash,
+            input_fingerprint=input_fingerprint,
+        )
+        status = self._ground_alignment_runtime_proxy.status().model_copy(
+            update={"lifecycle_state": StageStatus.FAILED, "last_error": error_message}
+        )
+        self._result_store.put(
+            StageResult(
+                stage_key=stage_key,
+                payload=None,
+                outcome=outcome,
+                final_runtime_status=status,
+            )
+        )
+        self._record_stage_failure(stage_key, outcome)
+        self._ground_alignment_runtime_proxy.stop()
+        self._ground_alignment_runtime_proxy = None
+
+    def _ground_alignment_samples_from_slam_updates(
+        self,
+        updates: list[StageRuntimeUpdate],
+    ) -> list[GroundAlignmentKeyframeSample]:
+        samples: list[GroundAlignmentKeyframeSample] = []
+        for update in updates:
+            slam_update = _slam_update_from_runtime_update(update)
+            for item in update.visualizations:
+                if item.intent is not VisualizationIntent.POINT_CLOUD or item.role != ROLE_KEYFRAME_POINTMAP:
+                    continue
+                pointmap_ref = item.payload_refs.get(POINTMAP_REF)
+                pointmap_xyz_camera = (
+                    None if pointmap_ref is None else self._resolve_handle_local(pointmap_ref.handle_id)
+                )
+                keyframe_index = (
+                    item.keyframe_index if item.keyframe_index is not None else _keyframe_index(slam_update)
+                )
+                if keyframe_index is None or item.pose is None or pointmap_xyz_camera is None:
+                    continue
+                samples.append(
+                    GroundAlignmentKeyframeSample(
+                        keyframe_index=keyframe_index,
+                        T_world_camera=item.pose,
+                        pointmap_xyz_camera=np.asarray(pointmap_xyz_camera, dtype=np.float32),
+                    )
+                )
+        return samples
 
     def _active_slam_runtime(self) -> SlamStageRuntime | None:
         if self._slam_runtime_proxy is None:
@@ -709,6 +809,9 @@ class RunCoordinatorActor:
                 continue
             if stage_key is StageKey.SLAM:
                 self._start_streaming_slam_runtime(context=context, runtime_manager=runtime_manager)
+                continue
+            if stage_key is StageKey.GRAVITY_ALIGNMENT:
+                self._start_streaming_ground_alignment_runtime(context=context, runtime_manager=runtime_manager)
         if self._slam_runtime_proxy is None:
             raise RuntimeError("Streaming run requires an available SLAM runtime stage.")
 
@@ -731,6 +834,25 @@ class RunCoordinatorActor:
         )
         self._slam_runtime_proxy = runtime_proxy
 
+    def _start_streaming_ground_alignment_runtime(
+        self,
+        *,
+        context: PipelineExecutionContext,
+        runtime_manager: RuntimeManager,
+    ) -> None:
+        stage_key = StageKey.GRAVITY_ALIGNMENT
+        runtime_proxy = runtime_manager.runtime_for(stage_key)
+        self._stage_runner.start_configured_streaming_stage(
+            stage_key=stage_key,
+            runtime=runtime_proxy,
+            stage_config=context.run_config.stages.section(stage_key),
+            stage_spec=runtime_manager.stage_spec(stage_key),
+            context=context,
+            on_stage_started=self._emit_stage_started,
+            on_stage_failed=self._record_stage_failure,
+        )
+        self._ground_alignment_runtime_proxy = runtime_proxy
+
     def _finalize_streaming(self) -> None:
         if self._streaming_finalized:
             return
@@ -749,6 +871,7 @@ class RunCoordinatorActor:
             context = self._stage_execution_context(run_config=run_config, plan=plan)
             self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
             self._finalize_slam_streaming_stage(context=context)
+            self._finalize_ground_alignment_streaming_stage()
             self._run_streaming_finalize_stages(context=context)
             if self._streaming_error is not None:
                 self._console.error("Streaming run '%s' failed: %s", self._run_id, self._streaming_error)
@@ -848,6 +971,8 @@ class RunCoordinatorActor:
             stage_key = stage.key
             if stage_key in {StageKey.SOURCE, StageKey.SLAM}:
                 continue
+            if stage_key is StageKey.GRAVITY_ALIGNMENT and self._ground_alignment_runtime_proxy is not None:
+                continue
             if stage_key in _FAILED_SLAM_DEPENDENT_STREAMING_FINALIZERS and (
                 self._streaming_error is not None or self._stop_requested
             ):
@@ -858,6 +983,18 @@ class RunCoordinatorActor:
                 context=context,
             )
             self._publish_runtime_updates_from_proxy(runtime_proxy)
+
+    def _finalize_ground_alignment_streaming_stage(self) -> None:
+        if self._ground_alignment_runtime_proxy is None:
+            return
+        if self._streaming_error is not None or self._stop_requested:
+            self._ground_alignment_runtime_proxy.stop()
+        result = self._stage_runner.finish_streaming_stage(
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
+            runtime=self._ground_alignment_runtime_proxy,
+        )
+        self._record_stage_result(StageKey.GRAVITY_ALIGNMENT, result)
+        self._publish_runtime_updates_from_proxy(self._ground_alignment_runtime_proxy)
 
     def _build_rerun_sinks(self, *, run_config: RunConfig, run_paths: RunArtifactPaths) -> list[_RerunSinkSidecar]:
         if not (run_config.visualization.connect_live_viewer or run_config.visualization.export_viewer_rrd):
@@ -1189,6 +1326,19 @@ class RunCoordinatorActor:
             results=self._result_store,
             slam_backend=self._require_slam_backend(),
         )
+
+
+def _slam_update_from_runtime_update(update: StageRuntimeUpdate) -> SlamUpdate | None:
+    for semantic_event in update.semantic_events:
+        if isinstance(semantic_event, SlamUpdate):
+            return semantic_event
+    return None
+
+
+def _keyframe_index(update: SlamUpdate | None) -> int | None:
+    if update is None or not update.is_keyframe:
+        return None
+    return update.keyframe_index
 
 
 __all__ = ["RunCoordinatorActor"]

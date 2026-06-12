@@ -24,12 +24,12 @@ The current executable stage slice is:
 
 - `source`
 - `slam`
-- optional `gravity.align`
-- optional `evaluate.trajectory`
+- optional `align.gravity`
+- optional `eval.trajectory`
 - optional `reconstruction`
 - `summary`
 
-`evaluate.cloud` is still a planned/configurable diagnostic stage key, but it
+`eval.points` is still a planned/configurable diagnostic stage key, but it
 does not currently register an executable runtime.
 
 Historical note: the old `RuntimeStageProgram` / `StageCompletionPayload`
@@ -185,8 +185,8 @@ executed slice, but the stage-local runtime boundaries do not change.
   now use the target `RunConfig` and stage-runtime inputs.
 - [`StageKey`](../../src/prml_vslam/pipeline/contracts/stages.py) is the
   current executable vocabulary persisted into events and manifests:
-  `source`, `slam`, `gravity.align`, `evaluate.trajectory`, `reconstruction`,
-  `evaluate.cloud`, `summary`.
+  `source`, `slam`, `align.gravity`, `eval.trajectory`, `reconstruction`,
+  `eval.points`, `summary`.
 
 ### Bounded Stage Runtimes
 

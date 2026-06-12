@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation  # type: ignore[import-untyped]
 
 from prml_vslam.interfaces.alignment import (
     GroundAlignmentMetadata,
@@ -28,6 +28,9 @@ from .contracts import GroundAlignmentConfig
 
 if TYPE_CHECKING:
     from prml_vslam.interfaces.slam import SlamArtifacts
+
+GroundAlignmentPointCloudSource = Literal["dense_points_ply", "sparse_points_ply", "streaming_pointmaps"]
+_ResolvedPointCloudSource = GroundAlignmentPointCloudSource | Literal["none"]
 
 # TODO: all of these options should be handeled via StageConfig.backend_config!
 _RANSAC_DISTANCE_THRESHOLD_M = 0.03
@@ -97,6 +100,7 @@ class GroundAlignmentService:
                 point_cloud_source="none",
                 skip_reason="No point-cloud artifact is available for ground-plane detection.",
             )
+        assert point_cloud_source != "none"
 
         points_xyz_world = load_point_cloud_ply(point_cloud_path)
         if len(points_xyz_world) < _MIN_INPUT_POINTS:
@@ -108,9 +112,47 @@ class GroundAlignmentService:
             )
 
         trajectory = load_tum_trajectory(slam.trajectory_tum.path)
-        camera_positions_xyz_world = np.asarray(trajectory.positions_xyz, dtype=np.float64)
         poses_world_camera = np.asarray(trajectory.poses_se3, dtype=np.float64)
-        processed_points_xyz_world = self._prepare_points(points_xyz_world)
+        return self.estimate_from_world_points(
+            points_xyz_world=points_xyz_world,
+            poses_world_camera=poses_world_camera,
+            point_cloud_source=point_cloud_source,
+        )
+
+    def estimate_from_world_points(
+        self,
+        *,
+        points_xyz_world: NDArray[np.float64],
+        poses_world_camera: NDArray[np.float64],
+        point_cloud_source: GroundAlignmentPointCloudSource,
+    ) -> GroundAlignmentMetadata:
+        """Estimate dominant ground from in-memory native-world point samples."""
+        points_array = np.asarray(points_xyz_world, dtype=np.float64)
+        if points_array.ndim != 2 or points_array.shape[1] != 3:
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason=f"Expected world point array shape (N, 3), got {points_array.shape}.",
+            )
+        poses_array = np.asarray(poses_world_camera, dtype=np.float64)
+        if poses_array.ndim != 3 or poses_array.shape[1:] != (4, 4):
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason=f"Expected camera pose array shape (N, 4, 4), got {poses_array.shape}.",
+            )
+        poses_array = poses_array[np.all(np.isfinite(poses_array), axis=(1, 2))]
+        if len(poses_array) == 0:
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.0,
+                point_cloud_source=point_cloud_source,
+                skip_reason="No finite camera poses are available for ground-plane disambiguation.",
+            )
+        camera_positions_xyz_world = poses_array[:, :3, 3]
+        processed_points_xyz_world = self._prepare_points(points_array)
         if len(processed_points_xyz_world) < _MIN_INPUT_POINTS:
             return GroundAlignmentMetadata(
                 applied=False,
@@ -122,7 +164,7 @@ class GroundAlignmentService:
         candidates = self._extract_plane_candidates(
             processed_points_xyz_world=processed_points_xyz_world,
             camera_positions_xyz_world=camera_positions_xyz_world,
-            poses_world_camera=poses_world_camera,
+            poses_world_camera=poses_array,
         )
         if not candidates:
             return GroundAlignmentMetadata(
@@ -163,7 +205,7 @@ class GroundAlignmentService:
             confidence=float(best_candidate.confidence),
             point_cloud_source=point_cloud_source,
             ground_plane_world=GroundPlaneModel(
-                normal_xyz_world=tuple(float(value) for value in best_candidate.normal_xyz_world),
+                normal_xyz_world=_tuple3(best_candidate.normal_xyz_world),
                 offset_world=float(best_candidate.offset_world),
                 inlier_count=best_candidate.inlier_count,
                 inlier_ratio=float(best_candidate.inlier_ratio),
@@ -181,7 +223,7 @@ class GroundAlignmentService:
         )
 
     @staticmethod
-    def _resolve_point_cloud_path(slam: SlamArtifacts) -> tuple[str, Path | None]:
+    def _resolve_point_cloud_path(slam: SlamArtifacts) -> tuple[_ResolvedPointCloudSource, Path | None]:
         if slam.dense_points_ply is not None:
             return "dense_points_ply", slam.dense_points_ply.path
         if slam.sparse_points_ply is not None:
@@ -242,7 +284,7 @@ class GroundAlignmentService:
         if not np.isfinite(normal_norm) or normal_norm <= _EPS:
             return None
         normal_xyz_world = normal_xyz_world / normal_norm
-        offset_world = float(plane_model[3]) / normal_norm
+        offset_world = float(float(plane_model[3]) / float(normal_norm))
 
         signed_camera_heights = camera_positions_xyz_world @ normal_xyz_world + offset_world
         if np.median(signed_camera_heights) < 0.0:
@@ -346,7 +388,7 @@ class GroundAlignmentService:
     ) -> tuple[Literal["trajectory_pca", "identity"], NDArray[np.float64]]:
         up_xyz_viewer = np.array([0.0, 1.0, 0.0], dtype=np.float64)
         rotation_up = _rotation_matrix_aligning_vectors(source=normal_xyz_world, target=up_xyz_viewer)
-        yaw_source = "identity"
+        yaw_source: Literal["trajectory_pca", "identity"] = "identity"
         rotation_yaw = np.eye(3, dtype=np.float64)
         viewer_positions_xyz = (rotation_up @ np.asarray(camera_positions_xyz_world, dtype=np.float64).T).T
         centered_xz = viewer_positions_xyz[:, [0, 2]] - np.mean(viewer_positions_xyz[:, [0, 2]], axis=0, keepdims=True)
@@ -378,7 +420,7 @@ class GroundAlignmentService:
         )
 
 
-def _import_open3d() -> object:
+def _import_open3d() -> Any:
     try:
         import open3d as o3d
     except ModuleNotFoundError as exc:  # pragma: no cover - dependency is pinned in the repo
@@ -404,7 +446,12 @@ def _plane_patch_corners(
         point_on_plane_xyz_world + u_max * basis_u_xyz_world + v_max * basis_v_xyz_world,
         point_on_plane_xyz_world + u_max * basis_u_xyz_world + v_min * basis_v_xyz_world,
     ]
-    return [tuple(float(value) for value in corner) for corner in corners]
+    return [_tuple3(corner) for corner in corners]
+
+
+def _tuple3(values: NDArray[np.float64]) -> tuple[float, float, float]:
+    array = np.asarray(values, dtype=np.float64).reshape(3)
+    return (float(array[0]), float(array[1]), float(array[2]))
 
 
 def _patch_extent_m(corners_xyz_world: list[tuple[float, float, float]]) -> float:

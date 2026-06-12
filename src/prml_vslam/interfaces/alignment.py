@@ -46,7 +46,7 @@ class GroundAlignmentMetadata(BaseData):
 
     applied: bool
     confidence: float
-    point_cloud_source: Literal["dense_points_ply", "sparse_points_ply", "none"]
+    point_cloud_source: Literal["dense_points_ply", "sparse_points_ply", "streaming_pointmaps", "none"]
     ground_plane_world: GroundPlaneModel | None = None
     T_viewer_world_world: FrameTransform | None = None
     up_source: Literal["ground_plane"] = "ground_plane"

@@ -579,7 +579,7 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
             RunPlanStage(
                 key=StageKey.CLOUD_EVALUATION,
                 available=False,
-                availability_reason="Dense-cloud evaluation is planned but no runtime is registered yet.",
+                availability_reason="Point-set evaluation is planned but no runtime is registered yet.",
             ),
         ],
     )
@@ -644,8 +644,8 @@ def test_pipeline_snapshot_render_model_builds_stage_status_rows(tmp_path: Path)
     assert rows["source"]["Tasks"] == "4 submitted / 3 done / 0 failed / 1 in flight"
     assert rows["source"]["Updated"] == "1 s"
     assert rows["slam"]["State"] == "completed"
-    assert rows["evaluate.cloud"]["State"] == "unavailable"
-    assert rows["evaluate.cloud"]["Message"] == "Dense-cloud evaluation is planned but no runtime is registered yet."
+    assert rows["eval.points"]["State"] == "unavailable"
+    assert rows["eval.points"]["Message"] == "Point-set evaluation is planned but no runtime is registered yet."
 
 
 def test_pipeline_telemetry_history_resets_deduplicates_and_trims() -> None:

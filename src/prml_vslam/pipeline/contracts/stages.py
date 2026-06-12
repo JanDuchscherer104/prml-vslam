@@ -10,11 +10,11 @@ class StageKey(StrEnum):
 
     SOURCE = "source"
     SLAM = "slam"
-    GRAVITY_ALIGNMENT = "gravity.align"
+    GRAVITY_ALIGNMENT = "align.gravity"
     TRAJECTORY_ALIGNMENT = "align.trajectory"
-    TRAJECTORY_EVALUATION = "evaluate.trajectory"
+    TRAJECTORY_EVALUATION = "eval.trajectory"
     CLOUD_ALIGNMENT = "align.cloud"
-    CLOUD_EVALUATION = "evaluate.cloud"
+    CLOUD_EVALUATION = "eval.points"
     RECONSTRUCTION = "reconstruction"
     SUMMARY = "summary"
 
@@ -28,7 +28,7 @@ class StageKey(StrEnum):
             StageKey.TRAJECTORY_ALIGNMENT: "Align Trajectory (Sim3)",
             StageKey.TRAJECTORY_EVALUATION: "Evaluate Trajectory",
             StageKey.CLOUD_ALIGNMENT: "Align Dense Cloud",
-            StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
+            StageKey.CLOUD_EVALUATION: "Evaluate Dense Points",
             StageKey.RECONSTRUCTION: "Build Reconstruction",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]
