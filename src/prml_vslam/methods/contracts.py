@@ -43,6 +43,9 @@ class SlamArtifacts(BaseData):
     trajectory_tum: ArtifactRef
     sparse_points_ply: ArtifactRef | None = None
     dense_points_ply: ArtifactRef | None = None
+    depth_maps_npz: ArtifactRef | None = None
+    point_maps_npz: ArtifactRef | None = None
+    point_cloud_confidences_npz: ArtifactRef | None = None
     extras: dict[str, ArtifactRef] = Field(default_factory=dict)
 
     num_processed_frames: int = 0

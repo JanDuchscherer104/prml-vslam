@@ -4,3 +4,6 @@
 [submodule "external/mast3r-slam"]
 	path = external/mast3r-slam
 	url = https://github.com/rmurai0610/MASt3R-SLAM.git
+[submodule "external/lingbot-map"]
+	path = external/lingbot-map
+	url = https://github.com/robbyant/lingbot-map.git
