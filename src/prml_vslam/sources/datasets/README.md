@@ -193,15 +193,14 @@ payloads rather than primary `SequenceManifest` input, but the matching RGB
 frames are shared with the source manifest instead of duplicated under
 `benchmark/observations/`.
 
-To build or refresh the benchmark store for locally offline-ready scenes, use
-the checked-in seed config:
+To build or refresh one normalized entry, use the CLI normalization command:
 
 ```bash
-prml-vslam dataset normalize-batch .configs/datasets/normalize-benchmark.toml
+prml-vslam dataset normalize --dataset record3d --sequence <sequence-id>
 ```
 
-The Streamlit Datasets page and `prml-vslam dataset stats` read those persisted
-records and CSV tables; they do not normalize datasets during display.
+The Streamlit Datasets page and `prml-vslam dataset summary` read persisted
+entries and issues; they do not normalize datasets during display.
 
 ## Typical Usage
 

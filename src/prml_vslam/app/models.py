@@ -54,8 +54,6 @@ class NormalizedDatasetSnapshot:
     """Cache-local normalized dataset rows used by one Streamlit render."""
 
     records: list[JsonObject]
-    stats: list[JsonObject]
-    metadata: list[JsonObject]
     issues: list[JsonObject]
     sequence_ids: set[str]
     default_profile_sequence_ids: set[str]

@@ -14,13 +14,13 @@ from prml_vslam.sources.config import (
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalized_store import (
+    NormalizableDatasetSource,
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
     NormalizedDatasetStore,
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
-from prml_vslam.sources.protocols import BenchmarkInputSource
 from prml_vslam.sources.replay import ObservationStream
 from prml_vslam.utils.path_config import PathConfig
 
@@ -161,7 +161,7 @@ def raw_dataset_source(
     dataset_id: DatasetId,
     service: DatasetService,
     source_config: DatasetSourceConfig,
-) -> BenchmarkInputSource:
+) -> NormalizableDatasetSource:
     """Build the raw local source used only to ingest a normalized entry."""
     canonical_sequence_id = canonical_sequence_id_for_dataset(
         dataset_id=dataset_id,

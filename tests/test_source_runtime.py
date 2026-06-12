@@ -15,6 +15,7 @@ from prml_vslam.interfaces import (
     CameraIntrinsics,
     FrameTransform,
     Observation,
+    ObservationIndexEntry,
     ObservationProvenance,
 )
 from prml_vslam.interfaces.artifacts import artifact_ref
@@ -39,10 +40,11 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
 from prml_vslam.sources.protocols import OfflineSequenceSource
-from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.sources.replay import ImageSequenceObservationSource, ReplayMode
 from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.sources.stage.runtime import SourceRuntime
@@ -170,6 +172,36 @@ def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: 
     assert observations[0].rgb.shape == (2, 3, 3)
     assert observations[0].provenance.source_id == "source_manifest"
     assert observations[0].provenance.sequence_id == "seq-rgb"
+
+
+def test_image_sequence_replay_loads_depth_before_pose_contract_validation(tmp_path: Path) -> None:
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(tmp_path / "rgb.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    depth_path = tmp_path / "depth.npy"
+    np.save(depth_path, np.ones((2, 2), dtype=np.float32))
+    loaded_depth_paths: list[Path] = []
+    source = ImageSequenceObservationSource(
+        sequence_dir=tmp_path,
+        rows=[
+            ObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb.png"),
+                depth_path=Path("depth.npy"),
+                intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
+                T_world_camera=None,
+                provenance=ObservationProvenance(source_id="synthetic"),
+            )
+        ],
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+        depth_loader=lambda path: loaded_depth_paths.append(path) or np.asarray(np.load(path), dtype=np.float32),
+    )
+
+    source.connect()
+    with pytest.raises(ValueError, match="Metric observation geometry requires T_world_camera"):
+        source.wait_for_observation()
+
+    assert loaded_depth_paths == [depth_path]
 
 
 def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path) -> None:
@@ -516,6 +548,16 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
 
 
+def test_normalized_store_timestamp_loader_accepts_tum_rgbd_list_rows(tmp_path: Path) -> None:
+    timestamps_path = tmp_path / "rgb.txt"
+    timestamps_path.write_text(
+        "# timestamp rgb\n0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n",
+        encoding="utf-8",
+    )
+
+    assert load_timestamps_ns(timestamps_path) == [0, 200_000_000]
+
+
 def test_video_source_config_constructs_video_adapter(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, captures_dir=tmp_path / "captures")
     path_config.captures_dir.mkdir()
@@ -541,7 +583,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
             return f"resolved-{sequence_id}"
 
         def build_streaming_source(self, **kwargs):
-            calls.append(("streaming", kwargs))
+            calls.append(("normalized", kwargs))
             return _ManifestOnlySource(rgb_dir=tmp_path)
 
     monkeypatch.setattr("prml_vslam.sources.config.AdvioDatasetService", FakeDatasetService)
@@ -561,6 +603,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
 
     assert tum_source.label == "manifest-only"
     assert advio_source.label == "manifest-only"
+    assert [call[0] for call in calls] == ["normalized", "normalized"]
     assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
     assert calls[0][1]["frame_selection"].target_fps == 15.0
     assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE

@@ -28,7 +28,6 @@ from prml_vslam.interfaces.camera import (
 from prml_vslam.interfaces.transforms import project_rotation_to_so3
 from prml_vslam.utils.geometry import (
     depth_map_to_world_points,
-    load_canonical_tum_trajectory,
     load_point_cloud_ply,
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
@@ -252,28 +251,6 @@ def test_load_tum_trajectory_normalizes_rounded_quaternions(tmp_path: Path) -> N
     trajectory = load_tum_trajectory(path)
 
     assert np.allclose(np.linalg.norm(trajectory.orientations_quat_wxyz, axis=1), 1.0)
-
-
-def test_load_canonical_tum_trajectory_sorts_and_deduplicates_raw_timestamps(tmp_path: Path) -> None:
-    path = tmp_path / "groundtruth.txt"
-    path.write_text(
-        "\n".join(
-            [
-                "# timestamp tx ty tz qx qy qz qw",
-                "2.0 2.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "1.0 1.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "1.0 99.0 0.0 0.0 0.0 0.0 0.0 1.0",
-                "3.0 3.0 0.0 0.0 0.0 0.0 0.0 1.0",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    trajectory = load_canonical_tum_trajectory(path)
-
-    np.testing.assert_allclose(trajectory.timestamps, [1.0, 2.0, 3.0])
-    np.testing.assert_allclose(trajectory.positions_xyz[:, 0], [1.0, 2.0, 3.0])
 
 
 def test_empty_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:

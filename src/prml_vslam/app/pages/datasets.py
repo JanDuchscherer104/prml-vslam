@@ -13,7 +13,6 @@ from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 
 import prml_vslam.plotting as plots
 from prml_vslam.interfaces import CameraIntrinsics, Observation
-from prml_vslam.sources.dataset_query import NormalizedDatasetQuery
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
@@ -26,6 +25,7 @@ from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
+    normalized_store_for_service,
     open_normalized_dataset_stream,
     source_config_for_normalization,
 )
@@ -333,7 +333,7 @@ def _load_normalized_dataset_snapshot_for_context(
 
 def _render_normalized_characterization(normalized: NormalizedDatasetSnapshot) -> None:
     with st.container(border=True):
-        st.subheader("Normalized Dataset Characterization")
+        st.subheader("Normalized Dataset Entries")
         st.caption(
             "Read-only summary of canonical full-frame normalized-store entries. Build or refresh entries from the CLI; this page never normalizes datasets."
         )
@@ -345,27 +345,8 @@ def _render_normalized_characterization(normalized: NormalizedDatasetSnapshot) -
         if not normalized.records:
             st.info("No usable normalized entries found for this dataset.")
             return
-        storage_bytes = _sum_stat(normalized.stats, "storage_bytes")
-        frame_count = _sum_stat(normalized.stats, "frame_count", artifact_kind="timing")
-        duration_s = _sum_stat(normalized.stats, "duration_s", artifact_kind="timing")
-        for column, (label, value) in zip(
-            st.columns(4, gap="small"),
-            (
-                ("Normalized Entries", str(len(normalized.records))),
-                ("Frames", f"{int(frame_count):,}"),
-                ("Duration", f"{duration_s:.1f} s"),
-                ("Storage", _format_bytes(storage_bytes)),
-            ),
-            strict=True,
-        ):
-            column.metric(label, value)
-        tabs = st.tabs(["Entries", "Stats", "Metadata"])
-        with tabs[0]:
-            st.dataframe(normalized.records, hide_index=True, width="stretch")
-        with tabs[1]:
-            st.dataframe(normalized.stats, hide_index=True, width="stretch")
-        with tabs[2]:
-            st.dataframe(normalized.metadata, hide_index=True, width="stretch")
+        st.metric("Normalized Entries", str(len(normalized.records)))
+        st.dataframe(normalized.records, hide_index=True, width="stretch")
 
 
 @st.cache_data
@@ -374,19 +355,18 @@ def _load_normalized_dataset_snapshot(
 ) -> NormalizedDatasetSnapshot:
     del freshness_token
     path_config = PathConfig(root=Path(root), data_dir=Path(data_dir))
-    query = NormalizedDatasetQuery.from_path_config(path_config)
     dataset = DatasetId(dataset_id)
-    entries = query.records([dataset])
-    records = query.record_rows(records=entries)
+    service = dataset_service(dataset, path_config)
+    store = normalized_store_for_service(dataset, service)
+    entries = store.summary(strict=False)
+    records = [entry.model_dump(mode="json") for entry in entries]
     profile_counts: dict[str, int] = {}
     for row in records:
         sequence_id = str(row.get("sequence_id", ""))
         profile_counts[sequence_id] = profile_counts.get(sequence_id, 0) + 1
     return NormalizedDatasetSnapshot(
         records=records,
-        stats=query.stats_long_rows(records=entries),
-        metadata=query.metadata_long_rows(records=entries),
-        issues=query.issue_rows([dataset]),
+        issues=[issue.model_dump(mode="json") for issue in store.issues()],
         sequence_ids=set(profile_counts),
         default_profile_sequence_ids=_default_profile_sequence_ids(
             dataset=dataset, entries=entries, path_config=path_config
@@ -410,27 +390,6 @@ def _default_profile_sequence_ids(
     return default_sequence_ids
 
 
-def _sum_stat(stats: list[JsonObject], stat_name: str, *, artifact_kind: str | None = None) -> float:
-    total = 0.0
-    for row in stats:
-        if row.get("stat_name") != stat_name:
-            continue
-        if artifact_kind is not None and row.get("artifact_kind") != artifact_kind:
-            continue
-        value = row.get("value")
-        if value not in (None, ""):
-            total += float(value)
-    return total
-
-
-def _format_bytes(value: float) -> str:
-    if value < 1_000_000:
-        return f"{value / 1_000:.1f} KB"
-    if value < 1_000_000_000:
-        return f"{value / 1_000_000:.1f} MB"
-    return f"{value / 1_000_000_000:.1f} GB"
-
-
 def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
     store_root = _dataset_root(context, dataset_id) / ".normalized"
     if not store_root.exists():
@@ -441,8 +400,6 @@ def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) ->
             "*/*/entry.json",
             "*/*/sequence_manifest.json",
             "*/*/benchmark_inputs.json",
-            "*/*/stats_long.csv",
-            "*/*/metadata_long.csv",
         )
         for path in store_root.glob(pattern)
     )
