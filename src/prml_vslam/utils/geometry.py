@@ -77,26 +77,9 @@ def trajectory_relative_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTraje
     if not poses:
         return trajectory
     T_first_world = np.linalg.inv(poses[0])
-    return trajectory_from_pose_matrices(
-        [T_first_world @ pose for pose in poses],
-        np.asarray(trajectory.timestamps, dtype=np.float64),
-    )
-
-
-def trajectory_from_pose_matrices(
-    poses_se3: list[NDArray[np.float64]],
-    timestamps_s: NDArray[np.float64],
-) -> PoseTrajectory3D:
-    """Build an evo trajectory from homogeneous camera-pose matrices."""
-    from prml_vslam.interfaces import FrameTransform
-
     return PoseTrajectory3D(
-        positions_xyz=np.asarray([pose[:3, 3] for pose in poses_se3], dtype=np.float64),
-        orientations_quat_wxyz=np.asarray(
-            [FrameTransform.from_matrix(pose).quaternion_xyzw()[[3, 0, 1, 2]] for pose in poses_se3],
-            dtype=np.float64,
-        ),
-        timestamps=timestamps_s,
+        poses_se3=[T_first_world @ pose for pose in poses],
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
     )
 
 

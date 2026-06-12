@@ -75,10 +75,9 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
     ) -> DatasetSequenceSource:
         """Build the ADVIO-backed streaming source adapter for one sequence."""
         selection = frame_selection or FrameSelectionConfig()
-        sequence_config = AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id)
 
         def sequence() -> AdvioSequence:
-            return sequence_config.setup_target()
+            return self._sequence(sequence_id)
 
         def stream(_value: int, loop: bool, mode: ReplayMode, stream_selection: FrameSelectionConfig):
             advio_sequence = sequence()

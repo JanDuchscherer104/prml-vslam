@@ -159,9 +159,10 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        **sequence_kwargs: Any,
     ) -> SequenceManifest:
         """Build the normalized offline manifest for one dataset sequence."""
-        return self._sequence(sequence_id).to_sequence_manifest(
+        return self._sequence(sequence_id, **sequence_kwargs).to_sequence_manifest(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
@@ -172,9 +173,10 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        **sequence_kwargs: Any,
     ) -> PreparedBenchmarkInputs:
         """Build prepared benchmark inputs for one dataset sequence."""
-        return self._sequence(sequence_id).to_benchmark_inputs(
+        return self._sequence(sequence_id, **sequence_kwargs).to_benchmark_inputs(
             output_dir=output_dir,
             frame_selection=frame_selection or FrameSelectionConfig(),
         )
@@ -226,11 +228,13 @@ class DatasetServiceBase:
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
+        sequence_kwargs: dict[str, Any] | None = None,
         stream: Callable[[SequenceKey, bool, ReplayMode, FrameSelectionConfig], ObservationStream] | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalized_store: NormalizedDatasetStore | None = None,
         normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
+        sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         return DatasetSequenceSource(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
@@ -239,11 +243,13 @@ class DatasetServiceBase:
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
+                **sequence_kwargs,
             ),
             benchmark=lambda value, output_dir, selection: self.build_benchmark_inputs(
                 sequence_id=value,
                 output_dir=output_dir,
                 frame_selection=selection,
+                **sequence_kwargs,
             ),
             stream=stream,
             replay_mode=replay_mode,
@@ -257,18 +263,21 @@ class DatasetServiceBase:
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
+        sequence_kwargs: dict[str, Any] | None = None,
         normalized_store: NormalizedDatasetStore | None = None,
         normalized_profile: NormalizedDatasetProfile | None = None,
         **stream_kwargs: Any,
     ) -> DatasetSequenceSource:
+        sequence_kwargs = {} if sequence_kwargs is None else sequence_kwargs
         return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
+            sequence_kwargs=sequence_kwargs,
             replay_mode=replay_mode,
             normalized_store=normalized_store,
             normalized_profile=normalized_profile,
-            stream=lambda value, loop, replay_mode, selection: self.open_preview_stream(
-                sequence_id=value,
+            stream=lambda value, loop, replay_mode, selection: self._open_sequence_stream(
+                sequence=self._sequence(value, **sequence_kwargs),
                 frame_selection=selection,
                 loop=loop,
                 replay_mode=replay_mode,
@@ -286,10 +295,27 @@ class DatasetServiceBase:
         **stream_kwargs: Any,
     ) -> ObservationStream:
         sequence = self._sequence(sequence_id)
+        return self._open_sequence_stream(
+            sequence=sequence,
+            frame_selection=frame_selection or FrameSelectionConfig(),
+            loop=loop,
+            replay_mode=replay_mode,
+            **stream_kwargs,
+        )
+
+    def _open_sequence_stream(
+        self,
+        *,
+        sequence: Any,
+        frame_selection: FrameSelectionConfig,
+        loop: bool,
+        replay_mode: ReplayMode,
+        **stream_kwargs: Any,
+    ) -> ObservationStream:
         return open_dataset_sequence_stream(
             sequence=sequence,
             timestamps_ns=self._preview_timestamps_ns(sequence),
-            frame_selection=frame_selection or FrameSelectionConfig(),
+            frame_selection=frame_selection,
             loop=loop,
             replay_mode=replay_mode,
             **stream_kwargs,
@@ -298,8 +324,8 @@ class DatasetServiceBase:
     def _preview_timestamps_ns(self, sequence: Any) -> list[int]:
         raise NotImplementedError
 
-    def _sequence(self, sequence_id: SequenceKey) -> Any:
+    def _sequence(self, sequence_id: SequenceKey, **config_kwargs: Any) -> Any:
         return self.sequence_model(
-            config=self.sequence_config_model(dataset_root=self.dataset_root, sequence_id=sequence_id),
+            config=self.sequence_config_model(dataset_root=self.dataset_root, sequence_id=sequence_id, **config_kwargs),
             catalog=self.catalog,
         )
