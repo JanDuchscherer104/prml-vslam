@@ -89,6 +89,15 @@ def test_path_config_builds_dataset_paths(tmp_path: Path) -> None:
     assert dataset_dir == (tmp_path / ".data" / "advio").resolve()
 
 
+def test_path_config_builds_normalized_datastore_paths(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    datastore_dir = path_config.resolve_normalized_datastore_dir("record3d")
+
+    assert datastore_dir == (tmp_path / ".data" / "vslam-datastore" / "record3d").resolve()
+    assert path_config.resolve_dataset_dir("record3d") == (tmp_path / ".data" / "record3d").resolve()
+
+
 def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
@@ -98,6 +107,7 @@ def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path
         path_config.resolve_configs_dir(create=True),
         path_config.resolve_pipeline_configs_dir(create=True),
         path_config.resolve_dataset_dir("advio", create=True),
+        path_config.resolve_normalized_datastore_dir("advio", create=True),
         path_config.resolve_logs_dir(create=True),
         path_config.resolve_run_logs_dir("vista-full-tuning", create=True),
         path_config.resolve_method_repo_dir("vista-slam", create=True),

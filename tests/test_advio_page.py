@@ -246,6 +246,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
                 sequence_id="2026-06-03--18-26-32",
             ),
             "include_depth": False,
+            "path_config": context.path_config,
             "output_dir": Path(".artifacts") / "dataset-preview" / "record3d" / "2026-06-03--18-26-32",
         },
     )

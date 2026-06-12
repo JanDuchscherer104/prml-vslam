@@ -13,7 +13,7 @@ from prml_vslam.sources import FileObservationSequenceLoader
 from prml_vslam.sources.config import TumRgbdSourceConfig, normalized_profile_for_source_config
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetStore
+from prml_vslam.sources.datasets.normalized_store import normalized_store_for_path_config
 from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdCatalog,
@@ -437,7 +437,8 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = TumRgbdDatasetService(path_config)
     source_config = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.TUM_RGBD)
+    store = normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config)
+    assert store.store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
     profile = normalized_profile_for_source_config(
         dataset_id=DatasetId.TUM_RGBD,
         sequence_id="freiburg1_desk",

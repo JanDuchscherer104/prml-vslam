@@ -18,6 +18,7 @@ from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
     NormalizedDatasetStore,
+    normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
@@ -50,10 +51,11 @@ def dataset_service(
 
 
 def normalized_store_for_service(
-    dataset_id: DatasetId, service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService
+    dataset_id: DatasetId,
+    path_config: PathConfig,
 ) -> NormalizedDatasetStore:
-    """Build the normalized store colocated with a dataset service root."""
-    return NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=dataset_id)
+    """Build the normalized store for one dataset under the shared datastore root."""
+    return normalized_store_for_path_config(dataset_id, path_config)
 
 
 def source_config_for_normalization(
@@ -102,12 +104,13 @@ def normalized_profile_for_dataset(
 def normalize_dataset_entry(
     *,
     dataset_id: DatasetId,
+    path_config: PathConfig,
     service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizedDatasetEntry:
     """Create or replace one full-frame normalized entry from raw local dataset data."""
     profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
-    store = normalized_store_for_service(dataset_id, service)
+    store = normalized_store_for_service(dataset_id, path_config)
     return store.create_entry_from_source(
         profile=profile,
         source=raw_dataset_source(dataset_id=dataset_id, service=service, source_config=source_config),
@@ -130,6 +133,7 @@ def normalize_dataset_entries(
         return [
             normalize_dataset_entry(
                 dataset_id=dataset_id,
+                path_config=path_config,
                 service=service,
                 source_config=source_config_for_normalization(
                     dataset_id=dataset_id,
@@ -157,6 +161,7 @@ def _normalize_dataset_entry_worker(
     service = dataset_service(dataset_id, path_config)
     return normalize_dataset_entry(
         dataset_id=dataset_id,
+        path_config=path_config,
         service=service,
         source_config=source_config_for_normalization(
             dataset_id=dataset_id,
@@ -174,11 +179,12 @@ def open_normalized_dataset_stream(
     service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
     include_depth: bool,
+    path_config: PathConfig,
     output_dir: Path | None = None,
 ) -> ObservationStream:
     """Open a replay stream from one normalized dataset entry."""
     profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
-    store = normalized_store_for_service(dataset_id, service)
+    store = normalized_store_for_service(dataset_id, path_config)
     entry = store.load_entry(profile)
     return store.open_stream(
         entry,

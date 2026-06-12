@@ -49,7 +49,7 @@ Use this file for package-root ownership rules and cross-package contract constr
     materialization, source-stage outputs, and prepared reference identifiers
     and DTOs such as `PreparedBenchmarkInputs`
   - owns reusable normalized dataset stores under
-    `.data/<dataset>/.normalized/<sequence>/<profile-key>/`; store entries
+    `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`; store entries
     persist full-frame source payloads once plus source-owned long-form
     Core/Motion statistics and metadata tables, while run-local sampling policy
     such as `frame_stride` and `target_fps` is applied by readers through

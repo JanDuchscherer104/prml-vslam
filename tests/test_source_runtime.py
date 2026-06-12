@@ -608,6 +608,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert calls[0][1]["frame_selection"].target_fps == 15.0
     assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
     assert calls[0][1]["normalized_store"].dataset_id is DatasetId.TUM_RGBD
+    assert calls[0][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
     assert calls[0][1]["normalized_profile"].dataset_id is DatasetId.TUM_RGBD
     assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
     assert calls[1][1]["sequence_id"] == 20
@@ -615,6 +616,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert calls[1][1]["normalize_video_orientation"] is True
     assert calls[1][1]["frame_selection"].frame_stride == 3
     assert calls[1][1]["normalized_store"].dataset_id is DatasetId.ADVIO
+    assert calls[1][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
     assert calls[1][1]["normalized_profile"].dataset_id is DatasetId.ADVIO
     assert calls[1][1]["normalized_profile"].sequence_id == "advio-20"
 

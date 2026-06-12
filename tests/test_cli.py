@@ -98,6 +98,8 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
 
     assert result.exit_code == 0
     assert "record3d_dataset" in result.stdout
+    assert "vslam-datastore" in result.stdout
+    assert "record3d" in result.stdout
 
 
 def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monkeypatch) -> None:

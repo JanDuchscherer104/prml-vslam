@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from evo.core import metrics
@@ -22,6 +23,7 @@ from prml_vslam.app.models import (
     Record3DDatasetPageState,
     Record3DDatasetPoseSource,
 )
+from prml_vslam.app.pages import datasets as datasets_page
 from prml_vslam.app.pipeline_controller import (
     build_pipeline_snapshot_render_model,
     build_pipeline_viewer_link_model,
@@ -53,6 +55,26 @@ from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
+
+
+def test_normalized_store_fingerprint_uses_shared_datastore_root(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store_root = path_config.resolve_normalized_datastore_dir("record3d")
+    entry_root = store_root / "synthetic" / "profile"
+    entry_root.mkdir(parents=True)
+    (entry_root / "entry.json").write_text("{}", encoding="utf-8")
+    (entry_root / "sequence_manifest.json").write_text("{}", encoding="utf-8")
+    old_root = path_config.resolve_dataset_dir("record3d") / ".normalized" / "synthetic" / "profile"
+    old_root.mkdir(parents=True)
+    (old_root / "entry.json").write_text("{}", encoding="utf-8")
+    context = SimpleNamespace(path_config=path_config)
+
+    fingerprint = datasets_page._normalized_store_fingerprint(context, DatasetId.RECORD3D)
+
+    assert [row[0] for row in fingerprint] == [
+        "synthetic/profile/entry.json",
+        "synthetic/profile/sequence_manifest.json",
+    ]
 
 
 def test_metrics_page_state_preserves_persisted_view_fields() -> None:

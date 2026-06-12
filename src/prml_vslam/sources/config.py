@@ -17,8 +17,8 @@ from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingC
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetProfile,
-    NormalizedDatasetStore,
     normalized_dataset_profile,
+    normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DMaterializationConfig, record3d_layout
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
@@ -96,7 +96,7 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
             reference_cloud=self.reference_cloud,
-            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.TUM_RGBD),
+            normalized_store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
             normalized_profile=profile,
         )
 
@@ -144,7 +144,7 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
             normalize_video_orientation=self.normalize_video_orientation,
-            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.ADVIO),
+            normalized_store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
             normalized_profile=profile,
         )
 
@@ -186,7 +186,7 @@ class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingS
             replay_mode=self.replay_mode,
             materialization=self.materialization,
             reference_cloud=self.reference_cloud,
-            normalized_store=NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D),
+            normalized_store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
             normalized_profile=profile,
         )
 

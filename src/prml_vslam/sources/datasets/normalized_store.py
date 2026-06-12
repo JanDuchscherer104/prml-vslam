@@ -25,7 +25,7 @@ from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfi
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
-from prml_vslam.utils import BaseData, JsonObject, JsonValue
+from prml_vslam.utils import BaseData, JsonObject, JsonValue, PathConfig
 from prml_vslam.utils.serialization import stable_hash, write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
@@ -81,10 +81,14 @@ class NormalizedDatasetEntry(BaseData):
 class NormalizedDatasetStore:
     """Filesystem store for reusable full-frame normalized dataset payloads."""
 
-    def __init__(self, *, dataset_root: Path, dataset_id: DatasetId) -> None:
-        self.dataset_root = dataset_root.resolve()
+    def __init__(self, *, store_root: Path, dataset_id: DatasetId) -> None:
         self.dataset_id = dataset_id
-        self.store_root = self.dataset_root / ".normalized"
+        self.store_root = store_root.resolve()
+
+    @property
+    def preview_root(self) -> Path:
+        """Return the run-local preview scratch root for normalized entries."""
+        return self.store_root / ".preview"
 
     def entry_root(self, profile: NormalizedDatasetProfile) -> Path:
         """Return the root directory for one profile."""
@@ -458,6 +462,21 @@ def normalized_dataset_profile(
         source_id=source_id,
         source_profile=profile,
     )
+
+
+def normalized_store_for_path_config(dataset_id: DatasetId, path_config: PathConfig) -> NormalizedDatasetStore:
+    """Build the normalized store for one dataset under the shared datastore root."""
+    return NormalizedDatasetStore(
+        store_root=path_config.resolve_normalized_datastore_dir(normalized_datastore_slug(dataset_id)),
+        dataset_id=dataset_id,
+    )
+
+
+def normalized_datastore_slug(dataset_id: DatasetId) -> str:
+    """Return the filesystem slug for one normalized datastore dataset."""
+    if dataset_id is DatasetId.RECORD3D:
+        return "record3d"
+    return dataset_id.value
 
 
 def _validate_entry_paths(entry: NormalizedDatasetEntry) -> None:
