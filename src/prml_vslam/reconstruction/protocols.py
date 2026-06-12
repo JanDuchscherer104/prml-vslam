@@ -49,5 +49,23 @@ class OfflineReconstructionBackend(Protocol):
         """
         ...
 
+    @abstractmethod
+    def run_point_cloud(
+        self,
+        point_cloud_path: Path,
+        *,
+        artifact_root: Path,
+    ) -> ReconstructionArtifacts:
+        """Reconstruct one scene from a pre-aligned point cloud.
+
+        Args:
+            point_cloud_path: Path to the input PLY point cloud.
+            artifact_root: Directory where normalized outputs should be written.
+
+        Returns:
+            Durable reconstruction artifacts and side metadata.
+        """
+        ...
+
 
 __all__ = ["OfflineReconstructionBackend"]
