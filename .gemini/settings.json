@@ -17,24 +17,17 @@
       ]
     },
     "graphify": {
-      "command": "uv",
+      "command": "python3",
       "args": [
-        "run",
-        "--preview-features",
-        "extra-build-dependencies",
-        "--group",
-        "dev",
-        "python",
-        "-m",
-        "graphify.serve",
-        "graphify-out/graph.json"
+        ".agents/scripts/graphify_repo.py",
+        "mcp"
       ]
     },
     "mempalace": {
-      "command": "bash",
+      "command": "python3",
       "args": [
-        "-lc",
-        "cd \"$(git rev-parse --show-toplevel)\" && exec .venv/bin/python -m mempalace.mcp_server --palace .artifacts/mempalace/palace"
+        ".agents/skills/mempalace-repo/scripts/mempalace_repo.py",
+        "mcp"
       ]
     }
   },

@@ -14,6 +14,7 @@ repository.
 - the staged docs source tree under `.artifacts/mempalace/sources/docs`
 - the staged Codex raw session copies under `.artifacts/mempalace/sources/chats`
 - refresh/search workflows through the wrapper script
+- repo-local MCP startup through the installed `mempalace-mcp` executable
 
 ## Workflow
 
@@ -50,6 +51,11 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
    but complete enough for later mining: decisions, files changed, validation,
    blockers, and follow-up facts.
 
+The docs wing intentionally includes repo guidance, `.agents/skills/`,
+`.agents/references/`, agents-db TOML state, and checked-in Codex config/hooks
+in addition to public docs. Do not add generated artifacts, `.omx/` runtime
+state, caches, or full source trees to the default mining scope.
+
 ## Guardrails
 
 - Treat the repo-local palace as derived state. Refresh it instead of editing
@@ -61,5 +67,8 @@ python3 .agents/skills/mempalace-repo/scripts/mempalace_repo.py wake-up
   needed.
 - Do not assume the global `~/.mempalace` palace is the one this repo uses; the
   wrapper script pins a repo-local palace path.
+- Do not assume MemPalace is importable from the repo virtualenv. The wrapper
+  locates `mempalace` and `mempalace-mcp` on PATH, with `MEMPALACE_BIN` and
+  `MEMPALACE_MCP_BIN` overrides for unusual installs.
 - Treat `.artifacts/mempalace/` as derived state. Do not hand-edit staged
   sources, logs, or palace index files.
