@@ -28,8 +28,13 @@ class ArxivSourceSpec:
     title: str | None = None
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> ArxivSourceSpec:
+    def from_json(cls, payload: dict[str, Any]) -> ArxivSourceSpec | None:
         """Build one spec from one JSON object."""
+
+        source_kind = _optional_non_empty_string(payload, "kind") or "arxiv"
+        if source_kind != "arxiv":
+            _require_non_empty_string(payload, "source_url")
+            return None
 
         arxiv_id = _require_non_empty_string(payload, "arxiv_id")
         tex_dir = _require_non_empty_string(payload, "tex_dir")
@@ -112,10 +117,12 @@ def load_manifest(path: Path) -> list[ArxivSourceSpec]:
             msg = f"Manifest line {line_number} in {path} must decode to a JSON object."
             raise ValueError(msg)
         try:
-            specs.append(ArxivSourceSpec.from_json(payload))
+            spec = ArxivSourceSpec.from_json(payload)
         except ValueError as exc:
             msg = f"Invalid manifest entry on line {line_number} of {path}: {exc}"
             raise ValueError(msg) from exc
+        if spec is not None:
+            specs.append(spec)
     return specs
 
 
