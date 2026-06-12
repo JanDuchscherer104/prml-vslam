@@ -54,10 +54,9 @@ from prml_vslam.sources.datasets.advio import (
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
-    normalize_dataset_entry,
+    normalize_dataset_entries,
     normalized_store_for_service,
     parse_dataset_id,
-    source_config_for_normalization,
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
@@ -1063,7 +1062,17 @@ def dataset_normalize(
         str,
         typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
     ],
-    sequence: Annotated[str, typer.Option("--sequence", help="Dataset sequence id or local Record3D archive stem.")],
+    sequences: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--sequence",
+            help="Repeat to select one or more sequences. Omit to normalize all offline-ready local sequences.",
+        ),
+    ] = None,
+    workers: Annotated[
+        int | None,
+        typer.Option("--workers", min=1, help="Parallel workers for all-sequence normalization. Defaults to CPUs."),
+    ] = None,
     reference_cloud_pixel_stride: Annotated[
         int | None,
         typer.Option("--reference-cloud-pixel-stride", "--record3d-reference-cloud-pixel-stride", min=1),
@@ -1077,7 +1086,7 @@ def dataset_normalize(
         typer.Option("--reference-cloud-max-points", "--record3d-reference-cloud-max-points", min=1),
     ] = None,
 ) -> None:
-    """Create or replace one full-frame normalized dataset entry."""
+    """Create or replace full-frame normalized dataset entries."""
     path_config = get_path_config()
     try:
         dataset_id = parse_dataset_id(dataset)
@@ -1098,13 +1107,27 @@ def dataset_normalize(
             if value is not None
         }
     )
-    source_config = source_config_for_normalization(
+    sequence_ids = service.list_local_sequence_ids() if not sequences else sequences
+    if not sequence_ids:
+        raise typer.BadParameter(f"No offline-ready local {dataset_id.label} sequences found.")
+    worker_count = workers or (os.cpu_count() or 1)
+    entries = normalize_dataset_entries(
         dataset_id=dataset_id,
-        sequence_id=sequence,
+        path_config=path_config,
+        sequence_ids=sequence_ids,
         reference_cloud=None if dataset_id is DatasetId.ADVIO else reference_cloud,
+        workers=worker_count,
     )
-    entry = normalize_dataset_entry(dataset_id=dataset_id, service=service, source_config=source_config)
-    console.plog({"entry": entry.model_dump(mode="json")})
+    payload = {
+        "dataset_id": dataset_id.value,
+        "sequence_count": len(sequence_ids),
+        "workers": min(worker_count, len(sequence_ids)),
+    }
+    if len(entries) == 1 and sequences:
+        payload["entry"] = entries[0].model_dump(mode="json")
+    else:
+        payload["entries"] = [entry.model_dump(mode="json") for entry in entries]
+    console.plog(payload)
 
 
 @dataset_app.command("summary")

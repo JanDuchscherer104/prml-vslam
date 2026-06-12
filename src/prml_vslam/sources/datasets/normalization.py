@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from prml_vslam.sources.config import (
@@ -11,7 +12,7 @@ from prml_vslam.sources.config import (
     normalized_profile_for_source_config,
 )
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizableDatasetSource,
     NormalizedDatasetEntry,
@@ -21,6 +22,7 @@ from prml_vslam.sources.datasets.normalized_store import (
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.sources.replay import ObservationStream
+from prml_vslam.utils import JsonObject
 from prml_vslam.utils.path_config import PathConfig
 
 
@@ -57,20 +59,22 @@ def normalized_store_for_service(
 def source_config_for_normalization(
     *,
     dataset_id: DatasetId,
-    sequence_id: str,
+    sequence_id: SequenceKey,
     reference_cloud: ReferenceCloudConfig | None = None,
 ) -> AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig:
     """Build the source config whose byte-affecting fields define one store profile."""
     match dataset_id:
         case DatasetId.ADVIO:
-            return AdvioSourceConfig(sequence_id=sequence_id)
+            return AdvioSourceConfig(
+                sequence_id=f"advio-{int(sequence_id):02d}" if isinstance(sequence_id, int) else sequence_id
+            )
         case DatasetId.TUM_RGBD:
             return TumRgbdSourceConfig(
-                sequence_id=sequence_id, reference_cloud=reference_cloud or ReferenceCloudConfig()
+                sequence_id=str(sequence_id), reference_cloud=reference_cloud or ReferenceCloudConfig()
             )
         case DatasetId.RECORD3D:
             return Record3DDatasetSourceConfig(
-                sequence_id=sequence_id,
+                sequence_id=str(sequence_id),
                 reference_cloud=reference_cloud or ReferenceCloudConfig(min_confidence=1),
             )
 
@@ -95,17 +99,6 @@ def normalized_profile_for_dataset(
     )
 
 
-def normalized_entry_exists(
-    *,
-    dataset_id: DatasetId,
-    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
-    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
-) -> bool:
-    """Return whether the normalized store contains the source config's profile."""
-    profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
-    return normalized_store_for_service(dataset_id, service).entry_exists(profile)
-
-
 def normalize_dataset_entry(
     *,
     dataset_id: DatasetId,
@@ -118,6 +111,60 @@ def normalize_dataset_entry(
     return store.create_entry_from_source(
         profile=profile,
         source=raw_dataset_source(dataset_id=dataset_id, service=service, source_config=source_config),
+    )
+
+
+def normalize_dataset_entries(
+    *,
+    dataset_id: DatasetId,
+    path_config: PathConfig,
+    sequence_ids: list[SequenceKey],
+    reference_cloud: ReferenceCloudConfig | None = None,
+    workers: int = 1,
+) -> list[NormalizedDatasetEntry]:
+    """Create normalized entries for multiple local dataset sequences."""
+    if workers < 1:
+        raise ValueError("workers must be >= 1.")
+    if len(sequence_ids) <= 1 or workers == 1:
+        service = dataset_service(dataset_id, path_config)
+        return [
+            normalize_dataset_entry(
+                dataset_id=dataset_id,
+                service=service,
+                source_config=source_config_for_normalization(
+                    dataset_id=dataset_id,
+                    sequence_id=sequence_id,
+                    reference_cloud=reference_cloud,
+                ),
+            )
+            for sequence_id in sequence_ids
+        ]
+    path_config_payload = path_config.model_dump(mode="json")
+    reference_cloud_payload = None if reference_cloud is None else reference_cloud.model_dump(mode="json")
+    tasks = [
+        (path_config_payload, dataset_id.value, sequence_id, reference_cloud_payload) for sequence_id in sequence_ids
+    ]
+    with ProcessPoolExecutor(max_workers=min(workers, len(tasks))) as executor:
+        return list(executor.map(_normalize_dataset_entry_worker, tasks))
+
+
+def _normalize_dataset_entry_worker(
+    task: tuple[JsonObject, str, SequenceKey, JsonObject | None],
+) -> NormalizedDatasetEntry:
+    path_config_payload, dataset_id_value, sequence_id, reference_cloud_payload = task
+    dataset_id = DatasetId(dataset_id_value)
+    path_config = PathConfig.model_validate(path_config_payload)
+    service = dataset_service(dataset_id, path_config)
+    return normalize_dataset_entry(
+        dataset_id=dataset_id,
+        service=service,
+        source_config=source_config_for_normalization(
+            dataset_id=dataset_id,
+            sequence_id=sequence_id,
+            reference_cloud=None
+            if reference_cloud_payload is None
+            else ReferenceCloudConfig.model_validate(reference_cloud_payload),
+        ),
     )
 
 

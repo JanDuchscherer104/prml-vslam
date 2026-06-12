@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import typer
@@ -97,6 +98,61 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
 
     assert result.exit_code == 0
     assert "record3d_dataset" in result.stdout
+
+
+def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+        def list_local_sequence_ids(self) -> list[str]:
+            return ["scene-a", "scene-b"]
+
+    class FakeEntry:
+        def __init__(self, sequence_id: str) -> None:
+            self.sequence_id = sequence_id
+
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": self.sequence_id, "mode": mode}
+
+    def fake_normalize_dataset_entries(**kwargs):
+        captured.update(kwargs)
+        return [FakeEntry(sequence_id) for sequence_id in kwargs["sequence_ids"]]
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+    monkeypatch.setattr(main_module.os, "cpu_count", lambda: 7)
+    monkeypatch.setattr(main_module, "normalize_dataset_entries", fake_normalize_dataset_entries)
+
+    result = runner.invoke(app, ["dataset", "normalize", "--dataset", "record3d"])
+
+    assert result.exit_code == 0
+    assert captured["sequence_ids"] == ["scene-a", "scene-b"]
+    assert captured["workers"] == 7
+    assert "'sequence_count': 2" in result.stdout
+    assert "'workers': 2" in result.stdout
+    assert "'entries'" in result.stdout
+
+
+def test_dataset_normalize_preserves_single_sequence_entry_payload(monkeypatch) -> None:
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+        def list_local_sequence_ids(self) -> list[str]:
+            raise AssertionError("explicit sequence should not list local ids")
+
+    class FakeEntry:
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": "scene-a", "mode": mode}
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+    monkeypatch.setattr(main_module, "normalize_dataset_entries", lambda **kwargs: [FakeEntry()])
+
+    result = runner.invoke(app, ["dataset", "normalize", "--dataset", "record3d", "--sequence", "scene-a"])
+
+    assert result.exit_code == 0
+    assert "'entry'" in result.stdout
+    assert "'entries'" not in result.stdout
 
 
 @pytest.mark.parametrize("command", (("advio", "download"), ("tum-rgbd", "download")))
