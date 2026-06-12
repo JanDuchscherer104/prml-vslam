@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Protocol
 
+import cv2
+import numpy as np
 from pydantic import Field
 
 from prml_vslam.interfaces import ObservationSequenceIndex, ObservationSequenceRef, write_camera_intrinsics_yaml
@@ -18,13 +22,6 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
-from prml_vslam.sources.datasets.normalized_tables import (
-    load_depth_array,
-    load_timestamps_ns,
-    metadata_rows,
-    statistics_rows,
-    write_long_csv,
-)
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
@@ -35,8 +32,6 @@ from prml_vslam.utils.video_frames import extract_video_frames
 ENTRY_FILENAME = "entry.json"
 SEQUENCE_MANIFEST_FILENAME = "sequence_manifest.json"
 BENCHMARK_INPUTS_FILENAME = "benchmark_inputs.json"
-STATS_LONG_FILENAME = "stats_long.csv"
-METADATA_LONG_FILENAME = "metadata_long.csv"
 STORE_SCHEMA_VERSION = 4
 
 
@@ -80,8 +75,6 @@ class NormalizedDatasetEntry(BaseData):
     root: Path
     sequence_manifest_path: Path
     benchmark_inputs_path: Path
-    stats_long_csv_path: Path | None = None
-    metadata_long_csv_path: Path | None = None
     created_at_ns: int = Field(default_factory=time.time_ns)
 
 
@@ -133,7 +126,24 @@ class NormalizedDatasetStore:
         benchmark_inputs: PreparedBenchmarkInputs,
     ) -> NormalizedDatasetEntry:
         """Persist one full-frame normalized entry."""
-        root = self.entry_root(profile).resolve()
+        return self._create_and_publish_entry(
+            profile,
+            lambda temp_root: self._create_entry_at_root(
+                profile=profile,
+                sequence_manifest=sequence_manifest,
+                benchmark_inputs=benchmark_inputs,
+                root=temp_root,
+            ),
+        )
+
+    def _create_entry_at_root(
+        self,
+        *,
+        profile: NormalizedDatasetProfile,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs,
+        root: Path,
+    ) -> NormalizedDatasetEntry:
         root.mkdir(parents=True, exist_ok=True)
         benchmark_inputs = self._normalize_benchmark_inputs(benchmark_inputs, root=root)
         sequence_manifest = self._normalize_sequence_manifest(
@@ -143,22 +153,8 @@ class NormalizedDatasetStore:
         )
         sequence_manifest_path = root / SEQUENCE_MANIFEST_FILENAME
         benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
-        stats_long_csv_path = root / STATS_LONG_FILENAME
-        metadata_long_csv_path = root / METADATA_LONG_FILENAME
         write_json(sequence_manifest_path, sequence_manifest)
         write_json(benchmark_inputs_path, benchmark_inputs)
-        write_long_csv(
-            stats_long_csv_path,
-            statistics_rows(
-                sequence_manifest=sequence_manifest, benchmark_inputs=benchmark_inputs, profile_key=profile.profile_key
-            ),
-        )
-        write_long_csv(
-            metadata_long_csv_path,
-            metadata_rows(
-                sequence_manifest=sequence_manifest, benchmark_inputs=benchmark_inputs, profile_key=profile.profile_key
-            ),
-        )
         entry = NormalizedDatasetEntry(
             dataset_id=self.dataset_id,
             sequence_id=profile.sequence_id,
@@ -168,8 +164,6 @@ class NormalizedDatasetStore:
             root=root,
             sequence_manifest_path=sequence_manifest_path,
             benchmark_inputs_path=benchmark_inputs_path,
-            stats_long_csv_path=stats_long_csv_path,
-            metadata_long_csv_path=metadata_long_csv_path,
         )
         write_json(root / ENTRY_FILENAME, entry)
         return entry
@@ -181,12 +175,34 @@ class NormalizedDatasetStore:
         source: NormalizableDatasetSource,
     ) -> NormalizedDatasetEntry:
         """Prepare and persist one full-frame entry from a dataset source."""
-        entry_root = self.entry_root(profile)
-        return self.create_entry(
-            profile=profile,
-            sequence_manifest=source.prepare_sequence_manifest(entry_root / "input"),
-            benchmark_inputs=source.prepare_benchmark_inputs(entry_root / "benchmark"),
+        return self._create_and_publish_entry(
+            profile,
+            lambda temp_root: self._create_entry_at_root(
+                profile=profile,
+                sequence_manifest=source.prepare_sequence_manifest(temp_root / "input"),
+                benchmark_inputs=source.prepare_benchmark_inputs(temp_root / "benchmark"),
+                root=temp_root,
+            ),
         )
+
+    def _create_and_publish_entry(
+        self,
+        profile: NormalizedDatasetProfile,
+        build: Callable[[Path], NormalizedDatasetEntry],
+    ) -> NormalizedDatasetEntry:
+        root = self.entry_root(profile).resolve()
+        temp_root = _temporary_entry_root(root)
+        if temp_root.exists():
+            shutil.rmtree(temp_root)
+        try:
+            entry = build(temp_root)
+            self._validate_entry(entry=entry, profile=profile, entry_path=temp_root / ENTRY_FILENAME)
+            self._validate_entry_payloads(entry)
+            _rewrite_json_path_prefixes(temp_root, old_root=temp_root, new_root=root)
+            _publish_entry_root(temp_root=temp_root, final_root=root)
+            return self.load_entry(profile)
+        finally:
+            _cleanup_temporary_entry_root(temp_root)
 
     def read_sequence_manifest(
         self,
@@ -447,10 +463,6 @@ def normalized_dataset_profile(
 def _validate_entry_paths(entry: NormalizedDatasetEntry) -> None:
     _ensure_under(entry.root, entry.sequence_manifest_path)
     _ensure_under(entry.root, entry.benchmark_inputs_path)
-    if entry.stats_long_csv_path is None or entry.metadata_long_csv_path is None:
-        raise RuntimeError("Current normalized entries must include stats_long and metadata_long CSV paths.")
-    _ensure_existing_under(entry.root, entry.stats_long_csv_path)
-    _ensure_existing_under(entry.root, entry.metadata_long_csv_path)
 
 
 def _is_stale_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
@@ -568,6 +580,80 @@ def _copy_path(source: Path, target: Path) -> Path:
     else:
         shutil.copy2(source, target)
     return target.resolve()
+
+
+def load_depth_array(path: Path) -> np.ndarray:
+    """Load a metric-depth payload stored as `.npy` or image data."""
+    if path.suffix.lower() == ".npy":
+        return np.load(path).astype(np.float32)
+    depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if depth is None:
+        raise FileNotFoundError(f"Could not load depth image: {path}")
+    return depth.astype(np.float32)
+
+
+def load_timestamps_ns(path: Path) -> list[int]:
+    """Load normalized timestamps from JSON or simple delimited text."""
+    if path.suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        timestamp_values = payload["timestamps_ns"] if isinstance(payload, dict) else payload
+        return [int(value) for value in timestamp_values]
+    timestamps_ns: list[int] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        timestamp_s = stripped.split(",", maxsplit=1)[0].split(maxsplit=1)[0]
+        timestamps_ns.append(int(round(float(timestamp_s) * 1e9)))
+    return timestamps_ns
+
+
+def _temporary_entry_root(final_root: Path) -> Path:
+    workspace = final_root.parents[1] / f".tmp-normalized-{time.time_ns()}"
+    return workspace / final_root.parent.name / final_root.name
+
+
+def _cleanup_temporary_entry_root(temp_root: Path) -> None:
+    workspace = temp_root.parents[1]
+    if workspace.name.startswith(".tmp-normalized-") and workspace.exists():
+        shutil.rmtree(workspace)
+    elif temp_root.exists():
+        shutil.rmtree(temp_root)
+
+
+def _rewrite_json_path_prefixes(root: Path, *, old_root: Path, new_root: Path) -> None:
+    old_prefix = old_root.resolve().as_posix()
+    new_prefix = new_root.resolve().as_posix()
+    for path in sorted(root.rglob("*.json")):
+        payload: JsonValue = json.loads(path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps(_rebase_json_paths(payload, old_prefix, new_prefix), indent=2), encoding="utf-8")
+
+
+def _rebase_json_paths(value: JsonValue, old_prefix: str, new_prefix: str) -> JsonValue:
+    if isinstance(value, str) and value.startswith(old_prefix):
+        return f"{new_prefix}{value.removeprefix(old_prefix)}"
+    if isinstance(value, list):
+        return [_rebase_json_paths(item, old_prefix, new_prefix) for item in value]
+    if isinstance(value, dict):
+        return {key: _rebase_json_paths(item, old_prefix, new_prefix) for key, item in value.items()}
+    return value
+
+
+def _publish_entry_root(*, temp_root: Path, final_root: Path) -> None:
+    final_root.parent.mkdir(parents=True, exist_ok=True)
+    backup_root = final_root.with_name(f".{final_root.name}.old-{time.time_ns()}")
+    moved_existing = False
+    try:
+        if final_root.exists():
+            os.replace(final_root, backup_root)
+            moved_existing = True
+        os.replace(temp_root, final_root)
+    except Exception:
+        if moved_existing and backup_root.exists() and not final_root.exists():
+            os.replace(backup_root, final_root)
+        raise
+    if backup_root.exists():
+        shutil.rmtree(backup_root)
 
 
 def _normalize_observation_sequence_ref(ref: ObservationSequenceRef, *, target_root: Path) -> ObservationSequenceRef:

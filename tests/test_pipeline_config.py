@@ -20,13 +20,12 @@ from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DSourceConfig,
-    ReferenceCloudSamplingConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, Record3DTransportId, SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig, RunArtifactPaths
@@ -379,7 +378,7 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     assert isinstance(video.backend, VideoSourceConfig)
     assert isinstance(tum.backend, TumRgbdSourceConfig)
     assert tum.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
-    assert isinstance(tum.backend.reference_cloud, ReferenceCloudSamplingConfig)
+    assert isinstance(tum.backend.reference_cloud, ReferenceCloudConfig)
     assert tum.backend.reference_cloud.depth_stride_px == 4
     assert tum.backend.reference_cloud.max_points == 5000
     assert tum.backend.reference_cloud.random_seed == 23

@@ -352,21 +352,13 @@ class Record3DSequence(BaseData):
                 "native_frame": RECORD3D_WORLD_FRAME,
                 "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
                 "pose_frame_mode": materialization.pose_frame_mode.value,
-                "method_sample_count": len(selected_frames),
-                "frame_count": len(contributed_source_frame_indices),
-                "sampled_frame_count": len(contributed_source_frame_indices),
                 "selected_frame_count": len(selected_frames),
-                "contributing_source_frame_indices": contributed_source_frame_indices,
                 "source_frame_indices": contributed_source_frame_indices,
-                "reference_cloud_sampled_frame_indices": contributed_source_frame_indices,
-                "reference_cloud_sampled_timestamps_ns": contributed_timestamps_ns,
+                "source_timestamps_ns": contributed_timestamps_ns,
                 "depth_stride_px": reference_cloud.depth_stride_px,
-                "depth_pixel_stride_px": reference_cloud.depth_stride_px,
                 "min_confidence": reference_cloud.min_confidence,
                 "max_points": reference_cloud.max_points,
-                "max_reference_points": reference_cloud.max_points,
-                "seed": reference_cloud.random_seed,
-                "point_sampling_seed": reference_cloud.random_seed,
+                "random_seed": reference_cloud.random_seed,
                 "point_sampling_policy": (
                     "none" if point_count_before_sampling == len(points_xyz) else "random_without_replacement"
                 ),
@@ -374,7 +366,6 @@ class Record3DSequence(BaseData):
                 "point_count_after_sampling": int(len(points_xyz)),
                 "candidate_count": candidate_count,
                 "rejected_count": rejected_count,
-                "point_count": int(len(points_xyz)),
             },
         )
         return ReferenceCloudRef(

@@ -122,7 +122,7 @@ class ImageSequenceObservationSource:
                 continue
             row = self.rows[source_frame_index]
             self._clock.wait_until(row.timestamp_ns)
-            depth_m = self._load_depth(row) if row.T_world_camera is not None else None
+            depth_m = self._load_depth(row)
             if row.rgb_path is None:
                 raise ValueError(f"Image sequence row seq={row.seq} is missing an RGB payload.")
             observation = Observation(

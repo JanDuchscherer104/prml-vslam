@@ -29,8 +29,6 @@ from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.streaming import SampledStreamingSource
 from prml_vslam.utils import FactoryConfig, PathConfig, get_path_config
 
-ReferenceCloudSamplingConfig = ReferenceCloudConfig
-
 
 class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSource]):
     """Configure one raw-video source adapter.
@@ -261,7 +259,6 @@ def normalized_profile_for_source_config(
 
 __all__ = [
     "AdvioSourceConfig",
-    "ReferenceCloudSamplingConfig",
     "Record3DDatasetSourceConfig",
     "Record3DSourceConfig",
     "SourceBackendConfig",

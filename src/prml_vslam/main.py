@@ -45,17 +45,11 @@ from prml_vslam.sources.config import (
     VideoSourceConfig,
 )
 from prml_vslam.sources.contracts import ReferenceSource
-from prml_vslam.sources.dataset_query import NormalizedDatasetQuery
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
     AdvioPoseFrameMode,
     AdvioPoseSource,
-)
-from prml_vslam.sources.datasets.batch_normalization import (
-    NormalizedDatasetBatchConfig,
-    NormalizedDatasetBatchProgress,
-    normalize_dataset_batch,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import (
@@ -1111,58 +1105,6 @@ def dataset_normalize(
     )
     entry = normalize_dataset_entry(dataset_id=dataset_id, service=service, source_config=source_config)
     console.plog({"entry": entry.model_dump(mode="json")})
-
-
-@dataset_app.command("normalize-batch")
-def dataset_normalize_batch(
-    config_path: Annotated[
-        Path,
-        typer.Argument(help="TOML config describing dataset sequences to normalize."),
-    ],
-) -> None:
-    """Create or reuse full-frame normalized entries from a TOML batch config."""
-    path_config = get_path_config()
-    resolved_config_path = path_config.resolve_toml_path(config_path, must_exist=True)
-    config = NormalizedDatasetBatchConfig.from_toml(resolved_config_path)
-    console.info(
-        f"Starting normalized dataset batch from {resolved_config_path} with max_workers={config.max_workers}."
-    )
-    result = normalize_dataset_batch(config, path_config=path_config, progress=_log_normalized_batch_progress)
-    console.plog({"config_path": resolved_config_path, "result": result.model_dump(mode="json")})
-    if result.failed:
-        raise typer.Exit(code=1)
-
-
-@dataset_app.command("stats")
-def dataset_stats() -> None:
-    """Print normalized-store records plus persisted stats/metadata row counts."""
-    query = NormalizedDatasetQuery(path_config=get_path_config())
-    entries = query.records()
-    records = query.record_rows(records=entries)
-    issues = query.issue_rows()
-    stats = query.stats_long_rows(records=entries)
-    metadata = query.metadata_long_rows(records=entries)
-    console.plog(
-        {
-            "records": records,
-            "issues": issues,
-            "stats_row_count": len(stats),
-            "metadata_row_count": len(metadata),
-        }
-    )
-
-
-def _log_normalized_batch_progress(event: NormalizedDatasetBatchProgress) -> None:
-    """Render user-facing normalized batch progress."""
-    prefix = "[normalized-cache]"
-    if event.stage in {"completed", "processing", "submitted"} and event.total:
-        progress = f" [{event.completed}/{event.total}]"
-    else:
-        progress = ""
-    dataset = f" {event.dataset_id.value}" if event.dataset_id is not None else ""
-    sequence = f"/{event.sequence_id}" if event.sequence_id is not None else ""
-    status = f" ({event.status})" if event.status else ""
-    console.info(f"{prefix}{progress} {event.stage}{dataset}{sequence}{status}: {event.message}")
 
 
 @dataset_app.command("summary")
