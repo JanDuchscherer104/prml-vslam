@@ -10,7 +10,7 @@ from __future__ import annotations
 from ...replay import ReplayMode
 from ..contracts import DatasetSummary, FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
 from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
-from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
+from ..sources import DatasetSequenceSource, DatasetServiceBase
 from .tum_rgbd_download import TumRgbdDownloadManager
 from .tum_rgbd_layout import load_tum_rgbd_catalog
 from .tum_rgbd_loading import load_tum_rgbd_associations
@@ -37,37 +37,14 @@ class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
         normalized_profile: NormalizedDatasetProfile | None = None,
         **stream_kwargs,
     ) -> DatasetSequenceSource:
-        config = TumRgbdSequenceConfig(
-            dataset_root=self.dataset_root,
-            sequence_id=str(sequence_id),
-            reference_cloud=reference_cloud or ReferenceCloudConfig(),
-        )
-
-        def sequence() -> TumRgbdSequence:
-            return TumRgbdSequence(config=config, catalog=self.catalog)
-
-        return DatasetSequenceSource(
+        return self._build_streaming_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
-            label=lambda value: self.scene(value).display_name,
-            manifest=lambda _value, output_dir, selection: sequence().to_sequence_manifest(
-                output_dir=output_dir,
-                frame_selection=selection,
-            ),
-            benchmark=lambda _value, output_dir, selection: sequence().to_benchmark_inputs(
-                output_dir=output_dir,
-                frame_selection=selection,
-            ),
             replay_mode=replay_mode,
+            sequence_kwargs={"reference_cloud": reference_cloud or ReferenceCloudConfig()},
             normalized_store=normalized_store,
             normalized_profile=normalized_profile,
-            stream=lambda _value, loop, mode, selection: self._open_sequence_stream(
-                sequence=sequence(),
-                frame_selection=selection,
-                loop=loop,
-                replay_mode=mode,
-                **stream_kwargs,
-            ),
+            **stream_kwargs,
         )
 
     def _preview_timestamps_ns(self, sequence: TumRgbdSequence) -> list[int]:
@@ -76,21 +53,3 @@ class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
             int(round(association.rgb_timestamp_s * 1e9))
             for association in load_tum_rgbd_associations(sequence.paths.sequence_dir)
         ]
-
-    def _open_sequence_stream(
-        self,
-        *,
-        sequence: TumRgbdSequence,
-        frame_selection: FrameSelectionConfig,
-        loop: bool,
-        replay_mode: ReplayMode,
-        **stream_kwargs,
-    ):
-        return open_dataset_sequence_stream(
-            sequence=sequence,
-            timestamps_ns=self._preview_timestamps_ns(sequence),
-            frame_selection=frame_selection,
-            loop=loop,
-            replay_mode=replay_mode,
-            **stream_kwargs,
-        )
