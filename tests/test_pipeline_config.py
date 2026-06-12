@@ -88,11 +88,11 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
     assert [key.value for key in StageKey] == [
         "source",
         "slam",
-        "gravity.align",
+        "align.gravity",
         "align.trajectory",
-        "evaluate.trajectory",
+        "eval.trajectory",
         "align.cloud",
-        "evaluate.cloud",
+        "eval.points",
         "reconstruction",
         "summary",
     ]

@@ -26,13 +26,19 @@ class GroundAlignmentConfig(BaseConfig):
     """
 
     enabled: bool = False
-    """Whether the `gravity.align` stage should run."""
+    """Whether the `align.gravity` stage should run."""
 
     strategy: Literal["ransac_point_cloud"] = "ransac_point_cloud"
     """Detection strategy used to estimate the dominant ground plane."""
 
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     """Minimum confidence required before the alignment is applied."""
+
+    streaming_policy: Literal["first_keyframes", "running_ransac"] = "first_keyframes"
+    """How streaming keyframe pointmaps are sampled for ground-plane updates."""
+
+    streaming_keyframes: int = Field(default=10, ge=1)
+    """Accepted streaming keyframes used per ground-plane estimate."""
 
 
 __all__ = ["GroundAlignmentConfig"]

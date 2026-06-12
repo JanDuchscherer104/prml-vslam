@@ -203,14 +203,15 @@ The current executable vocabulary is now the canonical target `StageKey` set:
 
 - `source`
 - `slam`
-- `gravity.align`
-- `evaluate.trajectory`
+- `align.gravity`
+- `eval.trajectory`
 - `reconstruction`
-- `evaluate.cloud`
+- `eval.points`
 - `summary`
 
-`evaluate.cloud` remains a diagnostic binding without a runtime. The old
-stage-key aliases and the deleted `evaluate.cloud` placeholder are no
+`eval.points` remains a diagnostic binding without a runtime. Historical
+artifact inspection normalizes old `gravity.align`, `evaluate.trajectory`, and
+`evaluate.cloud` keys to the current vocabulary, but those old keys are no
 longer current executable or persisted config vocabulary.
 
 ### 3. Migration DTOs are removed from the active launch path
@@ -233,12 +234,12 @@ The coordinator currently registers executable runtimes for:
 
 - `source`
 - `slam`
-- `gravity.align`
-- `evaluate.trajectory`
+- `align.gravity`
+- `eval.trajectory`
 - `reconstruction`
 - `summary`
 
-`evaluate.cloud` remains planned without a registered runtime. That is
+`eval.points` remains planned without a registered runtime. That is
 acceptable current state because it is a diagnostic placeholder, not an
 executable metric stage.
 

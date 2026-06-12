@@ -11,10 +11,10 @@ stage-authoring guidance lives in [`../README.md`](../README.md).
 The pipeline is a linear benchmark runtime, not a generic workflow engine:
 
 ```text
-source -> slam -> [gravity.align] -> [evaluate.trajectory] -> [reconstruction] -> [evaluate.cloud] -> summary
+source -> slam -> [align.gravity] -> [eval.trajectory] -> [reconstruction] -> [eval.points] -> summary
 ```
 
-`evaluate.cloud` is a diagnostic planning binding without a runtime. Efficiency
+`eval.points` is a diagnostic planning binding without a runtime. Efficiency
 evaluation is intentionally out of the current public pipeline surface.
 
 ## Current Entry Points

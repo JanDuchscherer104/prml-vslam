@@ -1,4 +1,4 @@
-"""Persisted config for the ``evaluate.trajectory`` stage."""
+"""Persisted config for the ``eval.trajectory`` stage."""
 
 from __future__ import annotations
 

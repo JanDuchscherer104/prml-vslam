@@ -11,8 +11,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - The package exposes one authoritative runtime path through
   `PipelineBackend`, `RayPipelineBackend`, and `RunService`.
 - The current executable slice uses target persisted stage keys: `source`,
-  `slam`, optional `gravity.align`, optional `evaluate.trajectory`, optional
-  `reconstruction`, diagnostic `evaluate.cloud`, and `summary`.
+  `slam`, optional `align.gravity`, optional `eval.trajectory`, optional
+  `reconstruction`, diagnostic `eval.points`, and `summary`.
 - Runtime execution flows through domain-owned stage configs plus lazy local
   runtime-handle construction. Ray is the pipeline backend infrastructure, not
   the semantic owner of stage behavior.
@@ -38,8 +38,8 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
   a compatibility import hub.
 - The package must not re-export method protocols through the pipeline root.
 - The target executable slice must remain linear and deterministic:
-  `source`, `slam`, optional `gravity.align`, optional
-  `evaluate.trajectory`, optional `reconstruction`, and `summary`.
+  `source`, `slam`, optional `align.gravity`, optional
+  `eval.trajectory`, optional `reconstruction`, and `summary`.
 - `RunSnapshot` must project durable lifecycle/provenance state from `RunEvent`
   and live status, previews, and transient refs from `StageRuntimeUpdate`;
   it must not become a second mutable runtime truth.
@@ -52,7 +52,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - `summary` must be projection-only; it must not compute trajectory or cloud
   metrics.
 - Trajectory evaluation may run only from prepared benchmark inputs and
-  normalized SLAM artifacts. `evaluate.cloud` is a diagnostic binding with no
+  normalized SLAM artifacts. `eval.points` is a diagnostic binding with no
   runtime yet; performance telemetry metrics are not part of the current public
   surface.
 
@@ -79,7 +79,7 @@ This file is the concise source of truth for the `prml_vslam.pipeline` package.
 - `RunSnapshot` remains a transport-safe projection derived from durable events
   plus live runtime updates/status; it must not become mutable runtime truth.
 - Target public stage vocabulary is exactly `source`, `slam`,
-  `gravity.align`, `evaluate.trajectory`, `reconstruction`, `evaluate.cloud`,
+  `align.gravity`, `eval.trajectory`, `reconstruction`, `eval.points`,
   and `summary`.
 - Rerun SDK calls belong only in sinks/policy/helper modules. Stage runtimes,
   DTOs, proxies, and visualization adapters may expose neutral visualization

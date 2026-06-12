@@ -20,6 +20,7 @@ import pytest
 import ray
 from pydantic import ValidationError
 
+from prml_vslam.alignment.stage.spec import GROUND_ALIGNMENT_STAGE_SPEC
 from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
@@ -38,6 +39,7 @@ from prml_vslam.methods.contracts import SlamUpdate
 from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
 from prml_vslam.methods.stage.contracts import SlamStageOutput
 from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
+from prml_vslam.methods.stage.visualization import POINTMAP_REF, ROLE_KEYFRAME_POINTMAP
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
@@ -349,7 +351,7 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
     cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
 
     assert cloud_stage.available is False
-    assert cloud_stage.availability_reason == "Dense-cloud evaluation is planned but no runtime is registered yet."
+    assert cloud_stage.availability_reason == "Point-set evaluation is planned but no runtime is registered yet."
 
 
 def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
@@ -435,7 +437,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
 
     unavailable = [stage for stage in plan.stages if not stage.available]
     assert len(unavailable) == 1
-    assert unavailable[0].key.value == "evaluate.cloud"
+    assert unavailable[0].key.value == "eval.points"
     assert "no runtime is registered yet" in unavailable[0].availability_reason
 
 
@@ -1500,8 +1502,8 @@ def test_run_coordinator_releases_streaming_credit_before_update_observer_routin
         grant_credit=SimpleNamespace(remote=lambda count: call_order.append("credit") or credits.append(count)),
     )
 
-    def _fail_update_routing(*, updates: list[StageRuntimeUpdate]) -> None:
-        del updates
+    def _fail_update_routing(*, updates: list[StageRuntimeUpdate], **kwargs) -> None:
+        del updates, kwargs
         call_order.append("updates")
         raise RuntimeError("observer routing failed")
 
@@ -1531,6 +1533,86 @@ def test_run_coordinator_releases_streaming_credit_before_update_observer_routin
     assert call_order == ["credit", "updates"]
     assert coordinator._in_flight_frames == 0
     assert coordinator._streaming_error is None
+
+
+def test_run_coordinator_records_streaming_ground_alignment_submission_failure(tmp_path: Path) -> None:
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="ground-failure", namespace="pytest-unit")
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
+    run_config = build_run_config(
+        experiment_name="ground-failure",
+        mode=PipelineMode.STREAMING,
+        output_dir=path_config.artifacts_dir,
+        source_backend=VideoSourceConfig(video_path=Path("captures/demo.mp4")),
+        method=MethodId.VISTA,
+        ground_alignment_enabled=True,
+    )
+    plan = run_config.compile_plan(path_config)
+    runtime_manager = RuntimeManager()
+
+    class FailingGroundAlignmentRuntime:
+        def status(self) -> StageRuntimeStatus:
+            return StageRuntimeStatus(stage_key=StageKey.GRAVITY_ALIGNMENT)
+
+        def start_streaming(self, input_payload) -> None:
+            del input_payload
+
+        def submit_stream_item(self, item) -> None:
+            del item
+            raise RuntimeError("ground submit boom")
+
+        def drain_runtime_updates(self, max_items: int | None = None) -> list[StageRuntimeUpdate]:
+            del max_items
+            return []
+
+        def stop(self) -> None:
+            return None
+
+        def finish_streaming(self) -> StageResult:
+            raise AssertionError("finish_streaming should not be called in this test")
+
+    runtime_manager.register(
+        StageKey.GRAVITY_ALIGNMENT,
+        factory=FailingGroundAlignmentRuntime,
+        stage_config=run_config.stages.align_ground,
+        stage_spec=GROUND_ALIGNMENT_STAGE_SPEC,
+    )
+    coordinator._run_config = run_config
+    coordinator._plan = plan
+    coordinator._path_config = path_config
+    coordinator._slam_backend = run_config.stages.slam.backend
+    coordinator._streaming_runtime_manager = runtime_manager
+    coordinator._ground_alignment_runtime_proxy = runtime_manager.runtime_for(StageKey.GRAVITY_ALIGNMENT)
+    coordinator._remember_handle("pointmap-1", np.zeros((2, 2, 3), dtype=np.float32))
+
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SLAM,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.POINT_CLOUD,
+                role=ROLE_KEYFRAME_POINTMAP,
+                payload_refs={
+                    POINTMAP_REF: TransientPayloadRef(
+                        handle_id="pointmap-1",
+                        payload_kind="points",
+                        shape=(2, 2, 3),
+                        dtype="float32",
+                    )
+                },
+                keyframe_index=1,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            )
+        ],
+    )
+
+    coordinator._publish_slam_runtime_updates([update])
+
+    failed_event = next(event for event in coordinator.events() if isinstance(event, StageFailed))
+    assert failed_event.stage_key is StageKey.GRAVITY_ALIGNMENT
+    assert failed_event.outcome.error_message == "ground submit boom"
+    assert coordinator._streaming_error == "ground submit boom"
+    assert coordinator._ground_alignment_runtime_proxy is None
 
 
 def test_run_coordinator_records_stage_failed_events() -> None:
@@ -1638,7 +1720,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
 
     failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
-    assert "evaluate.cloud" in failed_event.error_message
+    assert "eval.points" in failed_event.error_message
 
 
 def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:

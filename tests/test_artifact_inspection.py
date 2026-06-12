@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import cv2
@@ -124,6 +125,101 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
     assert inspection.event_count == 4
     assert any(row["name"] == "trajectory_path" and row["exists"] for row in inspection.canonical_paths)
     assert any(row["stage_id"] == "slam" and row["name"] == "dense_points_ply" for row in inspection.stage_output_paths)
+
+
+def test_inspect_run_artifacts_normalizes_historical_stage_keys(tmp_path: Path) -> None:
+    artifact_root = tmp_path / ".artifacts" / "demo-run" / "vista"
+    summary_dir = artifact_root / "summary"
+    summary_dir.mkdir(parents=True)
+    write_json(
+        summary_dir / "run_summary.json",
+        {
+            "run_id": "demo-run",
+            "artifact_root": artifact_root.as_posix(),
+            "stage_status": {
+                "gravity.align": "completed",
+                "trajectory.evaluate": "completed",
+                "cloud.evaluate": "skipped",
+            },
+        },
+    )
+    write_json(
+        summary_dir / "stage_manifests.json",
+        [
+            {
+                "stage_id": "gravity.align",
+                "config_hash": "cfg",
+                "input_fingerprint": "input",
+                "output_paths": {},
+                "status": "completed",
+            },
+            {
+                "stage_id": "trajectory.evaluate",
+                "config_hash": "cfg",
+                "input_fingerprint": "input",
+                "output_paths": {},
+                "status": "completed",
+            },
+            {
+                "stage_id": "cloud.evaluate",
+                "config_hash": "cfg",
+                "input_fingerprint": "input",
+                "output_paths": {},
+                "status": "skipped",
+            },
+        ],
+    )
+    events = [
+        {"kind": "run.submitted", "event_id": "1", "run_id": "demo-run", "ts_ns": 1},
+        {"kind": "run.started", "event_id": "2", "run_id": "demo-run", "ts_ns": 2},
+        {
+            "kind": "stage.completed",
+            "event_id": "3",
+            "run_id": "demo-run",
+            "ts_ns": 3,
+            "stage_key": "gravity.align",
+            "outcome": {
+                "stage_key": "gravity.align",
+                "status": "completed",
+                "config_hash": "cfg",
+                "input_fingerprint": "input",
+                "artifacts": {},
+            },
+        },
+        {
+            "kind": "stage.failed",
+            "event_id": "4",
+            "run_id": "demo-run",
+            "ts_ns": 4,
+            "stage_key": "cloud.evaluate",
+            "outcome": {
+                "stage_key": "cloud.evaluate",
+                "status": "failed",
+                "config_hash": "cfg",
+                "input_fingerprint": "input",
+                "error_message": "planned",
+            },
+        },
+    ]
+    (summary_dir / "run-events.jsonl").write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+
+    inspection = inspect_run_artifacts(artifact_root)
+
+    assert inspection.load_errors == []
+    assert inspection.event_count == 4
+    assert inspection.summary is not None
+    assert inspection.summary.stage_status == {
+        StageKey.GRAVITY_ALIGNMENT: StageStatus.COMPLETED,
+        StageKey.TRAJECTORY_EVALUATION: StageStatus.COMPLETED,
+        StageKey.CLOUD_EVALUATION: StageStatus.SKIPPED,
+    }
+    assert [manifest.stage_id for manifest in inspection.stage_manifests] == [
+        StageKey.GRAVITY_ALIGNMENT,
+        StageKey.TRAJECTORY_EVALUATION,
+        StageKey.CLOUD_EVALUATION,
+    ]
+    assert inspection.snapshot.stage_outcomes[StageKey.GRAVITY_ALIGNMENT].stage_key is StageKey.GRAVITY_ALIGNMENT
+    assert inspection.snapshot.stage_outcomes[StageKey.CLOUD_EVALUATION].stage_key is StageKey.CLOUD_EVALUATION
 
 
 def test_inspect_run_artifacts_reports_input_inventory_and_attempts(tmp_path: Path) -> None:

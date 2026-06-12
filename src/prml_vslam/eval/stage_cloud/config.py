@@ -1,4 +1,4 @@
-"""Persisted config for the diagnostic ``evaluate.cloud`` stage."""
+"""Persisted config for the diagnostic ``eval.points`` stage."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class CloudEvaluationStageConfig(StageConfig):
 
     def availability(self, context: PipelinePlanContext) -> tuple[bool, str | None]:
         del context
-        return False, "Dense-cloud evaluation is planned but no runtime is registered yet."
+        return False, "Point-set evaluation is planned but no runtime is registered yet."
 
 
 __all__ = ["CloudEvaluationStageConfig", "CloudMetricId", "DenseCloudSelectionConfig"]

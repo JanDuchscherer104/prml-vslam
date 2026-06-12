@@ -41,8 +41,15 @@ ArtifactRow: TypeAlias = dict[str, ArtifactRowValue]
 BaseDataT = TypeVar("BaseDataT", bound=BaseData)
 AdapterT = TypeVar("AdapterT")
 
-_RUN_EVENT_ADAPTER = TypeAdapter(RunEvent)
-_STAGE_MANIFESTS_ADAPTER = TypeAdapter(list[StageManifest])
+_RUN_EVENT_ADAPTER: TypeAdapter[RunEvent] = TypeAdapter(RunEvent)
+_STAGE_MANIFESTS_ADAPTER: TypeAdapter[list[StageManifest]] = TypeAdapter(list[StageManifest])
+_HISTORICAL_STAGE_KEYS = {
+    "gravity.align": "align.gravity",
+    "trajectory.evaluate": "eval.trajectory",
+    "evaluate.trajectory": "eval.trajectory",
+    "cloud.evaluate": "eval.points",
+    "evaluate.cloud": "eval.points",
+}
 _CANONICAL_PATH_FIELDS = (
     "artifact_root",
     "sequence_manifest_path",
@@ -266,8 +273,9 @@ def inspect_run_artifacts(artifact_root: Path) -> RunArtifactInspection:
 def _candidate_from_root(root: Path, *, artifacts_dir: Path) -> RunArtifactCandidate:
     run_id = root.parent.name
     summary = _read_json_payload(root / "summary" / "run_summary.json")
-    if isinstance(summary, dict) and isinstance(summary.get("run_id"), str):
-        run_id = summary["run_id"]
+    summary_run_id = summary.get("run_id") if isinstance(summary, dict) else None
+    if isinstance(summary_run_id, str):
+        run_id = summary_run_id
     try:
         relative_label = root.relative_to(artifacts_dir).as_posix()
     except ValueError:
@@ -283,8 +291,9 @@ def _load_run_events(path: Path, *, load_errors: list[str]) -> list[RunEvent]:
         if not line.strip():
             continue
         try:
-            events.append(_RUN_EVENT_ADAPTER.validate_json(line))
-        except ValueError as exc:
+            payload = json.loads(line)
+            events.append(_RUN_EVENT_ADAPTER.validate_json(json.dumps(_normalize_historical_stage_keys(payload))))
+        except (json.JSONDecodeError, ValueError) as exc:
             load_errors.append(f"{path.name}:{line_number}: {exc}")
     return events
 
@@ -293,8 +302,9 @@ def _load_base_data_model(path: Path, model_type: type[BaseDataT], *, load_error
     if not path.exists():
         return None
     try:
-        return model_type.model_validate_json(path.read_text(encoding="utf-8"))
-    except ValueError as exc:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return model_type.model_validate(_normalize_historical_stage_keys(payload))
+    except (json.JSONDecodeError, ValueError) as exc:
         load_errors.append(f"{path.name}: {exc}")
         return None
 
@@ -303,10 +313,26 @@ def _load_json_adapter(path: Path, adapter: TypeAdapter[AdapterT], *, load_error
     if not path.exists():
         return None
     try:
-        return adapter.validate_json(path.read_text(encoding="utf-8"))
-    except ValueError as exc:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return adapter.validate_python(_normalize_historical_stage_keys(payload))
+    except (json.JSONDecodeError, ValueError) as exc:
         load_errors.append(f"{path.name}: {exc}")
         return None
+
+
+def _normalize_historical_stage_keys(payload: JsonValue) -> JsonValue:
+    match payload:
+        case str():
+            return _HISTORICAL_STAGE_KEYS.get(payload, payload)
+        case list():
+            return [_normalize_historical_stage_keys(item) for item in payload]
+        case dict():
+            return {
+                _HISTORICAL_STAGE_KEYS.get(key, key): _normalize_historical_stage_keys(value)
+                for key, value in payload.items()
+            }
+        case _:
+            return payload
 
 
 def _read_json_payload(path: Path) -> JsonValue:

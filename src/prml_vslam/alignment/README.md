@@ -30,7 +30,7 @@ backend outputs.
 ## Stage Integration
 
 - Config: [`stage/config.py`](./stage/config.py) defines
-  `GroundAlignmentStageConfig` for the `gravity.align` stage. It declares the
+  `GroundAlignmentStageConfig` for the `align.gravity` stage. It declares the
   ground-alignment output path, checks that the selected SLAM backend can emit
   point-cloud artifacts, and stores alignment policy.
 - Input DTO: [`stage/contracts.py`](./stage/contracts.py) defines

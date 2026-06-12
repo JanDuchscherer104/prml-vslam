@@ -26,7 +26,7 @@ remains here.
 ## Stage Integration
 
 - Config: [`stage_trajectory/config.py`](./stage_trajectory/config.py) defines
-  `TrajectoryEvaluationStageConfig` for `evaluate.trajectory`. It declares the
+  `TrajectoryEvaluationStageConfig` for `eval.trajectory`. It declares the
   trajectory metrics artifact, verifies backend support, selects the reference
   source, and stores evaluation policy.
 - Input DTO: [`stage_trajectory/contracts.py`](./stage_trajectory/contracts.py)
@@ -40,7 +40,7 @@ remains here.
   adapts `TrajectoryEvaluationService` into `OfflineStageRuntime` and returns
   a `TrajectoryEvaluationManifest` inside `StageResult`.
 - Diagnostic config: [`stage_cloud/config.py`](./stage_cloud/config.py) defines
-  `CloudEvaluationStageConfig` for `evaluate.cloud`. It records planned dense
+  `CloudEvaluationStageConfig` for `eval.points`. It records planned dense
   cloud metrics and artifact selection, but no runtime is registered yet.
 
 Evaluation consumes prepared references and normalized method outputs. It does
