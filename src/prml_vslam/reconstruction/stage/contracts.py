@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, TypeAlias
+from typing import Annotated, TypeAlias, Union
 
 from pydantic import Field
 
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.contracts import SlamStageOutput
-from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
+from prml_vslam.reconstruction.config import NksrBackendConfig, PoissonBackendConfig
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import BaseConfig, BaseData, RunArtifactPaths
 
 ReconstructionBackend: TypeAlias = Annotated[
-    Open3dTsdfBackendConfig,
+    Union[NksrBackendConfig, PoissonBackendConfig],
     Field(discriminator="method_id"),
 ]
 
