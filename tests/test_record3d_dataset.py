@@ -617,6 +617,62 @@ def test_normalized_store_preserves_external_benchmark_observation_sources(tmp_p
     assert (entry.root / "observations" / "observations.json").exists()
 
 
+def test_normalized_store_does_not_rewrite_opaque_json_strings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
+    profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id="synthetic",
+        source_profile={"sequence_id": "synthetic"},
+    )
+    temp_root = (store.store_root / ".tmp-normalized-test" / profile.sequence_id / profile.profile_key).resolve()
+    opaque_value = (temp_root / "literal-not-a-path-contract").as_posix()
+    monkeypatch.setattr(normalized_store_module, "_temporary_entry_root", lambda _final_root: temp_root)
+    payload_root = tmp_path / "external" / "observations"
+    rgb_dir = payload_root / "rgb"
+    rgb_dir.mkdir(parents=True)
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(rgb_dir / "000000.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    sequence_index = ObservationSequenceIndex(
+        source_id="external",
+        sequence_id="synthetic",
+        observation_count=1,
+        rows=[
+            ObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb/000000.png"),
+                provenance=ObservationProvenance(source_id=opaque_value, sequence_id="synthetic"),
+            )
+        ],
+    )
+    index_path = payload_root / "observations.json"
+    index_path.write_text(json.dumps(sequence_index.model_dump(mode="json")), encoding="utf-8")
+
+    entry = store.create_entry(
+        profile=profile,
+        sequence_manifest=SequenceManifest(sequence_id="synthetic", dataset_id=DatasetId.RECORD3D),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            observation_sequences=[
+                ObservationSequenceRef(
+                    source_id="external",
+                    sequence_id="synthetic",
+                    index_path=index_path,
+                    payload_root=payload_root,
+                    observation_count=1,
+                )
+            ]
+        ),
+    )
+    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_index = json.loads(stored_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
+
+    assert stored_inputs.observation_sequences[0].index_path.is_relative_to(entry.root)
+    assert stored_index["rows"][0]["provenance"]["source_id"] == opaque_value
+    assert not stored_index["rows"][0]["provenance"]["source_id"].startswith(entry.root.as_posix())
+
+
 def test_normalized_store_failed_rebuild_preserves_existing_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
