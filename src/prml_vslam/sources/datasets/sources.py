@@ -95,9 +95,6 @@ def open_dataset_sequence_stream(
 
 class DatasetServiceBase:
     catalog_loader: Callable[[], Any]
-    summary_model: type[DatasetSummary]
-    sequence_config_model: type[Any]
-    sequence_model: type[Any]
     dataset_root: Path
     catalog: Any
     console: Console
@@ -111,8 +108,8 @@ class DatasetServiceBase:
         self._fetch_helper = DatasetFetchHelper()
 
     def summarize(self, statuses: list[Any] | None = None) -> DatasetSummary:
-        statuses = self.local_scene_statuses() if statuses is None else statuses  # type: ignore[attr-defined]
-        return self.summary_model(
+        statuses = self.local_scene_statuses() if statuses is None else statuses
+        return DatasetSummary(
             total_scene_count=len(statuses),
             local_scene_count=sum(status.sequence_dir is not None for status in statuses),
             replay_ready_scene_count=sum(status.replay_ready for status in statuses),
@@ -122,7 +119,7 @@ class DatasetServiceBase:
         )
 
     def list_local_sequence_ids(self) -> list[SequenceKey]:
-        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]  # type: ignore[attr-defined]
+        return [status.scene.sequence_id for status in self.local_scene_statuses() if status.offline_ready]
 
     def load_local_sample(self, sequence_id: SequenceKey) -> Any:
         return self._sequence(sequence_id).load_offline_sample()
@@ -154,7 +151,7 @@ class DatasetServiceBase:
         )
 
     def resolve_sequence_id(self, sequence_slug: str) -> SequenceKey:
-        return self.scene(sequence_slug).sequence_id  # type: ignore[attr-defined]
+        return self.scene(sequence_slug).sequence_id
 
     def build_offline_source(
         self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
@@ -206,7 +203,7 @@ class DatasetServiceBase:
         return DatasetSequenceSource(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
-            label=lambda value: self.scene(value).display_name,  # type: ignore[attr-defined]
+            label=lambda value: self.scene(value).display_name,
             manifest=lambda value, output_dir, selection: self.build_sequence_manifest(
                 sequence_id=value,
                 output_dir=output_dir,
@@ -293,7 +290,4 @@ class DatasetServiceBase:
         raise NotImplementedError
 
     def _sequence(self, sequence_id: SequenceKey, **config_kwargs: Any) -> Any:
-        return self.sequence_model(
-            config=self.sequence_config_model(dataset_root=self.dataset_root, sequence_id=sequence_id, **config_kwargs),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError
