@@ -14,6 +14,15 @@ from pathlib import Path
 DOC_SUFFIXES = {".md", ".typ", ".bib", ".txt"}
 ROOT_DOC_FILES = ("README.md", "SETUP.md", "AGENTS.md")
 PACKAGE_DOC_NAMES = {"README.md", "REQUIREMENTS.md", "AGENTS.md"}
+AGENT_MEMORY_FILES = (
+    ".agents/AGENTS_INTERNAL_DB.md",
+    ".agents/issues.toml",
+    ".agents/todos.toml",
+    ".agents/refactors.toml",
+    ".agents/resolved.toml",
+    ".codex/config.toml",
+    ".codex/hooks.json",
+)
 DOCS_WING = "prml-vslam-docs"
 CHATS_WING = "prml-vslam-chats"
 AGENT_NAME = "prml-vslam-codex"
@@ -24,16 +33,37 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def venv_python() -> Path:
-    return repo_root() / ".venv" / "bin" / "python"
+def shared_repo_root() -> Path:
+    try:
+        common_dir = subprocess.check_output(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=repo_root(),
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return repo_root()
+    if not common_dir:
+        return repo_root()
+    return Path(common_dir).resolve().parent
+
+
+def mempalace_root() -> Path:
+    local_root = repo_root() / ".artifacts" / "mempalace"
+    if (local_root / "palace").exists():
+        return local_root
+    shared_root = shared_repo_root() / ".artifacts" / "mempalace"
+    if (shared_root / "palace").exists():
+        return shared_root
+    return local_root
 
 
 def palace_path() -> Path:
-    return repo_root() / ".artifacts" / "mempalace" / "palace"
+    return mempalace_root() / "palace"
 
 
 def sources_root() -> Path:
-    return repo_root() / ".artifacts" / "mempalace" / "sources"
+    return mempalace_root() / "sources"
 
 
 def docs_source_root() -> Path:
@@ -46,10 +76,6 @@ def chats_source_root() -> Path:
 
 def exports_source_root() -> Path:
     return sources_root() / "exports"
-
-
-def windows_codex_home() -> Path:
-    return Path("/mnt/c/Users/jandu/.codex")
 
 
 def _load_codex_history_module():
@@ -65,9 +91,6 @@ def _load_codex_history_module():
 
 def _candidate_codex_homes(history) -> list[Path]:
     candidates = list(history._candidate_codex_homes())
-    windows_home = windows_codex_home()
-    if windows_home.exists():
-        candidates.append(windows_home)
     unique: list[Path] = []
     seen: set[Path] = set()
     for candidate in candidates:
@@ -119,8 +142,26 @@ def _mempalace_env() -> dict[str, str]:
     return env
 
 
-def run_python_module(module: str, *args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
-    command = [str(venv_python()), "-m", module, *args]
+def _require_executable(env_name: str, default_name: str) -> str:
+    configured = os.environ.get(env_name)
+    if configured:
+        return configured
+    executable = shutil.which(default_name)
+    if executable is None:
+        raise RuntimeError(f"Missing `{default_name}` executable on PATH; install it or set {env_name}.")
+    return executable
+
+
+def mempalace_executable() -> str:
+    return _require_executable("MEMPALACE_BIN", "mempalace")
+
+
+def mempalace_mcp_executable() -> str:
+    return _require_executable("MEMPALACE_MCP_BIN", "mempalace-mcp")
+
+
+def run_mempalace(*args: str, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+    command = [mempalace_executable(), "--palace", str(palace_path()), *args]
     return subprocess.run(
         command,
         cwd=repo_root(),
@@ -131,11 +172,37 @@ def run_python_module(module: str, *args: str, capture_output: bool = False) -> 
     )
 
 
+def _init_llm_args() -> list[str]:
+    if os.environ.get("MEMPALACE_INIT_LLM") != "1":
+        return ["--no-llm"]
+
+    args: list[str] = []
+    provider = os.environ.get("MEMPALACE_INIT_LLM_PROVIDER")
+    model = os.environ.get("MEMPALACE_INIT_LLM_MODEL")
+    endpoint = os.environ.get("MEMPALACE_INIT_LLM_ENDPOINT")
+    api_key = os.environ.get("MEMPALACE_INIT_LLM_API_KEY")
+    if provider:
+        args.extend(["--llm-provider", provider])
+    if model:
+        args.extend(["--llm-model", model])
+    if endpoint:
+        args.extend(["--llm-endpoint", endpoint])
+    if api_key:
+        args.extend(["--llm-api-key", api_key])
+    if os.environ.get("MEMPALACE_ACCEPT_EXTERNAL_LLM") == "1":
+        args.append("--accept-external-llm")
+    return args
+
+
 def ensure_runtime() -> None:
-    if not venv_python().exists():
-        raise RuntimeError(f"Missing repo venv python at {venv_python()}")
-    command = [str(venv_python()), "-c", "import mempalace"]
-    subprocess.run(command, cwd=repo_root(), env=_mempalace_env(), text=True, check=True)
+    subprocess.run(
+        [mempalace_executable(), "--version"],
+        cwd=repo_root(),
+        env=_mempalace_env(),
+        text=True,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
 
 
 def _clear_directory(path: Path) -> None:
@@ -166,6 +233,15 @@ def _iter_docs_files() -> list[Path]:
         for path in package_dir.rglob("*"):
             if path.is_file() and path.name in PACKAGE_DOC_NAMES:
                 docs_files.add(path)
+    agents_dir = repo_root() / ".agents"
+    if agents_dir.exists():
+        for path in agents_dir.rglob("*"):
+            if path.is_file() and (path.name == "SKILL.md" or path.suffix in DOC_SUFFIXES):
+                docs_files.add(path)
+    for name in AGENT_MEMORY_FILES:
+        path = repo_root() / name
+        if path.exists():
+            docs_files.add(path)
     return sorted(docs_files)
 
 
@@ -224,12 +300,11 @@ def initialize_docs_source() -> None:
     docs_root = docs_source_root()
     if (docs_root / "mempalace.yaml").exists():
         return
-    run_python_module("mempalace", "init", str(docs_root), "--yes")
+    run_mempalace("init", str(docs_root), "--yes", *_init_llm_args())
 
 
 def mine_docs() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(docs_source_root()),
         "--wing",
@@ -240,8 +315,7 @@ def mine_docs() -> None:
 
 
 def mine_chats() -> None:
-    run_python_module(
-        "mempalace",
+    run_mempalace(
         "mine",
         str(chats_source_root()),
         "--mode",
@@ -268,22 +342,24 @@ def refresh() -> None:
 
 def status() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "status")
+    run_mempalace("status")
 
 
 def search(query: str) -> None:
     ensure_runtime()
-    run_python_module("mempalace", "search", query)
+    run_mempalace("search", query)
 
 
 def wake_up() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "wake-up")
+    run_mempalace("wake-up")
 
 
 def mcp() -> None:
     ensure_runtime()
-    run_python_module("mempalace", "--palace", str(palace_path()), "mcp")
+    env = _mempalace_env()
+    executable = mempalace_mcp_executable()
+    os.execve(executable, [executable, "--palace", str(palace_path())], env)
 
 
 def _build_parser() -> argparse.ArgumentParser:
