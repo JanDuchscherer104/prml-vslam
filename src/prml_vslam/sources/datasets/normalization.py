@@ -30,9 +30,8 @@ from prml_vslam.utils.path_config import PathConfig
 def parse_dataset_id(value: str) -> DatasetId:
     """Parse CLI-facing dataset aliases into canonical dataset ids."""
     normalized = value.strip().lower().replace("-", "_")
-    aliases = {"record3d": DatasetId.RECORD3D.value}
     try:
-        return DatasetId(aliases.get(normalized, normalized))
+        return DatasetId(normalized)
     except ValueError as exc:
         raise ValueError("Expected one of: advio, tum_rgbd, record3d.") from exc
 

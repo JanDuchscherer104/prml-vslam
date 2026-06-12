@@ -114,12 +114,11 @@ class NormalizedDatasetStore:
 
     def missing_entry_message(self, profile: NormalizedDatasetProfile) -> str:
         """Return an actionable missing-entry diagnostic."""
-        dataset_arg = "record3d" if profile.dataset_id is DatasetId.RECORD3D else profile.dataset_id.value
         return (
             "Missing normalized dataset entry "
             f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
             f"profile_key={profile.profile_key}. Run: prml-vslam dataset normalize "
-            f"--dataset {dataset_arg} --sequence {profile.sequence_id}"
+            f"--dataset {profile.dataset_id.value} --sequence {profile.sequence_id}"
         )
 
     def create_entry(
@@ -467,16 +466,9 @@ def normalized_dataset_profile(
 def normalized_store_for_path_config(dataset_id: DatasetId, path_config: PathConfig) -> NormalizedDatasetStore:
     """Build the normalized store for one dataset under the shared datastore root."""
     return NormalizedDatasetStore(
-        store_root=path_config.resolve_normalized_datastore_dir(normalized_datastore_slug(dataset_id)),
+        store_root=path_config.resolve_normalized_datastore_dir(dataset_id.value),
         dataset_id=dataset_id,
     )
-
-
-def normalized_datastore_slug(dataset_id: DatasetId) -> str:
-    """Return the filesystem slug for one normalized datastore dataset."""
-    if dataset_id is DatasetId.RECORD3D:
-        return "record3d"
-    return dataset_id.value
 
 
 def _validate_entry_paths(entry: NormalizedDatasetEntry) -> None:

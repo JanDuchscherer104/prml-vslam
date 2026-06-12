@@ -20,7 +20,7 @@ class DatasetId(StrEnum):
     """Datasets exposed through evaluation surfaces."""
 
     ADVIO = "advio"
-    RECORD3D = "record3d_dataset"
+    RECORD3D = "record3d"
     TUM_RGBD = "tum_rgbd"
 
     @property

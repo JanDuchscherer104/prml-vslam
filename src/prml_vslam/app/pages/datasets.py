@@ -29,7 +29,7 @@ from prml_vslam.sources.datasets.normalization import (
     open_normalized_dataset_stream,
     source_config_for_normalization,
 )
-from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry, normalized_datastore_slug
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import (
     Record3DDatasetService,
     Record3DDownloadRequest,
@@ -382,7 +382,7 @@ def _default_profile_sequence_ids(
 
 
 def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
-    store_root = context.path_config.resolve_normalized_datastore_dir(normalized_datastore_slug(dataset_id))
+    store_root = context.path_config.resolve_normalized_datastore_dir(dataset_id.value)
     if not store_root.exists():
         return ()
     paths = sorted(
