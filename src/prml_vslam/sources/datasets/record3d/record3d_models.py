@@ -76,13 +76,3 @@ class Record3DDownloadRequest(BaseConfig):
                 msg = f"Record3D sequence id must be non-negative, got {sequence_id}"
                 raise ValueError(msg)
         return normalized
-
-
-__all__ = [
-    "Record3DCatalog",
-    "Record3DDownloadRequest",
-    "Record3DMaterializationConfig",
-    "Record3DPoseFrameMode",
-    "Record3DSceneMetadata",
-    "Record3DSequenceConfig",
-]

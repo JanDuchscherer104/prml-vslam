@@ -105,15 +105,3 @@ def resolve_existing_reference_tum(dataset_root: Path, sequence_slug: str) -> Pa
     sequence_id = normalize_sequence_id(sequence_slug)
     path = cache_dir_for_sequence(dataset_root, sequence_id) / "evaluation" / "record3d_arkit.tum"
     return path if path.exists() else None
-
-
-__all__ = [
-    "archive_url",
-    "archive_path_for_sequence",
-    "cache_dir_for_sequence",
-    "list_local_sequence_ids",
-    "load_record3d_catalog",
-    "normalize_sequence_id",
-    "resolve_existing_reference_tum",
-    "scene_for_sequence_id",
-]
