@@ -194,32 +194,6 @@ def decode_confidence_frame(
     return confidence.reshape((metadata.dh, metadata.dw))
 
 
-def write_intrinsics_yaml(intrinsics: CameraIntrinsics, target_path: Path) -> Path:
-    """Write the repo's simple pinhole intrinsics YAML schema."""
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        "cameras:",
-        "- camera:",
-        f"    image_height: {intrinsics.height_px or 0}",
-        f"    image_width: {intrinsics.width_px or 0}",
-        "    type: pinhole",
-        "    intrinsics:",
-        f"      data: [{intrinsics.fx:.8g}, {intrinsics.fy:.8g}, {intrinsics.cx:.8g}, {intrinsics.cy:.8g}]",
-        "    distortion:",
-        "      type: none",
-        "      parameters:",
-        "        data: []",
-        "    T_cam_imu:",
-        "      data:",
-        "      - [1.0, 0.0, 0.0, 0.0]",
-        "      - [0.0, 1.0, 0.0, 0.0]",
-        "      - [0.0, 0.0, 1.0, 0.0]",
-        "      - [0.0, 0.0, 0.0, 1.0]",
-    ]
-    target_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    return target_path.resolve()
-
-
 def write_timestamps_json(timestamps_ns: Sequence[int], target_path: Path) -> Path:
     """Write normalized timestamp JSON for materialized RGB frames."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -279,6 +253,5 @@ __all__ = [
     "read_archive_metadata",
     "resize_rgb_to_depth",
     "timestamps_ns_from_metadata",
-    "write_intrinsics_yaml",
     "write_timestamps_json",
 ]

@@ -8,7 +8,7 @@ import numpy as np
 from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 from numpy.typing import NDArray
 
-from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
+from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform, write_camera_intrinsics_yaml
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import write_tum_trajectory
 
@@ -220,29 +220,7 @@ def ensure_tum_rgbd_intrinsics_yaml(sequence_id: str, sequence_dir: Path, target
     path = target_path or sequence_dir / "intrinsics.yaml"
     if path.exists():
         return path.resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    distortion = ", ".join(f"{value:.8g}" for value in intrinsics.distortion_coefficients)
-    rows = [
-        "cameras:",
-        "- camera:",
-        f"    image_height: {intrinsics.height_px or 480}",
-        f"    image_width: {intrinsics.width_px or 640}",
-        "    type: pinhole",
-        "    intrinsics:",
-        f"      data: [{intrinsics.fx:.8g}, {intrinsics.fy:.8g}, {intrinsics.cx:.8g}, {intrinsics.cy:.8g}]",
-        "    distortion:",
-        f"      type: {intrinsics.distortion_model or 'none'}",
-        "      parameters:",
-        f"        data: [{distortion}]",
-        "    T_cam_imu:",
-        "      data:",
-        "      - [1.0, 0.0, 0.0, 0.0]",
-        "      - [0.0, 1.0, 0.0, 0.0]",
-        "      - [0.0, 0.0, 1.0, 0.0]",
-        "      - [0.0, 0.0, 0.0, 1.0]",
-    ]
-    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    return path.resolve()
+    return write_camera_intrinsics_yaml(intrinsics, path)
 
 
 def ensure_ground_truth_tum(sequence_dir: Path, target_path: Path) -> Path:

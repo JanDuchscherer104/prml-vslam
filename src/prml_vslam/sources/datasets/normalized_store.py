@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from pydantic import Field
 
-from prml_vslam.interfaces import CameraIntrinsics, ObservationSequenceIndex, ObservationSequenceRef
+from prml_vslam.interfaces import ObservationSequenceIndex, ObservationSequenceRef, write_camera_intrinsics_yaml
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -638,33 +638,8 @@ def _dedupe_manifest_rgb(
     index = ObservationSequenceIndex.model_validate_json(observation_sequence.index_path.read_text(encoding="utf-8"))
     first_intrinsics = next((row.intrinsics for row in index.rows if row.intrinsics is not None), None)
     if first_intrinsics is not None:
-        updates["intrinsics_path"] = _write_intrinsics_yaml(first_intrinsics, input_root / "intrinsics.yaml")
+        updates["intrinsics_path"] = write_camera_intrinsics_yaml(first_intrinsics, input_root / "intrinsics.yaml")
     return manifest.model_copy(update=updates)
-
-
-def _write_intrinsics_yaml(intrinsics: CameraIntrinsics, target_path: Path) -> Path:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        "cameras:",
-        "- camera:",
-        f"    image_height: {intrinsics.height_px or 0}",
-        f"    image_width: {intrinsics.width_px or 0}",
-        "    type: pinhole",
-        "    intrinsics:",
-        f"      data: [{intrinsics.fx:.8g}, {intrinsics.fy:.8g}, {intrinsics.cx:.8g}, {intrinsics.cy:.8g}]",
-        "    distortion:",
-        "      type: none",
-        "      parameters:",
-        "        data: []",
-        "    T_cam_imu:",
-        "      data:",
-        "      - [1.0, 0.0, 0.0, 0.0]",
-        "      - [0.0, 1.0, 0.0, 0.0]",
-        "      - [0.0, 0.0, 1.0, 0.0]",
-        "      - [0.0, 0.0, 0.0, 1.0]",
-    ]
-    target_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    return target_path.resolve()
 
 
 def _select_observation_sequence(

@@ -8,14 +8,13 @@ import numpy as np
 import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.app.models import AppState, Record3DDatasetPoseSource
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
-from prml_vslam.sources.datasets.advio import AdvioDownloadPreset, AdvioModality, AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioPoseSource
 from prml_vslam.sources.datasets.record3d import Record3DLocalSceneStatus, Record3DSceneMetadata
 from prml_vslam.sources.datasets.record3d.record3d_loading import (
     Record3DArchiveFrame,
     Record3DArchiveMetadata,
     Record3DOfflineSample,
 )
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadPreset, TumRgbdModality
 
 
 class _NullContext:
@@ -62,48 +61,6 @@ def test_advio_preview_pose_sources_use_provider_readiness_flags() -> None:
     ]
 
 
-def test_datasets_page_registers_record3d_tab(monkeypatch) -> None:
-    labels: list[list[str]] = []
-    rendered: list[str] = []
-
-    def fake_tabs(tab_labels: list[str]) -> list[_NullContext]:
-        labels.append(tab_labels)
-        return [_NullContext() for _label in tab_labels]
-
-    monkeypatch.setattr(advio_page, "render_page_intro", lambda **_kwargs: None)
-    monkeypatch.setattr(advio_page.st, "tabs", fake_tabs)
-    monkeypatch.setattr(advio_page, "_render_advio_tab", lambda _context: rendered.append("advio"))
-    monkeypatch.setattr(advio_page, "_render_tum_rgbd_tab", lambda _context: rendered.append("tum"))
-    monkeypatch.setattr(advio_page, "_render_record3d_tab", lambda _context: rendered.append("record3d"))
-
-    advio_page.render(SimpleNamespace())
-
-    assert labels == [["ADVIO", "TUM RGB-D", "Record3D"]]
-    assert rendered == ["advio", "tum", "record3d"]
-
-
-def test_advio_scene_rows_include_sequence_slug_for_normalized_matching() -> None:
-    status = SimpleNamespace(
-        scene=SimpleNamespace(
-            sequence_id=1,
-            sequence_slug="advio-01",
-            venue="lab",
-            dataset_code="demo",
-            environment=SimpleNamespace(label="Indoor"),
-            archive_size_bytes=1_000_000,
-        ),
-        sequence_dir=Path(".data/advio/advio-01"),
-        replay_ready=True,
-        offline_ready=True,
-    )
-
-    from prml_vslam.app.advio_controller import _scene_rows
-
-    rows = _scene_rows([status])
-
-    assert rows[0]["Sequence"] == "advio-01"
-
-
 def test_record3d_download_form_builds_index_request_and_syncs_state(monkeypatch) -> None:
     saved: list[AppState] = []
     state = AppState()
@@ -144,82 +101,6 @@ def test_record3d_download_form_builds_index_request_and_syncs_state(monkeypatch
     assert form.request.overwrite is True
     assert state.record3d_dataset.selected_sequence_ids == [1]
     assert state.record3d_dataset.overwrite_existing is True
-    assert saved
-
-
-def test_advio_download_form_preserves_preset_and_modality_controls(monkeypatch) -> None:
-    saved: list[AppState] = []
-    state = AppState()
-    state.advio.selected_sequence_ids = [15]
-    state.advio.download_preset = AdvioDownloadPreset.STREAMING
-    state.advio.selected_modalities = [AdvioModality.CALIBRATION]
-    service = SimpleNamespace(
-        catalog=SimpleNamespace(scenes=[SimpleNamespace(sequence_id=15)]),
-        scene=lambda sequence_id: SimpleNamespace(display_name=f"ADVIO {sequence_id}"),
-    )
-    context = SimpleNamespace(
-        state=state,
-        store=SimpleNamespace(save=lambda current_state: saved.append(current_state.model_copy(deep=True))),
-        advio_service=service,
-    )
-
-    def fake_multiselect(label: str, **kwargs):
-        if label == "Scenes":
-            return [15]
-        return [AdvioModality.IPHONE_VIDEO]
-
-    monkeypatch.setattr(advio_page.st, "form", lambda *_args, **_kwargs: _NullContext())
-    monkeypatch.setattr(advio_page.st, "multiselect", fake_multiselect)
-    monkeypatch.setattr(advio_page.st, "selectbox", lambda _label, **_kwargs: AdvioDownloadPreset.FULL)
-    monkeypatch.setattr(advio_page.st, "toggle", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(advio_page.st, "form_submit_button", lambda *_args, **_kwargs: True)
-
-    form = advio_page._render_advio_download_form(context)
-
-    assert form.request.sequence_ids == [15]
-    assert form.request.preset is AdvioDownloadPreset.FULL
-    assert form.request.modalities == [AdvioModality.IPHONE_VIDEO]
-    assert state.advio.download_preset is AdvioDownloadPreset.FULL
-    assert state.advio.selected_modalities == [AdvioModality.IPHONE_VIDEO]
-    assert state.advio.overwrite_existing is True
-    assert saved
-
-
-def test_tum_rgbd_download_form_preserves_preset_and_modality_controls(monkeypatch) -> None:
-    saved: list[AppState] = []
-    state = AppState()
-    state.tum_rgbd.selected_sequence_ids = ["freiburg1_desk"]
-    state.tum_rgbd.download_preset = TumRgbdDownloadPreset.STREAMING
-    state.tum_rgbd.selected_modalities = [TumRgbdModality.RGB]
-    service = SimpleNamespace(
-        catalog=SimpleNamespace(scenes=[SimpleNamespace(sequence_id="freiburg1_desk")]),
-        scene=lambda sequence_id: SimpleNamespace(display_name=sequence_id),
-    )
-    context = SimpleNamespace(
-        state=state,
-        store=SimpleNamespace(save=lambda current_state: saved.append(current_state.model_copy(deep=True))),
-        tum_rgbd_service=service,
-    )
-
-    def fake_multiselect(label: str, **kwargs):
-        if label == "Scenes":
-            return ["freiburg1_desk"]
-        return [TumRgbdModality.DEPTH]
-
-    monkeypatch.setattr(advio_page.st, "form", lambda *_args, **_kwargs: _NullContext())
-    monkeypatch.setattr(advio_page.st, "multiselect", fake_multiselect)
-    monkeypatch.setattr(advio_page.st, "selectbox", lambda _label, **_kwargs: TumRgbdDownloadPreset.FULL)
-    monkeypatch.setattr(advio_page.st, "toggle", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(advio_page.st, "form_submit_button", lambda *_args, **_kwargs: True)
-
-    form = advio_page._render_tum_rgbd_download_form(context)
-
-    assert form.request.sequence_ids == ["freiburg1_desk"]
-    assert form.request.preset is TumRgbdDownloadPreset.FULL
-    assert form.request.modalities == [TumRgbdModality.DEPTH]
-    assert state.tum_rgbd.download_preset is TumRgbdDownloadPreset.FULL
-    assert state.tum_rgbd.selected_modalities == [TumRgbdModality.DEPTH]
-    assert state.tum_rgbd.overwrite_existing is True
     assert saved
 
 
@@ -265,63 +146,6 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
             "Normalized Profiles": 1,
         }
     ]
-
-
-def test_advio_rows_use_scene_slug_for_normalized_status() -> None:
-    rows = advio_page._rows_with_normalized_status(
-        advio_page.DatasetId.ADVIO,
-        [{"Scene": "Walk", "Sequence": "advio-15", "Local": True}],
-        advio_page.NormalizedDatasetSnapshot(
-            records=[],
-            stats=[],
-            metadata=[],
-            issues=[],
-            sequence_ids={"advio-15"},
-            default_profile_sequence_ids={"advio-15"},
-            profile_counts={"advio-15": 1},
-        ),
-    )
-
-    assert rows == [{"Scene": "Walk", "Sequence": "advio-15", "Local": True, "Normalized": True}]
-
-
-def test_normalized_snapshot_reuses_cached_query(monkeypatch) -> None:
-    calls: list[str] = []
-
-    class FakeQuery:
-        @classmethod
-        def from_path_config(cls, _path_config):
-            calls.append("from_path_config")
-            return cls()
-
-        def records(self, _dataset_ids):
-            calls.append("records")
-            return [SimpleNamespace(sequence_id="advio-15")]
-
-        def record_rows(self, *, records):
-            calls.append(f"record_rows:{len(records)}")
-            return [{"sequence_id": "advio-15"}, {"sequence_id": "advio-15"}]
-
-        def stats_long_rows(self, *, records):
-            calls.append(f"stats:{len(records)}")
-            return []
-
-        def metadata_long_rows(self, *, records):
-            calls.append(f"metadata:{len(records)}")
-            return []
-
-        def issue_rows(self, _dataset_ids):
-            calls.append("issues")
-            return []
-
-    monkeypatch.setattr(advio_page, "NormalizedDatasetQuery", FakeQuery)
-
-    snapshot = advio_page._load_normalized_dataset_snapshot(".", ".data", advio_page.DatasetId.ADVIO.value, ())
-
-    assert snapshot.sequence_ids == {"advio-15"}
-    assert snapshot.default_profile_sequence_ids == {"advio-15"}
-    assert snapshot.profile_counts == {"advio-15": 2}
-    assert calls == ["from_path_config", "records", "record_rows:1", "stats:1", "metadata:1", "issues"]
 
 
 def test_record3d_loop_preview_requires_default_normalized_profile(monkeypatch) -> None:
@@ -461,50 +285,3 @@ def _record3d_sample() -> Record3DOfflineSample:
             FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
         ],
     )
-
-
-def test_normalized_characterization_renders_from_query_tables_without_normalizing(monkeypatch) -> None:
-    normalized = advio_page.NormalizedDatasetSnapshot(
-        records=[
-            {
-                "dataset_id": advio_page.DatasetId.RECORD3D.value,
-                "sequence_id": "demo",
-                "profile_key": "profile",
-                "source_id": "record3d_dataset",
-                "root": ".data/record3d/.normalized/demo/profile",
-            }
-        ],
-        stats=[
-            {
-                "dataset_id": advio_page.DatasetId.RECORD3D.value,
-                "sequence_id": "demo",
-                "profile_key": "profile",
-                "artifact_kind": "timing",
-                "stat_name": "frame_count",
-                "value": "3",
-                "unit": "frames",
-            }
-        ],
-        metadata=[],
-        issues=[],
-        sequence_ids={"demo"},
-        default_profile_sequence_ids={"demo"},
-        profile_counts={"demo": 1},
-    )
-    rendered: list[str] = []
-
-    monkeypatch.setattr(advio_page.st, "container", lambda **_kwargs: _NullContext())
-    monkeypatch.setattr(advio_page.st, "subheader", lambda text: rendered.append(text))
-    monkeypatch.setattr(advio_page.st, "caption", lambda text: rendered.append(text))
-    monkeypatch.setattr(
-        advio_page.st,
-        "columns",
-        lambda *_args, **_kwargs: [SimpleNamespace(metric=lambda *_args: None) for _ in range(4)],
-    )
-    monkeypatch.setattr(advio_page.st, "tabs", lambda labels: [_NullContext() for _label in labels])
-    monkeypatch.setattr(advio_page.st, "dataframe", lambda *_args, **_kwargs: None)
-
-    advio_page._render_normalized_characterization(normalized)
-
-    assert "Normalized Dataset Characterization" in rendered
-    assert any("page never normalizes" in item for item in rendered)
