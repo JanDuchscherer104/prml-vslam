@@ -1143,8 +1143,7 @@ def dataset_summary(
         dataset_id = parse_dataset_id(dataset)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    service = dataset_service(dataset_id, path_config)
-    store = normalized_store_for_service(dataset_id, service)
+    store = normalized_store_for_service(dataset_id, path_config)
     console.plog(
         {
             "dataset_id": dataset_id.value,

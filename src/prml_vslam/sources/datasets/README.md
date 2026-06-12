@@ -179,7 +179,7 @@ The most important dataset-owned DTOs and outputs are:
 ## Normalized Store Batch Builds
 
 Dataset-backed sources share one canonical `NormalizedDatasetStore` under
-`.data/<dataset>/.normalized/<sequence>/<profile-key>/`. The store persists
+`.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. The store persists
 full-frame source payloads once, plus source-owned long-form Core/Motion
 statistics and metadata tables. Runtime sampling options such as
 `frame_stride` and `target_fps` remain read-time policy and do not create

@@ -228,6 +228,10 @@ class PathConfig(BaseConfig):
         """Resolve one dataset directory under the shared data root."""
         return self._resolve_dir(self.data_dir, dataset_slug, create=create)
 
+    def resolve_normalized_datastore_dir(self, dataset_slug: str, *, create: bool = False) -> Path:
+        """Resolve one normalized datastore directory under the shared data root."""
+        return self._resolve_dir(self.data_dir, "vslam-datastore", dataset_slug, create=create)
+
     def resolve_logs_dir(self, *, create: bool = False) -> Path:
         """Resolve the shared runtime logs directory."""
         return self._resolve_dir(self.logs_dir, create=create)

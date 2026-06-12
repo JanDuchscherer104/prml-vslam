@@ -90,7 +90,7 @@ scientific source of truth. Bulk arrays stay out of persisted/public contracts
 and move through repo-owned opaque handles instead.
 
 Offline dataset sources may use source-owned normalized store entries at
-`.data/<dataset>/.normalized/<sequence>/<profile-key>/`. Each entry is keyed by
+`.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. Each entry is keyed by
 dataset id, sequence id, source id, and byte-affecting source settings; sampling
 and replay pacing settings are excluded so one full-frame entry can serve many
 pipeline runs. Store entries persist `entry.json`, `sequence_manifest.json`,

@@ -29,7 +29,7 @@ from prml_vslam.sources.datasets.normalization import (
     open_normalized_dataset_stream,
     source_config_for_normalization,
 )
-from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry, normalized_datastore_slug
 from prml_vslam.sources.datasets.record3d import (
     Record3DDatasetService,
     Record3DDownloadRequest,
@@ -348,8 +348,7 @@ def _load_normalized_dataset_snapshot(
     del freshness_token
     path_config = PathConfig(root=Path(root), data_dir=Path(data_dir))
     dataset = DatasetId(dataset_id)
-    service = dataset_service(dataset, path_config)
-    store = normalized_store_for_service(dataset, service)
+    store = normalized_store_for_service(dataset, path_config)
     entries = store.summary(strict=False)
     records = [entry.model_dump(mode="json") for entry in entries]
     profile_counts: dict[str, int] = {}
@@ -383,7 +382,7 @@ def _default_profile_sequence_ids(
 
 
 def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
-    store_root = _dataset_root(context, dataset_id) / ".normalized"
+    store_root = context.path_config.resolve_normalized_datastore_dir(normalized_datastore_slug(dataset_id))
     if not store_root.exists():
         return ()
     paths = sorted(
@@ -408,7 +407,6 @@ def _dataset_root(context: AppContext, dataset_id: DatasetId) -> Path:
             return context.tum_rgbd_service.dataset_root
         case DatasetId.RECORD3D:
             return context.record3d_dataset_service.dataset_root
-    raise AssertionError(f"Unsupported dataset_id: {dataset_id}")
 
 
 def _load_tum_rgbd_explorer_sample(
@@ -535,6 +533,7 @@ def _handle_record3d_dataset_preview_action(
             service=context.record3d_dataset_service,
             source_config=source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id=sequence_id),
             include_depth=include_depth,
+            path_config=context.path_config,
             output_dir=context.path_config.resolve_output_dir(
                 Path("dataset-preview") / "record3d" / str(sequence_id), create=True
             ),

@@ -85,7 +85,7 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
             return self._normalized_store.open_stream(
                 entry,
                 frame_selection=self._frame_selection,
-                output_dir=self._normalized_store.dataset_root / ".preview" / entry.sequence_id / entry.profile_key,
+                output_dir=self._normalized_store.preview_root / entry.sequence_id / entry.profile_key,
                 loop=loop,
                 replay_mode=self._replay_mode,
             )

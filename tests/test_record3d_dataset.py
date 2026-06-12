@@ -42,6 +42,7 @@ from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
     NormalizedDatasetStore,
+    normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import (
     Record3DCatalog,
@@ -140,7 +141,7 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
         sequence_id="synthetic",
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
-    store = NormalizedDatasetStore(dataset_root=service.dataset_root, dataset_id=DatasetId.RECORD3D)
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     profile = normalized_profile_for_source_config(
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
@@ -414,6 +415,9 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
     observations = list(FileObservationSequenceLoader(stored_inputs.observation_sequences[0]).iter_observations())
 
+    assert fixture.store.store_root == (tmp_path / ".data" / "vslam-datastore" / "record3d").resolve()
+    assert entry.root.parent == fixture.store.store_root / "synthetic"
+    assert not (tmp_path / ".data" / "record3d" / ".normalized").exists()
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
     assert (entry.root / "observations" / "rgb").is_dir()
@@ -498,7 +502,8 @@ def test_normalized_store_preserves_manifest_timestamps_for_video_sources(
         "extract_video_frames",
         fake_extract_video_frames,
     )
-    store = NormalizedDatasetStore(dataset_root=tmp_path / ".data" / "advio", dataset_id=DatasetId.ADVIO)
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store = normalized_store_for_path_config(DatasetId.ADVIO, path_config)
     profile = NormalizedDatasetProfile(
         dataset_id=DatasetId.ADVIO,
         sequence_id="video-seq",
@@ -581,7 +586,8 @@ def test_normalized_store_preserves_external_benchmark_observation_sources(tmp_p
     timestamps_path = tmp_path / "source" / "timestamps.json"
     timestamps_path.parent.mkdir(parents=True)
     timestamps_path.write_text(json.dumps({"timestamps_ns": [0]}), encoding="utf-8")
-    store = NormalizedDatasetStore(dataset_root=tmp_path / ".data" / "record3d", dataset_id=DatasetId.RECORD3D)
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     profile = NormalizedDatasetProfile(
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
@@ -675,7 +681,8 @@ def test_normalized_store_uses_indexed_observation_layout_only_for_multiple_sequ
         )
     timestamps_path = tmp_path / "source" / "timestamps.json"
     timestamps_path.write_text(json.dumps({"timestamps_ns": [0]}), encoding="utf-8")
-    store = NormalizedDatasetStore(dataset_root=tmp_path / ".data" / "record3d", dataset_id=DatasetId.RECORD3D)
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     profile = NormalizedDatasetProfile(
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
