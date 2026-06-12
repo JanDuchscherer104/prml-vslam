@@ -35,5 +35,11 @@ This document is the concise source of truth for `prml_vslam.methods`.
   source manifest dematerialization belongs to source/stage helpers
 - `methods.vista` must persist ViSTA preprocessing metadata needed to know
   that estimated intrinsics live in the 224x224 model raster
+- `methods.vista` owns backend-local keyframe selection policy, including
+  ViSTA's offline `keyframe_detection` and `stride` parameters, after the
+  source stage has applied any shared benchmark frame sampling
+- Do not expose ViSTA upstream `flow_stride` as a persisted backend value until
+  the wrapper can faithfully replay the sequence and restart with stride
+  selection, as the upstream batch script does
 - Estimated-intrinsics standardization (e.g., `CameraIntrinsicsSeries`) belongs
   to the package that understands the native raster semantics
