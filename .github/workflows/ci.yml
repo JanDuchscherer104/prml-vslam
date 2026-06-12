@@ -46,12 +46,6 @@ jobs:
           [ -n "$opencv_config" ]
           echo "$opencv_config"
 
-      - name: Prepare optional LingBot path source
-        shell: bash -el {0}
-        run: |
-          set -euo pipefail
-          git clone --depth 1 https://github.com/robbyant/lingbot-map.git external/lingbot-map
-
       - name: Install project
         shell: bash -el {0}
         run: |
