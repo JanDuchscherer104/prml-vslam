@@ -1,14 +1,9 @@
-"""TUM RGB-D app- and pipeline-facing service layer.
-
-This module contains the high-level TUM RGB-D service surface that owns catalog
-summaries, normalized source adapters, and preview timing helpers for the rest
-of the package.
-"""
-
 from __future__ import annotations
 
+from typing import Any
+
 from ...replay import ReplayMode
-from ..contracts import DatasetSummary, FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
+from ..contracts import FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
 from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from ..sources import DatasetSequenceSource, DatasetServiceBase
 from .tum_rgbd_download import TumRgbdDownloadManager
@@ -19,12 +14,7 @@ from .tum_rgbd_sequence import TumRgbdSequence
 
 
 class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
-    """Provide the main TUM RGB-D service surface for app and pipeline code."""
-
     catalog_loader = staticmethod(load_tum_rgbd_catalog)
-    summary_model = DatasetSummary
-    sequence_config_model = TumRgbdSequenceConfig
-    sequence_model = TumRgbdSequence
 
     def build_streaming_source(
         self,
@@ -53,3 +43,9 @@ class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
             int(round(association.rgb_timestamp_s * 1e9))
             for association in load_tum_rgbd_associations(sequence.paths.sequence_dir)
         ]
+
+    def _sequence(self, sequence_id: SequenceKey, **config_kwargs: Any) -> TumRgbdSequence:
+        return TumRgbdSequence(
+            config=TumRgbdSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id, **config_kwargs),
+            catalog=self.catalog,
+        )

@@ -1,13 +1,8 @@
-"""ADVIO app- and pipeline-facing service layer.
-
-This module owns the high-level ADVIO service surface used by launch code. It
-turns the lower-level sequence owner into summaries, normalized source adapters,
-and preview streams without duplicating ADVIO-specific path or replay logic.
-"""
-
 from __future__ import annotations
 
-from prml_vslam.sources.datasets.contracts import AdvioServingConfig, DatasetSummary, FrameSelectionConfig
+from typing import Any
+
+from prml_vslam.sources.datasets.contracts import AdvioServingConfig, FrameSelectionConfig
 from prml_vslam.sources.replay import ReplayMode
 
 from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
@@ -20,12 +15,7 @@ from .advio_sequence import AdvioSequence
 
 
 class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
-    """Provide the main ADVIO service surface for app and pipeline code."""
-
     catalog_loader = staticmethod(load_advio_catalog)
-    summary_model = DatasetSummary
-    sequence_config_model = AdvioSequenceConfig
-    sequence_model = AdvioSequence
 
     def resolve_sequence_id(self, sequence_slug: str) -> int:
         """Resolve an ``advio-XX`` slug into the numeric ADVIO sequence id."""
@@ -37,6 +27,12 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
 
     def _preview_timestamps_ns(self, sequence: AdvioSequence) -> list[int]:
         return load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist()
+
+    def _sequence(self, sequence_id: int, **config_kwargs: Any) -> AdvioSequence:
+        return AdvioSequence(
+            config=AdvioSequenceConfig(dataset_root=self.dataset_root, sequence_id=sequence_id, **config_kwargs),
+            catalog=self.catalog,
+        )
 
     def build_offline_source(
         self,

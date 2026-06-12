@@ -1,13 +1,13 @@
-"""Service layer for local Record3D `.r3d` archives."""
-
 from __future__ import annotations
+
+from typing import Any
 
 from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from prml_vslam.sources.datasets.sources import DatasetSequenceSource, DatasetServiceBase
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import Console, PathConfig
 
-from ..contracts import DatasetSummary, FrameSelectionConfig, LocalSceneStatus, ReferenceCloudConfig, SequenceKey
+from ..contracts import FrameSelectionConfig, LocalSceneStatus, ReferenceCloudConfig, SequenceKey
 from . import record3d_layout
 from .record3d_download import Record3DDownloadManager
 from .record3d_models import (
@@ -20,12 +20,7 @@ from .record3d_sequence import Record3DSequence
 
 
 class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
-    """Provide app and pipeline service helpers for local Record3D archives."""
-
     catalog_loader = staticmethod(record3d_layout.load_record3d_catalog)
-    summary_model = DatasetSummary
-    sequence_config_model = Record3DSequenceConfig
-    sequence_model = Record3DSequence
 
     def __init__(self, path_config: PathConfig, *, catalog: Record3DCatalog | None = None) -> None:
         resolved_catalog = self.catalog_loader() if catalog is None else catalog
@@ -99,3 +94,11 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
 
     def _preview_timestamps_ns(self, sequence: Record3DSequence) -> list[int]:
         return sequence.load_offline_sample().timestamps_ns
+
+    def _sequence(self, sequence_id: SequenceKey, **config_kwargs: Any) -> Record3DSequence:
+        return Record3DSequence(
+            config=Record3DSequenceConfig(
+                dataset_root=self.dataset_root, sequence_id=str(sequence_id), **config_kwargs
+            ),
+            catalog=self.catalog,
+        )
