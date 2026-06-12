@@ -62,6 +62,22 @@ def test_metrics_page_state_preserves_persisted_view_fields() -> None:
     assert state.dataset_primary_metric == "ape/translation_part/rmse"
 
 
+def test_advio_tum_dataset_state_round_trips_without_download_modality_fields() -> None:
+    state = AppState.model_validate(
+        {
+            "advio": {"download_" + "preset": "offline", "selected_" + "modalities": ["iphone_video"]},
+            "tum_rgbd": {"download_" + "preset": "offline", "selected_" + "modalities": ["rgb"]},
+        }
+    )
+
+    dumped = state.model_dump(mode="json")
+
+    assert "download_" + "preset" not in dumped["advio"]
+    assert "selected_" + "modalities" not in dumped["advio"]
+    assert "download_" + "preset" not in dumped["tum_rgbd"]
+    assert "selected_" + "modalities" not in dumped["tum_rgbd"]
+
+
 def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
 

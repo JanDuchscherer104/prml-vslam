@@ -13,7 +13,6 @@ from prml_vslam.utils import BaseConfig, BaseData
 
 SequenceKey = int | str
 SceneT = TypeVar("SceneT", bound=BaseData)
-ModalityT = TypeVar("ModalityT", bound=StrEnum)
 SequenceT = TypeVar("SequenceT", int, str)
 
 
@@ -113,22 +112,20 @@ class ReferenceCloudConfig(BaseConfig):
     min_confidence: int | None = Field(default=None, ge=0, le=255)
 
 
-class DatasetDownloadResult(BaseData, Generic[SequenceT, ModalityT]):
+class DatasetDownloadResult(BaseData, Generic[SequenceT]):
     """Summary of one explicit dataset download action."""
 
     sequence_ids: list[SequenceT]
-    modalities: list[ModalityT]
     downloaded_archive_count: int = 0
     reused_archive_count: int = 0
     written_path_count: int = 0
 
 
-class LocalSceneStatus(BaseData, Generic[SceneT, ModalityT]):
+class LocalSceneStatus(BaseData, Generic[SceneT]):
     """Local availability summary for one dataset scene."""
 
     scene: SceneT
     sequence_dir: Path | None = None
-    local_modalities: list[ModalityT] = Field(default_factory=list)
     archive_path: Path | None = None
     replay_ready: bool = False
     offline_ready: bool = False

@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
-from .advio_models import AdvioCatalog, AdvioModality, AdvioSceneMetadata
+from .advio_models import AdvioCatalog, AdvioSceneMetadata
 
 _CATALOG_PATH = Path(__file__).with_name("advio_catalog.json")
 
@@ -49,20 +49,6 @@ _OFFLINE_SEQUENCE_SPECS = (
     _IPHONE_ARKIT,
     _PIXEL_ARCORE,
 )
-_MODALITY_SPECS = {
-    AdvioModality.CALIBRATION: (_CALIBRATION,),
-    AdvioModality.GROUND_TRUTH: (_GROUND_TRUTH_POSE, _GROUND_TRUTH_FIXPOINTS),
-    AdvioModality.IPHONE_VIDEO: (_IPHONE_FRAMES_MOV, _IPHONE_FRAMES_CSV),
-    AdvioModality.IPHONE_SENSORS: (
-        _IPHONE_PLATFORM_LOCATION,
-        _IPHONE_ACCELEROMETER,
-        _IPHONE_GYROSCOPE,
-        _IPHONE_MAGNETOMETER,
-        _IPHONE_BAROMETER,
-    ),
-    AdvioModality.IPHONE_ARKIT: (_IPHONE_ARKIT,),
-    AdvioModality.PIXEL_ARCORE: (_PIXEL_ARCORE,),
-}
 
 
 @lru_cache(maxsize=1)
@@ -156,52 +142,6 @@ def replay_ready(dataset_root: Path, scene: AdvioSceneMetadata) -> bool:
 def offline_ready(dataset_root: Path, scene: AdvioSceneMetadata) -> bool:
     sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_slug)
     return _complete_scene_ready(dataset_root, sequence_dir, scene, sequence_specs=_OFFLINE_SEQUENCE_SPECS)
-
-
-def local_modalities(dataset_root: Path, scene: AdvioSceneMetadata) -> list[AdvioModality]:
-    """Return the ADVIO modality bundles currently materialized for one scene."""
-    sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_slug)
-    modalities: list[AdvioModality] = []
-    for modality, specs in _MODALITY_SPECS.items():
-        root = dataset_root if modality is AdvioModality.CALIBRATION else sequence_dir
-        if root is not None and all(spec.resolve(root, scene) is not None for spec in specs):
-            modalities.append(modality)
-    return modalities
-
-
-def archive_member_matches(
-    relative_path: PurePosixPath,
-    scene: AdvioSceneMetadata,
-    modalities: tuple[AdvioModality, ...],
-) -> bool:
-    """Return whether one archive member belongs to a requested ADVIO modality."""
-    del scene
-    path = relative_path.as_posix()
-    return any(
-        (
-            modality is AdvioModality.GROUND_TRUTH
-            and path.startswith("ground-truth/")
-            or modality is AdvioModality.IPHONE_VIDEO
-            and path in {"iphone/frames.mov", "iphone/frames.csv"}
-            or modality is AdvioModality.IPHONE_SENSORS
-            and path
-            in {
-                "iphone/platform-location.csv",
-                "iphone/platform-locations.csv",
-                "iphone/accelerometer.csv",
-                "iphone/gyroscope.csv",
-                "iphone/gyro.csv",
-                "iphone/magnetometer.csv",
-                "iphone/barometer.csv",
-            }
-            or modality is AdvioModality.IPHONE_ARKIT
-            and path == "iphone/arkit.csv"
-            or modality is AdvioModality.PIXEL_ARCORE
-            and path == "pixel/arcore.csv"
-        )
-        for modality in modalities
-        if modality is not AdvioModality.CALIBRATION
-    )
 
 
 def _complete_scene_ready(

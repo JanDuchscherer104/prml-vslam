@@ -48,9 +48,7 @@ from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.dataset_query import NormalizedDatasetQuery
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
-    AdvioDownloadPreset,
     AdvioDownloadRequest,
-    AdvioModality,
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
@@ -70,9 +68,7 @@ from prml_vslam.sources.datasets.normalization import (
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
-    TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
-    TumRgbdModality,
 )
 from prml_vslam.sources.record3d import Record3DStreamConfig
 from prml_vslam.utils.console import Console
@@ -1222,23 +1218,13 @@ def advio_download(
             help="Whether to re-download cached ZIPs and replace extracted files.",
         ),
     ] = False,
-    preset: Annotated[
-        AdvioDownloadPreset,
-        typer.Option("--preset", help="Curated ADVIO modality bundle used when --modality is omitted."),
-    ] = AdvioDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[AdvioModality] | None,
-        typer.Option("--modality", help="Repeat to explicitly select ADVIO modality bundles."),
-    ] = None,
 ) -> None:
-    """Download selected ADVIO scene archives and extract requested modalities."""
+    """Download selected ADVIO scene archives and extract complete scenes."""
     service = AdvioDatasetService(get_path_config())
     try:
         result = service.download(
             AdvioDownloadRequest(
                 sequence_ids=[] if sequence_ids is None else sequence_ids,
-                preset=preset,
-                modalities=[] if modalities is None else modalities,
                 overwrite=overwrite,
             )
         )
@@ -1282,23 +1268,13 @@ def tum_rgbd_download(
             help="Whether to re-download cached TGZs and replace extracted files.",
         ),
     ] = False,
-    preset: Annotated[
-        TumRgbdDownloadPreset,
-        typer.Option("--preset", help="Curated TUM RGB-D modality bundle used when --modality is omitted."),
-    ] = TumRgbdDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[TumRgbdModality] | None,
-        typer.Option("--modality", help="Repeat to explicitly select TUM RGB-D modality bundles."),
-    ] = None,
 ) -> None:
-    """Download selected TUM RGB-D archives and extract requested modalities."""
+    """Download selected TUM RGB-D archives and extract complete scenes."""
     service = TumRgbdDatasetService(get_path_config())
     try:
         result = service.download(
             TumRgbdDownloadRequest(
                 sequence_ids=[] if sequence_ids is None else sequence_ids,
-                preset=preset,
-                modalities=[] if modalities is None else modalities,
                 overwrite=overwrite,
             )
         )

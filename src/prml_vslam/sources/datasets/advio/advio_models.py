@@ -49,62 +49,6 @@ class AdvioPeopleLevel(StrEnum):
         return self.value.capitalize()
 
 
-class AdvioModality(StrEnum):
-    """Downloadable ADVIO modality bundles exposed in the CLI and app."""
-
-    CALIBRATION = "calibration"
-    GROUND_TRUTH = "ground_truth"
-    IPHONE_VIDEO = "iphone_video"
-    IPHONE_SENSORS = "iphone_sensors"
-    IPHONE_ARKIT = "iphone_arkit"
-    PIXEL_ARCORE = "pixel_arcore"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing modality label shown in ADVIO controls."""
-        return {
-            self.CALIBRATION: "Calibration",
-            self.GROUND_TRUTH: "Ground Truth",
-            self.IPHONE_VIDEO: "iPhone Video",
-            self.IPHONE_SENSORS: "iPhone Sensors",
-            self.IPHONE_ARKIT: "ARKit Baseline",
-            self.PIXEL_ARCORE: "ARCore Baseline",
-        }[self]
-
-
-class AdvioDownloadPreset(StrEnum):
-    """Curated modality bundles for common ADVIO workflows."""
-
-    STREAMING = "streaming"
-    OFFLINE = "offline"
-    FULL = "full"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing preset label shown in ADVIO download controls."""
-        return self.value.capitalize()
-
-    @property
-    def modalities(self) -> tuple[AdvioModality, ...]:
-        """Return the effective modality bundle for the selected preset."""
-        return {
-            self.STREAMING: (
-                AdvioModality.CALIBRATION,
-                AdvioModality.GROUND_TRUTH,
-                AdvioModality.IPHONE_VIDEO,
-            ),
-            self.OFFLINE: (
-                AdvioModality.CALIBRATION,
-                AdvioModality.GROUND_TRUTH,
-                AdvioModality.IPHONE_VIDEO,
-                AdvioModality.IPHONE_SENSORS,
-                AdvioModality.IPHONE_ARKIT,
-                AdvioModality.PIXEL_ARCORE,
-            ),
-            self.FULL: tuple(AdvioModality),
-        }[self]
-
-
 class AdvioUpstreamMetadata(BaseData):
     """Describe the committed upstream ADVIO metadata sources for the adapter."""
 
@@ -154,12 +98,6 @@ class AdvioDownloadRequest(BaseConfig):
     sequence_ids: list[int] = Field(default_factory=list)
     """Selected sequence ids. An empty selection means all scenes."""
 
-    preset: AdvioDownloadPreset = AdvioDownloadPreset.OFFLINE
-    """Curated modality bundle used when no explicit modality override is provided."""
-
-    modalities: list[AdvioModality] = Field(default_factory=list)
-    """Optional explicit modality override."""
-
     overwrite: bool = False
     """Whether existing archives and extracted files should be replaced."""
 
@@ -174,27 +112,13 @@ class AdvioDownloadRequest(BaseConfig):
                 raise ValueError(msg)
         return normalized
 
-    @field_validator("modalities")
-    @classmethod
-    def validate_modalities(cls, value: list[AdvioModality]) -> list[AdvioModality]:
-        """Remove duplicate modality overrides while preserving order."""
-        return list(dict.fromkeys(value))
 
-    def resolved_modalities(self) -> tuple[AdvioModality, ...]:
-        """Return the effective modality bundle for the request."""
-        return tuple(self.modalities) if self.modalities else self.preset.modalities
-
-
-class AdvioDownloadResult(DatasetDownloadResult[int, AdvioModality]):
+class AdvioDownloadResult(DatasetDownloadResult[int]):
     """Summary of one explicit ADVIO download action."""
 
-    modalities: list[AdvioModality] = Field(default_factory=list)
 
-
-class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata, AdvioModality]):
+class AdvioLocalSceneStatus(LocalSceneStatus[AdvioSceneMetadata]):
     """Local availability summary for one ADVIO scene."""
-
-    local_modalities: list[AdvioModality] = Field(default_factory=list)
 
     arcore_ready: bool = False
     """Whether ARCore pose data is available for consumption-time provider selection."""
