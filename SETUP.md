@@ -208,6 +208,44 @@ curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt 
   -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
 
+Validate FlashInfer and the mamba CUDA driver stub before running the full
+LingBot benchmark. Use the worktree helper so FlashInfer's JIT linker can find
+the mamba CUDA stub library without adding CUDA stubs to `LD_LIBRARY_PATH`:
+
+```bash
+prml-vslam-worktree-env run python - <<'PY'
+from pathlib import Path
+import os
+import shutil
+
+import flashinfer
+import torch
+
+cuda_home = Path(os.environ["CUDA_HOME"])
+stub_dirs = [
+    cuda_home / "lib" / "stubs",
+    cuda_home / "targets" / "x86_64-linux" / "lib" / "stubs",
+]
+library_path = os.environ.get("LIBRARY_PATH", "")
+library_entries = library_path.split(":")
+
+print("flashinfer:", flashinfer.__file__)
+print("nvcc:", shutil.which("nvcc"))
+print("CUDAHOSTCXX:", os.environ.get("CUDAHOSTCXX"))
+print("NVCC_PREPEND_FLAGS:", os.environ.get("NVCC_PREPEND_FLAGS"))
+print("cuda_available:", torch.cuda.is_available())
+print("cuda_home:", cuda_home)
+print("cuda_stubs:", [str(path / "libcuda.so") for path in stub_dirs])
+
+assert shutil.which("nvcc"), "nvcc is not on PATH"
+assert os.environ.get("CUDAHOSTCXX"), "CUDAHOSTCXX is not set to the mamba host compiler"
+assert "compiler-bindir" in os.environ.get("NVCC_PREPEND_FLAGS", ""), "nvcc host compiler flag is not set"
+assert any((path / "libcuda.so").exists() for path in stub_dirs), "mamba CUDA libcuda.so stub is missing"
+assert any(str(path) in library_entries for path in stub_dirs), "CUDA stub dir is missing from LIBRARY_PATH"
+assert torch.cuda.is_available(), "PyTorch CUDA is not available"
+PY
+```
+
 ## Streamlit Workbench
 
 For the Streamlit app without ViSTA:

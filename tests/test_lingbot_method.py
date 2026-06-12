@@ -117,7 +117,7 @@ def test_lingbot_planned_outputs_use_normalized_geometry_paths(tmp_path: Path) -
 def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     config = load_run_config_toml(
         path_config=PathConfig(),
-        config_path=Path(".configs/pipelines/lingbot-smoke-streaming-gpu.toml"),
+        config_path=Path(".configs/pipelines/lingbot-smoke-streaming.toml"),
     )
 
     assert config.mode is PipelineMode.STREAMING
@@ -131,9 +131,8 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     ("config_path", "image_size", "checkpoint_pos_embed"),
     [
         (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
-        (".configs/pipelines/lingbot-smoke-gpu.toml", 518, "error"),
-        (".configs/pipelines/lingbot-smoke-offline.toml", 518, "error"),
-        (".configs/pipelines/lingbot-smoke-streaming-gpu.toml", 518, "error"),
+        (".configs/pipelines/lingbot-smoke.toml", 518, "error"),
+        (".configs/pipelines/lingbot-smoke-streaming.toml", 518, "error"),
     ],
 )
 def test_lingbot_tomls_use_declared_checkpoint_patch_grid(
