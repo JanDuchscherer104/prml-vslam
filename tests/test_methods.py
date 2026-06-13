@@ -1256,7 +1256,10 @@ def test_vista_artifact_builder_reconstructs_unfiltered_cloud_and_confidences(tm
         ),
     )
 
-    confidence_ref = artifacts.extras["point_cloud_confidences.npz"]
+    assert artifacts.point_cloud_confidences_npz is not None
+    confidence_ref = artifacts.point_cloud_confidences_npz
+    assert confidence_ref.path.name == "point_cloud_confidences.npz"
+    assert artifacts.extras["point_cloud_confidences.npz"] == confidence_ref
     confidence_data = np.load(confidence_ref.path)
     np.testing.assert_allclose(confidence_data["confidence"], [0.1, 0.5, 0.3, 0.8])
     assert float(confidence_data["confidence_threshold"]) == pytest.approx(0.4)

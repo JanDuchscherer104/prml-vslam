@@ -68,6 +68,12 @@ dependencies = [
     "tensorboard>=2.14,<3",
     "DBoW3Py",
   ]
+  lingbot = [
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "lingbot-map",
+    "flashinfer-python",
+  ]
 
   [project.scripts]
   prml-vslam = "prml_vslam.main:main"
@@ -118,6 +124,7 @@ constraint-dependencies = [
 
   [tool.uv.sources]
   DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
+  lingbot-map = { path = "external/lingbot-map", editable = true, extra = "lingbot" }
   MAST3R-SLAM = { path = "external/mast3r-slam", editable = true }
   MAST3R = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
   in3d = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
