@@ -222,6 +222,24 @@ class GroundAlignmentService:
             ),
         )
 
+    def viewer_transform_for_plane(
+        self,
+        *,
+        normal_xyz_world: NDArray[np.float64],
+        offset_world: float,
+        poses_world_camera: NDArray[np.float64],
+    ) -> tuple[Literal["trajectory_pca", "identity"], FrameTransform]:
+        """Build the viewer-world transform for a supplied ground plane."""
+        poses_array = np.asarray(poses_world_camera, dtype=np.float64)
+        yaw_source, rotation_viewer_world = self._build_viewer_rotation(
+            normal_xyz_world=np.asarray(normal_xyz_world, dtype=np.float64),
+            camera_positions_xyz_world=poses_array[:, :3, 3],
+        )
+        return yaw_source, self._build_viewer_transform(
+            rotation_viewer_world=rotation_viewer_world,
+            plane_offset_world=float(offset_world),
+        )
+
     @staticmethod
     def _resolve_point_cloud_path(slam: SlamArtifacts) -> tuple[_ResolvedPointCloudSource, Path | None]:
         if slam.dense_points_ply is not None:

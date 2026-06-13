@@ -40,5 +40,11 @@ class GroundAlignmentConfig(BaseConfig):
     streaming_keyframes: int = Field(default=10, ge=1)
     """Accepted streaming keyframes used per ground-plane estimate."""
 
+    anchor_keyframes: int = Field(default=3, ge=1)
+    """Preferred number of early keyframes used to lock the stable viewer anchor."""
+
+    smoothing_alpha: float = Field(default=0.2, ge=0.0, le=1.0)
+    """Causal EMA weight for live smoothed streaming ground-plane diagnostics."""
+
 
 __all__ = ["GroundAlignmentConfig"]

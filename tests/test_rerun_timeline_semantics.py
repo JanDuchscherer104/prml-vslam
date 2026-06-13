@@ -142,8 +142,11 @@ def test_policy_uses_explicit_frame_timeline_for_source_and_tracking_updates(mon
     assert calls == [
         ("rgb", "world/live/source/rgb", 5, None),
         ("pose", "world/slam/live/tracking/camera", 7, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 7, None),
         ("point", "world/slam/trajectory/raw/start", 7, None),
         ("trajectory", "world/slam/trajectory/raw", 7, None),
+        ("point", "world/slam/trajectory/smoothed/start", 7, None),
+        ("trajectory", "world/slam/trajectory/smoothed", 7, None),
     ]
 
 
