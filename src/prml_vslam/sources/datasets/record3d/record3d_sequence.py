@@ -26,6 +26,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalized_store import load_depth_array
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import (
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
 
 RECORD3D_WORLD_FRAME = "record3d_world"
 RECORD3D_SOURCE_ID = "record3d_dataset"
+RECORD3D_DEPTH_SCALE_TO_M = 0.001
 
 
 class Record3DSequencePaths(BaseData):
@@ -206,7 +208,7 @@ class Record3DSequence(BaseData):
             loop=loop,
             replay_mode=replay_mode,
             include_depth=include_depth,
-            depth_loader=lambda path: np.asarray(np.load(path), dtype=np.float32),
+            depth_loader=load_depth_array,
         )
 
     def _prepare_observation_sequence(
@@ -232,16 +234,16 @@ class Record3DSequence(BaseData):
                 depth_unit_scale=self.config.materialization.depth_unit_scale,
             )
             rgb_path = rgb_dir / f"{seq:06d}.png"
-            depth_path = depth_dir / f"{seq:06d}.npy"
+            depth_path = depth_dir / f"{seq:06d}.png"
             cv2.imwrite(str(rgb_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-            np.save(depth_path, depth_m)
+            _write_depth_png(depth_path, depth_m)
             rows.append(
                 ObservationIndexEntry(
                     seq=seq,
                     timestamp_ns=sample.timestamps_ns[frame.index],
                     rgb_path=rgb_path.relative_to(output_dir),
                     depth_path=depth_path.relative_to(output_dir),
-                    depth_scale_to_m=1.0,
+                    depth_scale_to_m=RECORD3D_DEPTH_SCALE_TO_M,
                     T_world_camera=sample.poses_world_camera[frame.index],
                     intrinsics=sample.depth_intrinsics,
                     provenance=ObservationProvenance(
@@ -376,6 +378,14 @@ class Record3DSequence(BaseData):
             native_frame=RECORD3D_WORLD_FRAME,
             coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         )
+
+
+def _write_depth_png(path: Path, depth_m: np.ndarray) -> None:
+    depth = np.asarray(depth_m, dtype=np.float32)
+    encoded = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+    encoded = np.clip(np.rint(np.maximum(encoded, 0.0) / RECORD3D_DEPTH_SCALE_TO_M), 0, np.iinfo(np.uint16).max)
+    if not cv2.imwrite(str(path), encoded.astype(np.uint16), [cv2.IMWRITE_PNG_COMPRESSION, 9]):
+        raise RuntimeError(f"Failed to write Record3D depth PNG: {path}")
 
 
 def _write_json(path: Path, payload: object) -> Path:

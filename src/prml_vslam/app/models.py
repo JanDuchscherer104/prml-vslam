@@ -52,6 +52,8 @@ class NormalizedDatasetSnapshot:
 
     records: list[JsonObject]
     issues: list[JsonObject]
+    stats_rows: list[JsonObject]
+    metadata_rows: list[JsonObject]
     sequence_ids: set[str]
     default_profile_sequence_ids: set[str]
     profile_counts: dict[str, int]

@@ -29,7 +29,13 @@ from prml_vslam.sources.datasets.normalization import (
     open_normalized_dataset_stream,
     source_config_for_normalization,
 )
-from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
+from prml_vslam.sources.datasets.normalized_store import (
+    METADATA_LONG_FILENAME,
+    STATS_LONG_FILENAME,
+    NormalizedDatasetEntry,
+    load_normalized_entry_metadata,
+    load_normalized_entry_stats,
+)
 from prml_vslam.sources.datasets.record3d import (
     Record3DDatasetService,
     Record3DDownloadRequest,
@@ -339,6 +345,38 @@ def _render_normalized_characterization(normalized: NormalizedDatasetSnapshot) -
             return
         st.metric("Normalized Entries", str(len(normalized.records)))
         st.dataframe(normalized.records, hide_index=True, width="stretch")
+        _render_normalized_analysis_tables(normalized)
+
+
+def _render_normalized_analysis_tables(normalized: NormalizedDatasetSnapshot) -> None:
+    if not normalized.stats_rows and not normalized.metadata_rows:
+        st.info("No persisted normalized analysis tables found. Rebuild entries to populate stats and metadata CSVs.")
+        return
+    columns = st.columns(3, gap="small")
+    motion_counts = _motion_class_counts(normalized.stats_rows)
+    columns[0].metric("Stats Rows", str(len(normalized.stats_rows)))
+    columns[1].metric("Metadata Rows", str(len(normalized.metadata_rows)))
+    columns[2].metric("Motion Classes", str(len(motion_counts)))
+    if motion_counts:
+        st.dataframe(
+            [{"Motion Class": motion_class, "Sequence Count": count} for motion_class, count in motion_counts.items()],
+            hide_index=True,
+            width="stretch",
+        )
+    if normalized.stats_rows:
+        st.dataframe(normalized.stats_rows, hide_index=True, width="stretch")
+    if normalized.metadata_rows:
+        st.dataframe(normalized.metadata_rows, hide_index=True, width="stretch")
+
+
+def _motion_class_counts(rows: list[JsonObject]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row.get("stat") != "ego_motion_class":
+            continue
+        motion_class = str(row.get("value", ""))
+        counts[motion_class] = counts.get(motion_class, 0) + 1
+    return counts
 
 
 @st.cache_data
@@ -351,6 +389,8 @@ def _load_normalized_dataset_snapshot(
     store = normalized_store_for_service(dataset, path_config)
     entries = store.summary(strict=False)
     records = [entry.model_dump(mode="json") for entry in entries]
+    stats_rows = [row for entry in entries for row in load_normalized_entry_stats(entry)]
+    metadata_rows = [row for entry in entries for row in load_normalized_entry_metadata(entry)]
     profile_counts: dict[str, int] = {}
     for row in records:
         sequence_id = str(row.get("sequence_id", ""))
@@ -358,6 +398,8 @@ def _load_normalized_dataset_snapshot(
     return NormalizedDatasetSnapshot(
         records=records,
         issues=[issue.model_dump(mode="json") for issue in store.issues()],
+        stats_rows=stats_rows,
+        metadata_rows=metadata_rows,
         sequence_ids=set(profile_counts),
         default_profile_sequence_ids=_default_profile_sequence_ids(
             dataset=dataset, entries=entries, path_config=path_config
@@ -391,6 +433,8 @@ def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) ->
             "*/*/entry.json",
             "*/*/sequence_manifest.json",
             "*/*/benchmark_inputs.json",
+            f"*/*/{STATS_LONG_FILENAME}",
+            f"*/*/{METADATA_LONG_FILENAME}",
         )
         for path in store_root.glob(pattern)
     )

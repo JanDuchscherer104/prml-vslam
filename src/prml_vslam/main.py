@@ -58,6 +58,7 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_store_for_service,
     parse_dataset_id,
 )
+from prml_vslam.sources.datasets.normalized_store import normalized_entry_analysis_summary
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
@@ -1144,11 +1145,13 @@ def dataset_summary(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     store = normalized_store_for_service(dataset_id, path_config)
+    entries = store.summary()
     console.plog(
         {
             "dataset_id": dataset_id.value,
             "store_root": store.store_root,
-            "entries": [entry.model_dump(mode="json") for entry in store.summary()],
+            "entries": [entry.model_dump(mode="json") for entry in entries],
+            "analysis": [normalized_entry_analysis_summary(entry) for entry in entries],
         }
     )
 

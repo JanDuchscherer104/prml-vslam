@@ -125,6 +125,8 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
         advio_page.NormalizedDatasetSnapshot(
             records=[],
             issues=[],
+            stats_rows=[],
+            metadata_rows=[],
             sequence_ids={"local-capture"},
             default_profile_sequence_ids={"local-capture"},
             profile_counts={"local-capture": 1},
@@ -168,6 +170,8 @@ def test_record3d_loop_preview_requires_default_normalized_profile(monkeypatch) 
     normalized = advio_page.NormalizedDatasetSnapshot(
         records=[],
         issues=[],
+        stats_rows=[],
+        metadata_rows=[],
         sequence_ids={"capture"},
         default_profile_sequence_ids=set(),
         profile_counts={"capture": 1},

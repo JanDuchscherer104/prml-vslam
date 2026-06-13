@@ -185,6 +185,14 @@ statistics and metadata tables. Runtime sampling options such as
 `frame_stride` and `target_fps` remain read-time policy and do not create
 stride-specific stored payloads.
 
+Each new entry writes two queryable CSV tables:
+
+- `stats_long.csv`: one row per persisted sequence, observation-sequence, or
+  trajectory statistic, including frame counts, duration, FPS, path length,
+  speed, 3D tangent-angle change, curvature proxy, and coarse ego-motion class.
+- `metadata_long.csv`: one row per profile, source, and artifact metadata fact
+  that app and CLI surfaces can load without re-normalizing the dataset.
+
 A normalized entry stores the common single RGB-D observation sequence directly
 under `<entry>/observations/`. Indexed child directories such as
 `<entry>/observations/0/` are reserved only for entries that genuinely carry
@@ -203,7 +211,9 @@ prml-vslam dataset normalize --dataset record3d --sequence <sequence-id> --worke
 ```
 
 The Streamlit Datasets page and `prml-vslam dataset summary` read persisted
-entries and issues; they do not normalize datasets during display.
+entries, issues, and analysis tables; they do not normalize datasets during
+display. Raw dataset explorers remain ingestion and inspection surfaces, while
+pipeline-ready dataset serving consumes normalized-store artifacts.
 
 ## Typical Usage
 

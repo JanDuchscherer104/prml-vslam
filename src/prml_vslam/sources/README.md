@@ -135,9 +135,10 @@ calls are out of scope for this package.
 
 ## Domain Owners Under Sources
 
-- `sources.datasets`: ADVIO and TUM RGB-D dataset services, downloads, path
-  resolution, timestamp/camera loading, benchmark-reference preparation, and
-  dataset-specific replay adapters.
+- `sources.datasets`: ADVIO, TUM RGB-D, and offline Record3D dataset services,
+  downloads, path resolution, timestamp/camera loading, benchmark-reference
+  preparation, normalized-store analysis tables, and dataset-specific replay
+  adapters.
 - `sources.replay`: PyAV video replay, image-sequence replay, replay clocking,
   and shared observation-stream utilities.
 - `sources.record3d`: USB and Wi-Fi Preview Record3D transport adapters and
