@@ -42,6 +42,8 @@ from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
     NormalizedDatasetStore,
+    load_depth_array,
+    load_normalized_entry_stats,
     normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import (
@@ -414,9 +416,14 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     observation_ref = benchmark_inputs["observation_sequences"][0]
     stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
     observations = list(FileObservationSequenceLoader(stored_inputs.observation_sequences[0]).iter_observations())
+    observation_index = json.loads(stored_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
+    first_depth_path = stored_inputs.observation_sequences[0].payload_root / observation_index["rows"][0]["depth_path"]
+    stats = {(row["scope"], row["subject"], row["stat"]): row["value"] for row in load_normalized_entry_stats(entry)}
 
     assert fixture.store.store_root == (tmp_path / ".data" / "vslam-datastore" / "record3d").resolve()
     assert entry.root.parent == fixture.store.store_root / "synthetic"
+    assert entry.stats_long_path == entry.root / "stats_long.csv"
+    assert entry.metadata_long_path == entry.root / "metadata_long.csv"
     assert not (tmp_path / ".data" / "record3d" / ".normalized").exists()
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
@@ -427,6 +434,18 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert len(observations) == 3
     assert observations[0].rgb is not None
     assert observations[0].depth_m is not None
+    assert first_depth_path.suffix == ".png"
+    assert observation_index["rows"][0]["depth_scale_to_m"] == pytest.approx(0.001)
+    assert (load_depth_array(first_depth_path) * observation_index["rows"][0]["depth_scale_to_m"])[
+        1, 1
+    ] == pytest.approx(
+        1.0,
+        abs=0.0005,
+    )
+    assert observations[0].depth_m[1, 1] == pytest.approx(1.0, abs=0.0005)
+    assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
+    assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
+    assert stats[("reference_trajectory", "arkit/aligned", "ego_motion_class")] == "low_curvature"
     assert records[0]["schema_version"] == 4
 
 
@@ -845,6 +864,15 @@ def test_record3d_normalized_store_rejects_tampered_observation_paths(tmp_path: 
         store.load_entry(profile)
     with pytest.raises(RuntimeError, match="outside entry root"):
         store.summary()
+
+
+def test_normalized_store_rejects_invalid_analysis_table_header(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    fixture.entry.stats_long_path.write_text("bad,header\n1,2\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="invalid CSV header"):
+        fixture.store.load_entry(fixture.profile)
+    assert fixture.store.summary(strict=False) == []
 
 
 def test_record3d_dataset_source_requires_normalized_store_entry(tmp_path: Path) -> None:

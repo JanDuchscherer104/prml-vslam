@@ -86,20 +86,30 @@ def test_record3d_download_rejects_invalid_sequence_index() -> None:
 
 
 def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> None:
-    class FakeService:
-        dataset_root = tmp_path / ".data" / "record3d"
+    class FakeEntry:
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": "synthetic", "mode": mode}
 
-        def __init__(self, path_config: PathConfig) -> None:
-            self.path_config = path_config
+    class FakeStore:
+        store_root = tmp_path / ".data" / "vslam-datastore" / "record3d"
 
-    monkeypatch.setattr(main_module, "Record3DDatasetService", FakeService)
+        def summary(self) -> list[FakeEntry]:
+            return [FakeEntry()]
+
+    monkeypatch.setattr(main_module, "normalized_store_for_service", lambda dataset_id, path_config: FakeStore())
+    monkeypatch.setattr(
+        main_module,
+        "normalized_entry_analysis_summary",
+        lambda entry: {"stats_long_row_count": 9, "metadata_long_row_count": 4},
+    )
 
     result = runner.invoke(app, ["dataset", "summary", "--dataset", "record3d"])
 
     assert result.exit_code == 0
     assert "record3d" in result.stdout
     assert "vslam-datastore" in result.stdout
-    assert "record3d" in result.stdout
+    assert "'analysis'" in result.stdout
+    assert "'stats_long_row_count': 9" in result.stdout
 
 
 def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monkeypatch) -> None:

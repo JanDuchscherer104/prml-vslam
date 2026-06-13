@@ -64,6 +64,12 @@ def test_normalized_store_fingerprint_uses_shared_datastore_root(tmp_path: Path)
     entry_root.mkdir(parents=True)
     (entry_root / "entry.json").write_text("{}", encoding="utf-8")
     (entry_root / "sequence_manifest.json").write_text("{}", encoding="utf-8")
+    (entry_root / "stats_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,subject,stat,value,unit\n", encoding="utf-8"
+    )
+    (entry_root / "metadata_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,key,value\n", encoding="utf-8"
+    )
     old_root = path_config.resolve_dataset_dir("record3d") / ".normalized" / "synthetic" / "profile"
     old_root.mkdir(parents=True)
     (old_root / "entry.json").write_text("{}", encoding="utf-8")
@@ -73,7 +79,9 @@ def test_normalized_store_fingerprint_uses_shared_datastore_root(tmp_path: Path)
 
     assert [row[0] for row in fingerprint] == [
         "synthetic/profile/entry.json",
+        "synthetic/profile/metadata_long.csv",
         "synthetic/profile/sequence_manifest.json",
+        "synthetic/profile/stats_long.csv",
     ]
 
 

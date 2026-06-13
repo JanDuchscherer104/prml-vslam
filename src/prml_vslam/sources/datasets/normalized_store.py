@@ -7,6 +7,7 @@ import os
 import shutil
 import time
 from collections.abc import Callable, Iterable
+from csv import DictReader, DictWriter
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -19,6 +20,7 @@ from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
+    ReferenceTrajectoryRef,
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
@@ -26,12 +28,27 @@ from prml_vslam.sources.observation_sequence import load_observation_sequence_in
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData, JsonObject, JsonValue, PathConfig
+from prml_vslam.utils.geometry import load_tum_trajectory
 from prml_vslam.utils.serialization import stable_hash, write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
 ENTRY_FILENAME = "entry.json"
 SEQUENCE_MANIFEST_FILENAME = "sequence_manifest.json"
 BENCHMARK_INPUTS_FILENAME = "benchmark_inputs.json"
+STATS_LONG_FILENAME = "stats_long.csv"
+METADATA_LONG_FILENAME = "metadata_long.csv"
+STATS_LONG_HEADER = (
+    "dataset_id",
+    "sequence_id",
+    "profile_key",
+    "source_id",
+    "scope",
+    "subject",
+    "stat",
+    "value",
+    "unit",
+)
+METADATA_LONG_HEADER = ("dataset_id", "sequence_id", "profile_key", "source_id", "scope", "key", "value")
 STORE_SCHEMA_VERSION = 4
 
 
@@ -75,6 +92,8 @@ class NormalizedDatasetEntry(BaseData):
     root: Path
     sequence_manifest_path: Path
     benchmark_inputs_path: Path
+    stats_long_path: Path | None = None
+    metadata_long_path: Path | None = None
     created_at_ns: int = Field(default_factory=time.time_ns)
 
 
@@ -158,6 +177,12 @@ class NormalizedDatasetStore:
         benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
         write_json(sequence_manifest_path, sequence_manifest)
         write_json(benchmark_inputs_path, benchmark_inputs)
+        stats_long_path, metadata_long_path = _write_entry_analysis_tables(
+            root=root,
+            profile=profile,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=benchmark_inputs,
+        )
         entry = NormalizedDatasetEntry(
             dataset_id=self.dataset_id,
             sequence_id=profile.sequence_id,
@@ -167,6 +192,8 @@ class NormalizedDatasetStore:
             root=root,
             sequence_manifest_path=sequence_manifest_path,
             benchmark_inputs_path=benchmark_inputs_path,
+            stats_long_path=stats_long_path,
+            metadata_long_path=metadata_long_path,
         )
         write_json(root / ENTRY_FILENAME, entry)
         return entry
@@ -374,6 +401,7 @@ class NormalizedDatasetStore:
             entry.benchmark_inputs_path.read_text(encoding="utf-8")
         )
         _validate_benchmark_input_paths(entry.root, benchmark_inputs)
+        _validate_entry_analysis_tables(entry)
 
     def _normalize_sequence_manifest(
         self,
@@ -474,6 +502,299 @@ def normalized_store_for_path_config(dataset_id: DatasetId, path_config: PathCon
 def _validate_entry_paths(entry: NormalizedDatasetEntry) -> None:
     _ensure_under(entry.root, entry.sequence_manifest_path)
     _ensure_under(entry.root, entry.benchmark_inputs_path)
+    _ensure_optional_existing_under(entry.root, entry.stats_long_path)
+    _ensure_optional_existing_under(entry.root, entry.metadata_long_path)
+
+
+def normalized_entry_analysis_summary(entry: NormalizedDatasetEntry) -> JsonObject:
+    """Return compact row-count metadata for one entry's analysis tables."""
+    return {
+        "stats_long_path": None if entry.stats_long_path is None else entry.stats_long_path.as_posix(),
+        "stats_long_row_count": _csv_row_count(entry.stats_long_path, STATS_LONG_HEADER),
+        "metadata_long_path": None if entry.metadata_long_path is None else entry.metadata_long_path.as_posix(),
+        "metadata_long_row_count": _csv_row_count(entry.metadata_long_path, METADATA_LONG_HEADER),
+    }
+
+
+def load_normalized_entry_stats(entry: NormalizedDatasetEntry) -> list[JsonObject]:
+    """Load persisted long-form statistics rows for one normalized entry."""
+    return _read_analysis_csv(entry.stats_long_path, STATS_LONG_HEADER)
+
+
+def load_normalized_entry_metadata(entry: NormalizedDatasetEntry) -> list[JsonObject]:
+    """Load persisted long-form metadata rows for one normalized entry."""
+    return _read_analysis_csv(entry.metadata_long_path, METADATA_LONG_HEADER)
+
+
+def _validate_entry_analysis_tables(entry: NormalizedDatasetEntry) -> None:
+    if entry.stats_long_path is not None:
+        _read_analysis_csv(entry.stats_long_path, STATS_LONG_HEADER)
+    if entry.metadata_long_path is not None:
+        _read_analysis_csv(entry.metadata_long_path, METADATA_LONG_HEADER)
+
+
+def _csv_row_count(path: Path | None, header: tuple[str, ...]) -> int:
+    if path is None:
+        return 0
+    return len(_read_analysis_csv(path, header))
+
+
+def _read_analysis_csv(path: Path | None, header: tuple[str, ...]) -> list[JsonObject]:
+    if path is None:
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = DictReader(handle)
+        if tuple(reader.fieldnames or ()) != header:
+            raise RuntimeError(f"Normalized analysis table '{path}' has invalid CSV header {reader.fieldnames}.")
+        return [dict(row) for row in reader]
+
+
+def _write_entry_analysis_tables(
+    *,
+    root: Path,
+    profile: NormalizedDatasetProfile,
+    sequence_manifest: SequenceManifest,
+    benchmark_inputs: PreparedBenchmarkInputs,
+) -> tuple[Path, Path]:
+    stats_path = root / STATS_LONG_FILENAME
+    metadata_path = root / METADATA_LONG_FILENAME
+    _write_csv(stats_path, STATS_LONG_HEADER, _entry_stats_rows(profile, sequence_manifest, benchmark_inputs))
+    _write_csv(metadata_path, METADATA_LONG_HEADER, _entry_metadata_rows(profile, sequence_manifest, benchmark_inputs))
+    return stats_path.resolve(), metadata_path.resolve()
+
+
+def _write_csv(path: Path, header: tuple[str, ...], rows: list[JsonObject]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = DictWriter(handle, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _entry_stats_rows(
+    profile: NormalizedDatasetProfile,
+    sequence_manifest: SequenceManifest,
+    benchmark_inputs: PreparedBenchmarkInputs,
+) -> list[JsonObject]:
+    rows: list[JsonObject] = []
+    timestamps_ns = _manifest_timestamps_ns(sequence_manifest)
+    frame_count = _manifest_frame_count(sequence_manifest, timestamps_ns)
+    duration_s = _duration_s_from_ns(timestamps_ns)
+    rows.extend(
+        _stats_rows(
+            profile,
+            scope="sequence",
+            subject=profile.sequence_id,
+            values={
+                "manifest_frame_count": (frame_count, "count"),
+                "manifest_duration_s": (duration_s, "s"),
+                "manifest_mean_fps": (_mean_fps(frame_count, duration_s), "Hz"),
+            },
+        )
+    )
+    for ref in benchmark_inputs.observation_sequences:
+        rows.extend(_observation_sequence_stats_rows(profile, ref))
+    for scope, trajectories in (
+        ("reference_trajectory", benchmark_inputs.reference_trajectories),
+        ("candidate_trajectory", benchmark_inputs.candidate_trajectories),
+    ):
+        for trajectory_ref in trajectories:
+            rows.extend(_trajectory_stats_rows(profile, scope=scope, trajectory_ref=trajectory_ref))
+    return rows
+
+
+def _entry_metadata_rows(
+    profile: NormalizedDatasetProfile,
+    sequence_manifest: SequenceManifest,
+    benchmark_inputs: PreparedBenchmarkInputs,
+) -> list[JsonObject]:
+    rows = [
+        _metadata_row(profile, scope="entry", key="schema_version", value=str(STORE_SCHEMA_VERSION)),
+        _metadata_row(profile, scope="entry", key="dataset_id", value=profile.dataset_id.value),
+        _metadata_row(profile, scope="entry", key="sequence_id", value=profile.sequence_id),
+        _metadata_row(profile, scope="entry", key="source_id", value=profile.source_id),
+    ]
+    for key, value in sorted(profile.source_profile.items()):
+        rows.append(_metadata_row(profile, scope="profile", key=key, value=_metadata_value(value)))
+    if sequence_manifest.timestamps_path is not None:
+        rows.append(
+            _metadata_row(
+                profile, scope="sequence", key="timestamps_path", value=sequence_manifest.timestamps_path.as_posix()
+            )
+        )
+    if sequence_manifest.rgb_dir is not None:
+        rows.append(_metadata_row(profile, scope="sequence", key="rgb_dir", value=sequence_manifest.rgb_dir.as_posix()))
+    for ref in benchmark_inputs.observation_sequences:
+        rows.append(_metadata_row(profile, scope="observation_sequence", key="source_id", value=ref.source_id))
+        rows.append(
+            _metadata_row(profile, scope="observation_sequence", key="payload_root", value=ref.payload_root.as_posix())
+        )
+    return rows
+
+
+def _metadata_value(value: JsonValue) -> str:
+    if isinstance(value, str | int | float | bool) or value is None:
+        return str(value)
+    return json.dumps(value, sort_keys=True)
+
+
+def _manifest_timestamps_ns(manifest: SequenceManifest) -> list[int]:
+    if manifest.timestamps_path is None:
+        return []
+    return load_timestamps_ns(manifest.timestamps_path)
+
+
+def _manifest_frame_count(manifest: SequenceManifest, timestamps_ns: list[int]) -> int:
+    if timestamps_ns:
+        return len(timestamps_ns)
+    if manifest.rgb_dir is None or not manifest.rgb_dir.exists():
+        return 0
+    return sum(1 for path in manifest.rgb_dir.iterdir() if path.is_file())
+
+
+def _observation_sequence_stats_rows(
+    profile: NormalizedDatasetProfile, ref: ObservationSequenceRef
+) -> list[JsonObject]:
+    index = load_observation_sequence_index(ref.index_path)
+    frame_count = len(index.rows)
+    depth_count = sum(1 for row in index.rows if row.depth_path is not None)
+    duration_s = _duration_s_from_ns([row.timestamp_ns for row in index.rows])
+    return _stats_rows(
+        profile,
+        scope="observation_sequence",
+        subject=ref.source_id,
+        values={
+            "observation_frame_count": (frame_count, "count"),
+            "rgb_frame_count": (sum(1 for row in index.rows if row.rgb_path is not None), "count"),
+            "depth_frame_count": (depth_count, "count"),
+            "depth_coverage_ratio": (0.0 if frame_count == 0 else depth_count / frame_count, "ratio"),
+            "observation_duration_s": (duration_s, "s"),
+            "observation_mean_fps": (_mean_fps(frame_count, duration_s), "Hz"),
+        },
+    )
+
+
+def _trajectory_stats_rows(
+    profile: NormalizedDatasetProfile, *, scope: str, trajectory_ref: ReferenceTrajectoryRef
+) -> list[JsonObject]:
+    trajectory = load_tum_trajectory(trajectory_ref.path)
+    positions = np.asarray(trajectory.positions_xyz, dtype=np.float64)
+    timestamps_s = np.asarray(trajectory.timestamps, dtype=np.float64)
+    pose_count = int(len(positions))
+    duration_s = _duration_s(timestamps_s)
+    segment_lengths = np.linalg.norm(np.diff(positions, axis=0), axis=1) if pose_count >= 2 else np.asarray([])
+    positive_dt = np.diff(timestamps_s)
+    speeds = np.divide(
+        segment_lengths,
+        positive_dt,
+        out=np.zeros_like(segment_lengths),
+        where=positive_dt > 0.0,
+    )
+    path_length_m = float(np.sum(segment_lengths))
+    tangent_angle_sum_rad = _tangent_angle_sum_rad(positions)
+    curvature_rad_m = 0.0 if path_length_m <= 0.0 else tangent_angle_sum_rad / path_length_m
+    subject = trajectory_ref.source.value
+    if trajectory_ref.coordinate_status is not None:
+        subject = f"{subject}/{trajectory_ref.coordinate_status.value}"
+    return _stats_rows(
+        profile,
+        scope=scope,
+        subject=subject,
+        values={
+            "trajectory_pose_count": (pose_count, "count"),
+            "trajectory_duration_s": (duration_s, "s"),
+            "trajectory_path_length_m": (path_length_m, "m"),
+            "trajectory_mean_speed_m_s": (float(np.mean(speeds)) if speeds.size else 0.0, "m/s"),
+            "trajectory_max_speed_m_s": (float(np.max(speeds)) if speeds.size else 0.0, "m/s"),
+            "trajectory_tangent_angle_sum_rad": (tangent_angle_sum_rad, "rad"),
+            "trajectory_mean_angular_rate_rad_s": (
+                0.0 if duration_s <= 0.0 else tangent_angle_sum_rad / duration_s,
+                "rad/s",
+            ),
+            "trajectory_mean_curvature_rad_m": (curvature_rad_m, "rad/m"),
+            "ego_motion_class": (_ego_motion_class(pose_count, duration_s, path_length_m, curvature_rad_m), "class"),
+        },
+    )
+
+
+def _tangent_angle_sum_rad(positions: np.ndarray) -> float:
+    segments = np.diff(positions, axis=0)
+    lengths = np.linalg.norm(segments, axis=1)
+    valid = segments[lengths > 0.0]
+    if len(valid) < 2:
+        return 0.0
+    unit = valid / np.linalg.norm(valid, axis=1, keepdims=True)
+    dots = np.sum(unit[:-1] * unit[1:], axis=1)
+    return float(np.sum(np.arccos(np.clip(dots, -1.0, 1.0))))
+
+
+def _ego_motion_class(pose_count: int, duration_s: float, path_length_m: float, curvature_rad_m: float) -> str:
+    if pose_count < 3 or duration_s <= 0.0:
+        return "degenerate"
+    if path_length_m < 0.25:
+        return "stationary"
+    if curvature_rad_m < 0.10:
+        return "low_curvature"
+    if curvature_rad_m < 0.30:
+        return "medium_curvature"
+    return "high_curvature"
+
+
+def _duration_s_from_ns(timestamps_ns: list[int]) -> float:
+    if len(timestamps_ns) < 2:
+        return 0.0
+    return float((timestamps_ns[-1] - timestamps_ns[0]) / 1e9)
+
+
+def _duration_s(timestamps_s: np.ndarray) -> float:
+    if timestamps_s.size < 2:
+        return 0.0
+    return float(timestamps_s[-1] - timestamps_s[0])
+
+
+def _mean_fps(frame_count: int, duration_s: float) -> float:
+    return 0.0 if duration_s <= 0.0 else float(max(frame_count - 1, 0) / duration_s)
+
+
+def _stats_rows(
+    profile: NormalizedDatasetProfile,
+    *,
+    scope: str,
+    subject: str,
+    values: dict[str, tuple[int | float | str, str]],
+) -> list[JsonObject]:
+    return [
+        {
+            "dataset_id": profile.dataset_id.value,
+            "sequence_id": profile.sequence_id,
+            "profile_key": profile.profile_key,
+            "source_id": profile.source_id,
+            "scope": scope,
+            "subject": subject,
+            "stat": stat,
+            "value": _csv_value(value),
+            "unit": unit,
+        }
+        for stat, (value, unit) in values.items()
+    ]
+
+
+def _metadata_row(profile: NormalizedDatasetProfile, *, scope: str, key: str, value: str) -> JsonObject:
+    return {
+        "dataset_id": profile.dataset_id.value,
+        "sequence_id": profile.sequence_id,
+        "profile_key": profile.profile_key,
+        "source_id": profile.source_id,
+        "scope": scope,
+        "key": key,
+        "value": value,
+    }
+
+
+def _csv_value(value: int | float | str) -> str:
+    if isinstance(value, float):
+        return f"{value:.12g}"
+    return str(value)
 
 
 def _is_stale_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
@@ -636,20 +957,31 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
     sequence_manifest_path = root / SEQUENCE_MANIFEST_FILENAME
     benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
     entry_path = root / ENTRY_FILENAME
-    sequence_manifest = _rebase_model_paths(
-        SequenceManifest.model_validate_json(sequence_manifest_path.read_text(encoding="utf-8")),
-        old_root=old_root,
-        new_root=new_root,
+    temp_sequence_manifest = SequenceManifest.model_validate_json(sequence_manifest_path.read_text(encoding="utf-8"))
+    temp_benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+        benchmark_inputs_path.read_text(encoding="utf-8")
     )
-    benchmark_inputs = _rebase_model_paths(
-        PreparedBenchmarkInputs.model_validate_json(benchmark_inputs_path.read_text(encoding="utf-8")),
-        old_root=old_root,
-        new_root=new_root,
-    )
+    sequence_manifest = _rebase_model_paths(temp_sequence_manifest, old_root=old_root, new_root=new_root)
+    benchmark_inputs = _rebase_model_paths(temp_benchmark_inputs, old_root=old_root, new_root=new_root)
     entry = _rebase_model_paths(
         NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
         old_root=old_root,
         new_root=new_root,
+    )
+    profile = NormalizedDatasetProfile.model_validate(entry.profile)
+    stats_long_path = root / STATS_LONG_FILENAME
+    metadata_long_path = root / METADATA_LONG_FILENAME
+    _write_csv(
+        stats_long_path, STATS_LONG_HEADER, _entry_stats_rows(profile, temp_sequence_manifest, temp_benchmark_inputs)
+    )
+    _write_csv(
+        metadata_long_path, METADATA_LONG_HEADER, _entry_metadata_rows(profile, sequence_manifest, benchmark_inputs)
+    )
+    entry = entry.model_copy(
+        update={
+            "stats_long_path": _rebase_path(stats_long_path, old_root=root, new_root=new_root),
+            "metadata_long_path": _rebase_path(metadata_long_path, old_root=root, new_root=new_root),
+        }
     )
     write_json(sequence_manifest_path, sequence_manifest)
     write_json(benchmark_inputs_path, benchmark_inputs)
