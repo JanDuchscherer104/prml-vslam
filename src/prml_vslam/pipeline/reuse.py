@@ -52,7 +52,10 @@ def _load_slam_result(run_paths: RunArtifactPaths) -> StageResult:
     slam = SlamArtifacts(
         trajectory_tum=artifact_ref(run_paths.trajectory_path, kind="tum"),
         sparse_points_ply=_optional_ply(run_paths.sparse_points_path),
-        dense_points_ply=_optional_ply(run_paths.dense_points_path) or _optional_ply(run_paths.point_cloud_path),
+        dense_points_ply=_optional_ply(run_paths.point_cloud_path) or _optional_ply(run_paths.dense_points_path),
+        depth_maps_npz=_optional_npz(run_paths.depth_maps_path),
+        point_maps_npz=_optional_npz(run_paths.point_maps_path),
+        point_cloud_confidences_npz=_optional_npz(run_paths.point_cloud_confidences_path),
     )
     return StageResult(
         stage_key=StageKey.SLAM,
@@ -64,6 +67,10 @@ def _load_slam_result(run_paths: RunArtifactPaths) -> StageResult:
 
 def _optional_ply(path: Path) -> ArtifactRef | None:
     return artifact_ref(path, kind="ply") if path.exists() else None
+
+
+def _optional_npz(path: Path) -> ArtifactRef | None:
+    return artifact_ref(path, kind="npz") if path.exists() else None
 
 
 def _outcome(stage_key: StageKey, *, artifacts: dict[str, ArtifactRef]) -> StageOutcome:
