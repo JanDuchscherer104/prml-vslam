@@ -206,8 +206,7 @@ class ExportRerunEventSink(_BaseRerunEventSink):
         attach_recording_sinks(self._stream, grpc_url=None, target_path=target_path)
 
     def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
-        if self._cache_ground_alignment_update(update):
-            return
+        self._cache_ground_alignment_update(update)
         super()._observe_resolved_update(update, payloads=payloads)
 
     def close(self) -> None:

@@ -20,7 +20,9 @@ from prml_vslam.methods.stage.visualization import (
     ROLE_MODEL_PREVIEW,
     ROLE_MODEL_RGB,
     ROLE_TRACKING_POSE,
+    ROLE_TRACKING_POSE_SMOOTHED,
     ROLE_TRACKING_TRAJECTORY,
+    ROLE_TRACKING_TRAJECTORY_SMOOTHED,
     SlamVisualizationAdapter,
 )
 from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
@@ -42,9 +44,28 @@ def test_pose_only_update_produces_pose_and_trajectory_items() -> None:
 
     assert [(item.intent, item.role, item.frame_index) for item in items] == [
         (VisualizationIntent.POSE_TRANSFORM, ROLE_TRACKING_POSE, 9),
+        (VisualizationIntent.POSE_TRANSFORM, ROLE_TRACKING_POSE_SMOOTHED, 9),
         (VisualizationIntent.TRAJECTORY, ROLE_TRACKING_TRAJECTORY, 9),
+        (VisualizationIntent.TRAJECTORY, ROLE_TRACKING_TRAJECTORY_SMOOTHED, 9),
     ]
     assert all(item.pose == update.pose for item in items)
+
+
+def test_smoothed_pose_uses_causal_translation_ema_without_rewriting_raw_pose() -> None:
+    adapter = SlamVisualizationAdapter()
+    first_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0)
+    second_pose = FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0)
+
+    adapter.build_items(SlamUpdate(seq=1, timestamp_ns=1, source_seq=1, pose=first_pose, pose_updated=True), {})
+    items = adapter.build_items(
+        SlamUpdate(seq=2, timestamp_ns=2, source_seq=2, pose=second_pose, pose_updated=True), {}
+    )
+
+    raw_pose = next(item.pose for item in items if item.role == ROLE_TRACKING_POSE)
+    smoothed_pose = next(item.pose for item in items if item.role == ROLE_TRACKING_POSE_SMOOTHED)
+    assert raw_pose == second_pose
+    assert smoothed_pose is not None
+    assert smoothed_pose.tx == 0.2
 
 
 def test_keyframe_update_produces_model_and_keyframe_visualization_items() -> None:

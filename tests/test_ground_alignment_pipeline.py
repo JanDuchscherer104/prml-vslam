@@ -241,7 +241,7 @@ def test_streaming_ground_alignment_finalizes_short_first_keyframe_window(tmp_pa
     )
 
 
-def test_streaming_ground_alignment_first_keyframes_bounds_retained_samples(tmp_path: Path) -> None:
+def test_streaming_ground_alignment_first_keyframes_keeps_live_updates_after_anchor(tmp_path: Path) -> None:
     run_paths = RunArtifactPaths.build(tmp_path / "run")
     calls: list[int] = []
 
@@ -266,8 +266,44 @@ def test_streaming_ground_alignment_first_keyframes_bounds_retained_samples(tmp_
 
     result = runtime.finish_streaming()
 
-    assert calls == [8]
+    assert calls == [8, 8, 8]
     assert result.outcome.metrics["confidence"] == 0.9
+    assert result.payload.estimate_role == "anchor"
+
+
+def test_streaming_ground_alignment_first_keyframes_stops_after_unreliable_anchor_window(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "run")
+    calls: list[int] = []
+
+    class FakeGroundAlignmentService:
+        def __init__(self, *, config: GroundAlignmentConfig) -> None:
+            self.config = config
+
+        def estimate_from_world_points(self, *, points_xyz_world, poses_world_camera, point_cloud_source):
+            calls.append(len(poses_world_camera))
+            return GroundAlignmentMetadata(
+                applied=False,
+                confidence=0.2,
+                point_cloud_source=point_cloud_source,
+                skip_reason="synthetic low-confidence plane",
+            )
+
+    runtime = GroundAlignmentRuntime(service_type=FakeGroundAlignmentService)
+    runtime.start_streaming(
+        GroundAlignmentStreamingStartInput(
+            config=GroundAlignmentConfig(streaming_policy="first_keyframes", streaming_keyframes=3, anchor_keyframes=2),
+            run_paths=run_paths,
+        )
+    )
+
+    for keyframe_index in range(5):
+        runtime.submit_stream_item(_ground_alignment_sample(keyframe_index=keyframe_index))
+
+    result = runtime.finish_streaming()
+
+    assert calls == [2, 3]
+    assert result.outcome.status is StageStatus.SKIPPED
+    assert result.payload.estimate_role == "anchor"
 
 
 def test_streaming_ground_alignment_running_ransac_uses_rolling_window(tmp_path: Path) -> None:

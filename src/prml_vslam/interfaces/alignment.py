@@ -58,6 +58,20 @@ class GroundAlignmentMetadata(BaseData):
     camera_down_alignment: float | None = None
     skip_reason: str | None = None
     visualization: GroundPlaneVisualizationHint | None = None
+    estimate_role: Literal["offline", "anchor", "live_smoothed", "final"] = "offline"
+    """Role of this estimate in streaming/export semantics."""
+
+    sample_count: int | None = Field(default=None, ge=0)
+    """Number of accepted samples used by the estimator, when known."""
+
+    first_keyframe_index: int | None = Field(default=None, ge=0)
+    """First streaming keyframe index represented by this estimate, when known."""
+
+    last_keyframe_index: int | None = Field(default=None, ge=0)
+    """Last streaming keyframe index represented by this estimate, when known."""
+
+    smoothing_alpha: float | None = Field(default=None, ge=0.0, le=1.0)
+    """EMA alpha used to derive this estimate, when it is smoothed."""
 
 
 __all__ = [

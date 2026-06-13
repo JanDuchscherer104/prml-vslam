@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,9 +46,12 @@ class GroundAlignmentRuntime(
         self._streaming_service: GroundAlignmentService | None = None
         self._streaming_points_xyz_world: list[NDArray[np.float64]] = []
         self._streaming_poses_world_camera: list[NDArray[np.float64]] = []
+        self._streaming_keyframe_indices: list[int] = []
         self._accepted_keyframe_count = 0
         self._last_estimated_keyframe_count = 0
         self._last_keyframe_index: int | None = None
+        self._anchor_metadata: GroundAlignmentMetadata | None = None
+        self._smoothed_metadata: GroundAlignmentMetadata | None = None
         self._latest_metadata: GroundAlignmentMetadata | None = None
         self._stop_requested = False
 
@@ -66,10 +70,13 @@ class GroundAlignmentRuntime(
         self._streaming_service = self._service_type(config=input_payload.config)
         self._streaming_points_xyz_world = []
         self._streaming_poses_world_camera = []
+        self._streaming_keyframe_indices = []
         self._pending_updates = []
         self._accepted_keyframe_count = 0
         self._last_estimated_keyframe_count = 0
         self._last_keyframe_index = None
+        self._anchor_metadata = None
+        self._smoothed_metadata = None
         self._latest_metadata = None
         self._stop_requested = False
         self._status = StageRuntimeStatus(
@@ -99,26 +106,32 @@ class GroundAlignmentRuntime(
             return
 
         target = self._streaming_input.config.streaming_keyframes
+        anchor_target = min(self._streaming_input.config.anchor_keyframes, target)
         if (
             self._streaming_input.config.streaming_policy == "first_keyframes"
+            and self._anchor_metadata is None
             and self._accepted_keyframe_count >= target
         ):
             return
         self._streaming_points_xyz_world.append(points_xyz_world)
         self._streaming_poses_world_camera.append(item.T_world_camera.as_matrix())
-        if self._streaming_input.config.streaming_policy == "running_ransac":
+        self._streaming_keyframe_indices.append(item.keyframe_index)
+        if self._streaming_input.config.streaming_policy == "running_ransac" or self._anchor_metadata is not None:
             self._streaming_points_xyz_world = self._streaming_points_xyz_world[-target:]
             self._streaming_poses_world_camera = self._streaming_poses_world_camera[-target:]
+            self._streaming_keyframe_indices = self._streaming_keyframe_indices[-target:]
         self._accepted_keyframe_count += 1
         self._last_keyframe_index = item.keyframe_index
 
-        should_estimate = (
-            self._accepted_keyframe_count == target
-            if self._streaming_input.config.streaming_policy == "first_keyframes"
-            else self._accepted_keyframe_count % target == 0
-        )
+        if self._streaming_input.config.streaming_policy == "first_keyframes":
+            should_estimate = self._accepted_keyframe_count >= anchor_target and (
+                self._anchor_metadata is not None or self._accepted_keyframe_count <= target
+            )
+        else:
+            should_estimate = self._accepted_keyframe_count % target == 0
         metadata = self._estimate_streaming_metadata() if should_estimate else None
         if metadata is not None:
+            metadata = self._observe_streaming_estimate(metadata)
             self._latest_metadata = metadata
             self._last_estimated_keyframe_count = self._accepted_keyframe_count
             self._pending_updates.append(
@@ -159,11 +172,13 @@ class GroundAlignmentRuntime(
         if self._streaming_input is None:
             raise RuntimeError("Streaming ground alignment has not been started.")
         metadata = (
-            self._estimate_streaming_metadata()
+            self._observe_streaming_estimate(self._estimate_streaming_metadata())
             if self._streaming_points_xyz_world
             and self._streaming_poses_world_camera
+            and (self._anchor_metadata is None or self._streaming_input.config.streaming_policy == "running_ransac")
             and self._last_estimated_keyframe_count != self._accepted_keyframe_count
-            else self._latest_metadata
+            else self._anchor_metadata
+            or self._latest_metadata
             or GroundAlignmentMetadata(
                 applied=False,
                 confidence=0.0,
@@ -236,6 +251,84 @@ class GroundAlignmentRuntime(
             points_xyz_world=np.concatenate(self._streaming_points_xyz_world, axis=0),
             poses_world_camera=np.stack(self._streaming_poses_world_camera, axis=0),
             point_cloud_source="streaming_pointmaps",
+        )
+
+    def _observe_streaming_estimate(self, metadata: GroundAlignmentMetadata) -> GroundAlignmentMetadata:
+        metadata = self._annotate_streaming_metadata(
+            metadata, role="anchor" if self._anchor_metadata is None else "final"
+        )
+        if not metadata.applied:
+            return metadata
+        if self._anchor_metadata is None:
+            self._anchor_metadata = metadata
+            self._smoothed_metadata = metadata
+            return metadata
+        smoothed = self._smooth_streaming_metadata(metadata)
+        self._smoothed_metadata = smoothed
+        return smoothed
+
+    def _annotate_streaming_metadata(
+        self,
+        metadata: GroundAlignmentMetadata,
+        *,
+        role: Literal["anchor", "live_smoothed", "final"],
+    ) -> GroundAlignmentMetadata:
+        return metadata.model_copy(
+            update={
+                "estimate_role": role,
+                "sample_count": self._accepted_keyframe_count,
+                "first_keyframe_index": self._streaming_keyframe_indices[0]
+                if self._streaming_keyframe_indices
+                else None,
+                "last_keyframe_index": self._last_keyframe_index,
+                "smoothing_alpha": self._streaming_input.config.smoothing_alpha if self._streaming_input else None,
+            }
+        )
+
+    def _smooth_streaming_metadata(self, metadata: GroundAlignmentMetadata) -> GroundAlignmentMetadata:
+        if (
+            self._smoothed_metadata is None
+            or self._smoothed_metadata.ground_plane_world is None
+            or metadata.ground_plane_world is None
+            or self._streaming_service is None
+        ):
+            return self._annotate_streaming_metadata(metadata, role="live_smoothed")
+        alpha = self._streaming_input.config.smoothing_alpha if self._streaming_input is not None else 0.2
+        previous_plane = self._smoothed_metadata.ground_plane_world
+        current_plane = metadata.ground_plane_world
+        previous_normal = np.asarray(previous_plane.normal_xyz_world, dtype=np.float64)
+        current_normal = np.asarray(current_plane.normal_xyz_world, dtype=np.float64)
+        if float(np.dot(previous_normal, current_normal)) < 0.0:
+            current_normal = -current_normal
+            current_offset = -float(current_plane.offset_world)
+        else:
+            current_offset = float(current_plane.offset_world)
+        normal = (1.0 - alpha) * previous_normal + alpha * current_normal
+        normal_norm = np.linalg.norm(normal)
+        if not np.isfinite(normal_norm) or normal_norm <= 0.0:
+            return self._annotate_streaming_metadata(metadata, role="live_smoothed")
+        normal /= normal_norm
+        offset = (1.0 - alpha) * float(previous_plane.offset_world) + alpha * current_offset
+        yaw_source, transform_viewer_world_world = self._streaming_service.viewer_transform_for_plane(
+            normal_xyz_world=normal,
+            offset_world=offset,
+            poses_world_camera=np.stack(self._streaming_poses_world_camera, axis=0),
+        )
+        smoothed_plane = current_plane.model_copy(
+            update={
+                "normal_xyz_world": tuple(float(value) for value in normal),
+                "offset_world": float(offset),
+            }
+        )
+        return self._annotate_streaming_metadata(
+            metadata.model_copy(
+                update={
+                    "ground_plane_world": smoothed_plane,
+                    "T_viewer_world_world": transform_viewer_world_world,
+                    "yaw_source": yaw_source,
+                }
+            ),
+            role="live_smoothed",
         )
 
     def _build_result(
@@ -321,7 +414,7 @@ def _streaming_progress_message(
     if metadata is None:
         return f"Accepted {keyframes} keyframes; waiting for estimator window {target}."
     if metadata.applied:
-        return f"Updated streaming ground alignment from {keyframes} keyframes."
+        return f"Updated {metadata.estimate_role} streaming ground alignment from {keyframes} keyframes."
     return f"Skipped streaming ground alignment update: {metadata.skip_reason or 'no reliable plane'}"
 
 

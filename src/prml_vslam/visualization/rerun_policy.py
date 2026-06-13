@@ -21,23 +21,32 @@ from prml_vslam.methods.stage.visualization import (
     IMAGE_REF,
     POINTMAP_REF,
     ROLE_KEYFRAME_CAMERA_POSE,
+    ROLE_KEYFRAME_CAMERA_POSE_ALIGNED,
     ROLE_KEYFRAME_CAMERA_WINDOW,
     ROLE_KEYFRAME_DEPTH,
     ROLE_KEYFRAME_PINHOLE,
+    ROLE_KEYFRAME_PINHOLE_ALIGNED,
     ROLE_KEYFRAME_POINTMAP,
+    ROLE_KEYFRAME_POINTMAP_ALIGNED,
     ROLE_KEYFRAME_POINTS_POSE,
+    ROLE_KEYFRAME_POINTS_POSE_ALIGNED,
     ROLE_KEYFRAME_PREVIEW,
     ROLE_KEYFRAME_RGB,
     ROLE_LIVE_MODEL_POSE,
+    ROLE_LIVE_MODEL_POSE_ALIGNED,
     ROLE_MODEL_CAMERA_RGB,
     ROLE_MODEL_DEPTH,
     ROLE_MODEL_PINHOLE,
+    ROLE_MODEL_PINHOLE_ALIGNED,
     ROLE_MODEL_POINTMAP,
+    ROLE_MODEL_POINTMAP_ALIGNED,
     ROLE_MODEL_PREVIEW,
     ROLE_MODEL_RGB,
     ROLE_SOURCE_RGB,
     ROLE_TRACKING_POSE,
+    ROLE_TRACKING_POSE_SMOOTHED,
     ROLE_TRACKING_TRAJECTORY,
+    ROLE_TRACKING_TRAJECTORY_SMOOTHED,
 )
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeUpdate, VisualizationIntent, VisualizationItem
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
@@ -94,21 +103,39 @@ _DEPTH_ENTITY_PATHS = {
 }
 _POINTMAP_ENTITY_PATHS = {
     ROLE_MODEL_POINTMAP: "world/slam/live/model/points",
+    ROLE_MODEL_POINTMAP_ALIGNED: "world/aligned/gravity/slam/live/model/points",
     ROLE_SOURCE_POINTMAP: "world/live/source/camera/points",
     ROLE_KEYFRAME_POINTMAP: "world/slam/keyframes/points/{keyframe_index:06d}/points",
+    ROLE_KEYFRAME_POINTMAP_ALIGNED: "world/aligned/gravity/slam/keyframes/points/{keyframe_index:06d}/points",
 }
 _POSE_ENTITY_PATHS = {
     ROLE_TRACKING_POSE: "world/slam/live/tracking/camera",
+    ROLE_TRACKING_POSE_SMOOTHED: "world/slam/live/tracking_smoothed/camera",
     ROLE_SOURCE_CAMERA_POSE: "world/live/source/camera",
     ROLE_LIVE_MODEL_POSE: "world/slam/live/model",
+    ROLE_LIVE_MODEL_POSE_ALIGNED: "world/aligned/gravity/slam/live/model",
     ROLE_KEYFRAME_CAMERA_POSE: "world/slam/keyframes/cameras/{keyframe_index:06d}",
+    ROLE_KEYFRAME_CAMERA_POSE_ALIGNED: "world/aligned/gravity/slam/keyframes/cameras/{keyframe_index:06d}",
     ROLE_KEYFRAME_POINTS_POSE: "world/slam/keyframes/points/{keyframe_index:06d}",
+    ROLE_KEYFRAME_POINTS_POSE_ALIGNED: "world/aligned/gravity/slam/keyframes/points/{keyframe_index:06d}",
 }
 _PINHOLE_ENTITY_PATHS = {
     ROLE_MODEL_PINHOLE: RERUN_SCENE.model_camera_image,
+    ROLE_MODEL_PINHOLE_ALIGNED: "world/aligned/gravity/slam/live/model/camera/image",
     ROLE_SOURCE_PINHOLE: RERUN_SCENE.source_camera_image,
     ROLE_KEYFRAME_PINHOLE: "world/slam/keyframes/cameras/{keyframe_index:06d}/image",
+    ROLE_KEYFRAME_PINHOLE_ALIGNED: "world/aligned/gravity/slam/keyframes/cameras/{keyframe_index:06d}/image",
 }
+_GRAVITY_ALIGNED_ROLES = {
+    ROLE_LIVE_MODEL_POSE_ALIGNED,
+    ROLE_MODEL_PINHOLE_ALIGNED,
+    ROLE_MODEL_POINTMAP_ALIGNED,
+    ROLE_KEYFRAME_CAMERA_POSE_ALIGNED,
+    ROLE_KEYFRAME_POINTS_POSE_ALIGNED,
+    ROLE_KEYFRAME_PINHOLE_ALIGNED,
+    ROLE_KEYFRAME_POINTMAP_ALIGNED,
+}
+_MAX_PENDING_GRAVITY_ALIGNED_ITEMS = 96
 
 
 @dataclass(slots=True)
@@ -137,7 +164,16 @@ class RerunLoggingPolicy:
     decimation_random_seed: int = 0
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
     _tracking_trajectory_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
+    _tracking_smoothed_trajectory_xyz: list[tuple[float, float, float]] = field(
+        default_factory=list, init=False, repr=False
+    )
     _logged_tracking_start_axes: bool = field(default=False, init=False, repr=False)
+    _logged_tracking_smoothed_start_axes: bool = field(default=False, init=False, repr=False)
+    _gravity_alignment_active: bool = field(default=False, init=False, repr=False)
+    _gravity_alignment_root_logged: bool = field(default=False, init=False, repr=False)
+    _pending_gravity_aligned_items: list[tuple[VisualizationItem, dict[str, np.ndarray]]] = field(
+        default_factory=list, init=False, repr=False
+    )
 
     def observe_update(
         self,
@@ -165,6 +201,9 @@ class RerunLoggingPolicy:
         payloads: Mapping[str, np.ndarray],
     ) -> None:
         """Map one SDK-free visualization item to the current Rerun policy."""
+        if item.role in _GRAVITY_ALIGNED_ROLES and not self._gravity_alignment_active:
+            self._queue_pending_gravity_aligned_item(item, payloads=payloads)
+            return
         match item.intent:
             case VisualizationIntent.RGB_IMAGE:
                 self._log_rgb_item(stream, item, payloads=payloads)
@@ -191,6 +230,20 @@ class RerunLoggingPolicy:
                 self._log_reconstruction_mesh_item(stream, item)
             case VisualizationIntent.GROUND_PLANE:
                 return
+
+    def _queue_pending_gravity_aligned_item(
+        self,
+        item: VisualizationItem,
+        *,
+        payloads: Mapping[str, np.ndarray],
+    ) -> None:
+        resolved_payloads = {
+            ref.handle_id: np.asarray(payloads[ref.handle_id])
+            for ref in item.payload_refs.values()
+            if ref.handle_id in payloads
+        }
+        self._pending_gravity_aligned_items.append((item, resolved_payloads))
+        del self._pending_gravity_aligned_items[:-_MAX_PENDING_GRAVITY_ALIGNED_ITEMS]
 
     def _log_rgb_item(
         self,
@@ -327,10 +380,28 @@ class RerunLoggingPolicy:
         if item.role in {ROLE_SLAM_RAW_TRAJECTORY_ARTIFACT, ROLE_SLAM_SIM3_ALIGNED_TRAJECTORY}:
             self._log_slam_trajectory_artifact_item(stream, item)
             return
+        if item.role == ROLE_TRACKING_TRAJECTORY_SMOOTHED and item.pose is not None:
+            self._set_item_frame_time(stream, item)
+            self._log_tracking_trajectory(
+                stream,
+                pose=item.pose,
+                entity_path="world/slam/trajectory/smoothed",
+                color_rgb=RERUN_SCENE.slam_aligned_rgb,
+                points=self._tracking_smoothed_trajectory_xyz,
+                smoothed=True,
+            )
+            return
         if item.role != ROLE_TRACKING_TRAJECTORY or item.pose is None:
             return
         self._set_item_frame_time(stream, item)
-        self._log_tracking_trajectory(stream, pose=item.pose)
+        self._log_tracking_trajectory(
+            stream,
+            pose=item.pose,
+            entity_path=RERUN_SCENE.slam_raw_trajectory_path(),
+            color_rgb=RERUN_SCENE.slam_raw_rgb,
+            points=self._tracking_trajectory_xyz,
+            smoothed=False,
+        )
 
     def _log_source_reference_trajectory_item(self, stream, item: VisualizationItem) -> None:
         artifact = item.artifact_refs.get(TRAJECTORY_ARTIFACT)
@@ -491,6 +562,20 @@ class RerunLoggingPolicy:
     def _log_ground_alignment(self, stream, *, metadata: GroundAlignmentMetadata | None) -> None:
         if metadata is None or not metadata.applied:
             return
+        if metadata.T_viewer_world_world is not None and not self._gravity_alignment_root_logged:
+            self._gravity_alignment_active = True
+            self._gravity_alignment_root_logged = True
+            rerun_helpers.log_transform(
+                stream,
+                entity_path="world/aligned/gravity/slam",
+                transform=metadata.T_viewer_world_world,
+                axis_length=SLAM_WORLD_AXIS_LENGTH,
+                static=metadata.estimate_role == "anchor",
+            )
+            pending_items = self._pending_gravity_aligned_items
+            self._pending_gravity_aligned_items = []
+            for item, payloads in pending_items:
+                self._log_visualization_item(stream, item, payloads=payloads)
         rerun_helpers.log_ground_plane_patch(stream, metadata=metadata)
 
     def _log_trajectory_alignment(self, stream, *, alignment: TrajectoryAlignmentArtifact) -> None:
@@ -605,30 +690,42 @@ class RerunLoggingPolicy:
             static=False,
         )
 
-    def _log_tracking_trajectory(self, stream, *, pose: FrameTransform) -> None:
+    def _log_tracking_trajectory(
+        self,
+        stream,
+        *,
+        pose: FrameTransform,
+        entity_path: str,
+        color_rgb: np.ndarray,
+        points: list[tuple[float, float, float]],
+        smoothed: bool,
+    ) -> None:
         if not self.show_tracking_trajectory:
             return
-        entity_path = RERUN_SCENE.slam_raw_trajectory_path()
-        self._tracking_trajectory_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
-        if not self._logged_tracking_start_axes:
+        points.append((float(pose.tx), float(pose.ty), float(pose.tz)))
+        logged_start = self._logged_tracking_smoothed_start_axes if smoothed else self._logged_tracking_start_axes
+        if not logged_start:
             self._log_trajectory_endpoint_markers(
                 stream,
                 entity_path=entity_path,
                 poses=[pose],
-                color_rgb=RERUN_SCENE.slam_raw_rgb,
+                color_rgb=color_rgb,
             )
-            self._logged_tracking_start_axes = True
+            if smoothed:
+                self._logged_tracking_smoothed_start_axes = True
+            else:
+                self._logged_tracking_start_axes = True
         rerun_helpers.log_line_strip3d(
             stream,
             entity_path=entity_path,
-            positions_xyz=np.asarray(self._tracking_trajectory_xyz, dtype=np.float32),
-            color_rgb=RERUN_SCENE.slam_raw_rgb,
+            positions_xyz=np.asarray(points, dtype=np.float32),
+            color_rgb=color_rgb,
         )
         self._log_trajectory_pose_transforms(
             stream,
             entity_path=entity_path,
             poses=[pose],
-            start_index=len(self._tracking_trajectory_xyz) - 1,
+            start_index=len(points) - 1,
         )
 
     def _log_trajectory_endpoint_markers(
@@ -773,9 +870,9 @@ def _entity_token(value: str) -> str:
 
 
 def _image_plane_distance_for_role(role: str) -> float | None:
-    if role == ROLE_MODEL_PINHOLE:
+    if role in {ROLE_MODEL_PINHOLE, ROLE_MODEL_PINHOLE_ALIGNED}:
         return LIVE_MODEL_IMAGE_PLANE_DISTANCE
-    if role == ROLE_KEYFRAME_PINHOLE:
+    if role in {ROLE_KEYFRAME_PINHOLE, ROLE_KEYFRAME_PINHOLE_ALIGNED}:
         return KEYFRAME_IMAGE_PLANE_DISTANCE
     if role == ROLE_SOURCE_PINHOLE:
         return SOURCE_IMAGE_PLANE_DISTANCE

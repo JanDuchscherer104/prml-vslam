@@ -50,6 +50,7 @@ from prml_vslam.sources.stage.visualization import (
 from prml_vslam.utils.geometry import transform_points_world_camera, write_point_cloud_ply
 from prml_vslam.visualization import rerun as rerun_helpers
 from prml_vslam.visualization import rerun_sink as rerun_sink_module
+from prml_vslam.visualization.rerun import KEYFRAME_IMAGE_PLANE_DISTANCE, LIVE_MODEL_IMAGE_PLANE_DISTANCE
 from prml_vslam.visualization.rerun_sink import (
     ExportRerunEventSink,
     ExportRerunSinkActor,
@@ -262,7 +263,7 @@ def test_rerun_sink_logs_ground_alignment_live_and_augments_export_on_close(tmp_
     live_sink.observe_update(_ground_alignment_update(), payloads={})
     export_sink.observe_update(_ground_alignment_update(), payloads={})
 
-    assert ground_calls == ["live"]
+    assert ground_calls == ["live", "export"]
 
     live_sink.close()
     export_sink.close()
@@ -396,7 +397,9 @@ def test_rerun_sink_logs_live_model_and_keyframe_branches(tmp_path: Path, monkey
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 8, None),
         ("trajectory", "world/slam/trajectory/raw", 8, None),
+        ("trajectory", "world/slam/trajectory/smoothed", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
         ("pose", "world/slam/keyframes/points/000003", 8, None),
@@ -506,7 +509,9 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 8, None),
         ("trajectory", "world/slam/trajectory/raw", 8, None),
+        ("trajectory", "world/slam/trajectory/smoothed", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
         ("pose", "world/slam/keyframes/points/000003", 8, None),
@@ -523,6 +528,135 @@ def test_rerun_sink_logs_stage_runtime_update_visualizations(tmp_path: Path, mon
     assert transform_axis_lengths["world/slam/live/model"] == 0.0
     assert transform_axis_lengths["world/slam/keyframes/cameras/000003"] == 0.0
     assert transform_axis_lengths["world/slam/keyframes/points/000003"] == 0.0
+
+
+def test_rerun_sink_flushes_pre_anchor_keyframes_to_gravity_aligned_branch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str, int | None, int | None]] = []
+    pinhole_distances: dict[str, float | None] = {}
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: calls.append(
+            ("pose", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pinhole",
+        lambda stream, *, entity_path, intrinsics, image_plane_distance=None: (
+            pinhole_distances.__setitem__(entity_path, image_plane_distance),
+            calls.append(("pinhole", entity_path, *_timeline_state(stream))),
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_pointcloud",
+        lambda stream, *, entity_path, pointmap, colors=None, **kwargs: calls.append(
+            ("points", entity_path, *_timeline_state(stream))
+        ),
+    )
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_rgb_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_depth_image", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_clear", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_ground_plane_patch", lambda *args, **kwargs: None)
+
+    sink = ExportRerunEventSink(
+        target_path=tmp_path / "viewer.rrd",
+        log_camera_image_rgb=True,
+    )
+    payloads = {
+        "rgb": np.zeros((3, 4, 3), dtype=np.uint8),
+        "pointmap": np.ones((3, 4, 3), dtype=np.float32),
+    }
+    for keyframe_index in range(10):
+        sink.observe_update(
+            _slam_keyframe_update(
+                source_seq=keyframe_index + 1,
+                keyframe_index=keyframe_index,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(keyframe_index), ty=0.0, tz=0.0),
+                refs={
+                    IMAGE_REF: _payload_ref("rgb", payload_kind="image", shape=(3, 4, 3), dtype="uint8"),
+                    POINTMAP_REF: _payload_ref(
+                        "pointmap", payload_kind="point_cloud", shape=(3, 4, 3), dtype="float32"
+                    ),
+                },
+                intrinsics=CameraIntrinsics(fx=2.0, fy=2.0, cx=1.0, cy=1.0, width_px=4, height_px=3),
+            ),
+            payloads=payloads,
+        )
+
+    assert all("/aligned/gravity/" not in entity_path for _, entity_path, *_ in calls)
+
+    sink.observe_update(
+        StageRuntimeUpdate(
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
+            timestamp_ns=2,
+            semantic_events=[
+                _ground_alignment_metadata().model_copy(
+                    update={
+                        "T_viewer_world_world": FrameTransform(
+                            qx=0.0,
+                            qy=0.0,
+                            qz=0.0,
+                            qw=1.0,
+                            tx=0.0,
+                            ty=0.0,
+                            tz=0.0,
+                            target_frame="viewer_world",
+                            source_frame="world",
+                        ),
+                        "estimate_role": "anchor",
+                    }
+                )
+            ],
+        ),
+        payloads={},
+    )
+
+    sink.observe_update(
+        StageRuntimeUpdate(
+            stage_key=StageKey.GRAVITY_ALIGNMENT,
+            timestamp_ns=3,
+            semantic_events=[
+                _ground_alignment_metadata().model_copy(
+                    update={
+                        "T_viewer_world_world": FrameTransform(
+                            qx=0.0,
+                            qy=0.0,
+                            qz=0.0,
+                            qw=1.0,
+                            tx=0.0,
+                            ty=0.2,
+                            tz=0.0,
+                            target_frame="viewer_world",
+                            source_frame="world",
+                        ),
+                        "estimate_role": "live_smoothed",
+                    }
+                )
+            ],
+        ),
+        payloads={},
+    )
+
+    aligned_paths = [entity_path for _, entity_path, *_ in calls if "/aligned/gravity/" in entity_path]
+    assert len(aligned_paths) == 71
+    assert aligned_paths.count("world/aligned/gravity/slam") == 1
+    assert "world/aligned/gravity/slam/keyframes/cameras/000000" in aligned_paths
+    assert "world/aligned/gravity/slam/keyframes/cameras/000009" in aligned_paths
+    assert "world/aligned/gravity/slam/keyframes/points/000000/points" in aligned_paths
+    assert "world/aligned/gravity/slam/keyframes/points/000009/points" in aligned_paths
+    assert pinhole_distances["world/aligned/gravity/slam/live/model/camera/image"] == LIVE_MODEL_IMAGE_PLANE_DISTANCE
+    assert (
+        pinhole_distances["world/aligned/gravity/slam/keyframes/cameras/000009/image"] == KEYFRAME_IMAGE_PLANE_DISTANCE
+    )
 
 
 def test_rerun_sink_update_skips_missing_payload_refs(tmp_path: Path, monkeypatch) -> None:
@@ -927,6 +1061,7 @@ def test_rerun_sink_logs_pointmaps_under_shared_model_and_keyframe_transforms(tm
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 4, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 4, None),
         ("pose", "world/slam/live/model", 4, None),
         ("pose", "world/slam/keyframes/cameras/000000", 4, None),
         ("pose", "world/slam/keyframes/points/000000", 4, None),
@@ -995,7 +1130,9 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     assert calls == [
         ("rgb", "world/live/source/rgb", 1, None),
         ("pose", "world/slam/live/tracking/camera", 7, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 7, None),
         ("trajectory", "world/slam/trajectory/raw", 7, None),
+        ("trajectory", "world/slam/trajectory/smoothed", 7, None),
     ]
     assert tracking_axis_lengths["world/slam/live/tracking/camera"] == 0.0
 
@@ -1100,6 +1237,7 @@ def test_rerun_sink_does_not_log_root_world_coordinates(tmp_path: Path, monkeypa
 
     assert paths == [
         ("world/slam/live/tracking/camera", 2, None),
+        ("world/slam/live/tracking_smoothed/camera", 2, None),
     ]
     assert "world" not in [path for path, _, _ in paths]
 
@@ -1260,6 +1398,7 @@ def test_rerun_sink_keeps_camera_branch_when_keyframe_pointmap_is_missing(tmp_pa
 
     assert calls == [
         ("pose", "world/slam/live/tracking/camera", 8, None),
+        ("pose", "world/slam/live/tracking_smoothed/camera", 8, None),
         ("pose", "world/slam/live/model", 8, None),
         ("pose", "world/slam/keyframes/cameras/000003", 8, None),
         ("pose", "world/slam/keyframes/points/000003", 8, None),
