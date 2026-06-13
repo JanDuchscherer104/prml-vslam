@@ -11,7 +11,8 @@ project_doc_fallback_filenames = ["AGENTS.md"]
 
     [mcp_servers.code-index]
     command = "uvx"
-    args    = ["code-index-mcp", "--project-path", "/home/jd/repos/prml-vslam"]
+    args    = ["code-index-mcp", "--project-path", "."]
+    cwd     = "."
 
     [mcp_servers.graphify]
     command = "uv"
@@ -55,4 +56,8 @@ enabled = true
 
 [[skills.config]]
 path    = "../.agents/skills/rerun-slam-integration"
+enabled = true
+
+[[skills.config]]
+path    = "../.agents/skills/scientific-writing"
 enabled = true

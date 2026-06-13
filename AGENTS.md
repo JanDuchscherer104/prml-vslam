@@ -8,6 +8,7 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 - `README.md`: repository workflow, setup, developer commands, and high-level deliverables.
 - `docs/Questions.md`: high-quality human-maintained ground truth for challenge intent, clarified requirements, operator-facing scope, and product constraints. Consult it whenever a task touches project scope, assumptions, or evaluation intent.
 - `.agents/references/agent_reference.md`: lookup material for Context7 library IDs and primary sources relevant to this project.
+- `.agents/references/agent_scaffold.md`: routing contract for repo-local agent instructions, skills, references, MCP/tool use, and derived evidence surfaces.
 - The nearest nested `AGENTS.md` overrides this file for its subtree.
 
 ## Repo Map
@@ -36,6 +37,7 @@ This repository owns the configuration, artifact layout, evaluation, and reporti
 
 - When drafting requirements or specs, first extract every explicit user requirement before translating it into product or engineering requirements.
 - When promoting prompt-derived guidance into scaffold files or skills, persist only reusable rules, boundaries, and stable facts. Keep one-off task wording, temporary branch context, and transient cleanup notes out of canonical guidance.
+- Use `.agents/references/agent_scaffold.md` before adding or reorganizing agent skills, references, MCP wiring, or scaffold instructions.
 - Prefer package `README.md` and `REQUIREMENTS.md` files for ownership and implementation notes rather than restating that material in nested `AGENTS.md` files.
 - Resolve discoverable repo facts locally before asking questions. If ambiguity still materially changes the spec, ask clarifying questions before finalizing it. In Plan Mode, prefer extensive clarification when ambiguity remains.
 

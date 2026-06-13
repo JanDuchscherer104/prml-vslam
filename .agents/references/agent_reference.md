@@ -1,7 +1,19 @@
 # Agent Reference
 
+## Agent Scaffold
+
+- Scaffold contract: [agent_scaffold.md](agent_scaffold.md)
+- OpenAI Codex best practices: <https://developers.openai.com/codex/learn/best-practices>
+- AGENTS.md format guide: <https://agents.md/>
+- Claude Code memory guide: <https://code.claude.com/docs/en/memory>
+- GitHub Copilot repository instructions: <https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions>
+- NVIDIA NeMo Agent Toolkit cursor-rules guide: <https://docs.nvidia.com/nemo/agent-toolkit/1.2/extend/cursor-rules-developer-guide.html>
+- GitHub awesome-copilot scaffold collection: <https://github.com/github/awesome-copilot>
+- MCP specification: <https://modelcontextprotocol.io/specification/2025-06-18/>
+
 ## Context7 Library IDs
 
+- `/websites/modelcontextprotocol_io_specification_2025-06-18` - Model Context Protocol specification
 - `/websites/astral_sh_uv` - UV package manager
 - `/pydantic/pydantic` - Data validation and settings management
 - `/pydantic/pydantic-settings` - Environment-backed application settings
