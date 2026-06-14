@@ -77,7 +77,8 @@ def test_build_wide_metric_rows_produces_one_row_per_run_reference_estimate() ->
     assert row["APE Rot. RMSE (deg)"] == pytest.approx(1.5, abs=1e-4)
     assert row["RPE Trans. RMSE (m)"] == pytest.approx(0.05, abs=1e-4)
     assert row["RPE Rot. RMSE (deg)"] == pytest.approx(0.8, abs=1e-4)
-    assert row["Matched Pairs"] == 50
+    assert row["APE Pairs"] == 50
+    assert row["RPE Pairs"] == 50
 
 
 def test_build_wide_metric_rows_leaves_none_for_missing_metrics() -> None:
@@ -90,6 +91,8 @@ def test_build_wide_metric_rows_leaves_none_for_missing_metrics() -> None:
     assert result[0]["APE Rot. RMSE (deg)"] is None
     assert result[0]["RPE Trans. RMSE (m)"] is None
     assert result[0]["RPE Rot. RMSE (deg)"] is None
+    assert result[0]["APE Pairs"] == 50
+    assert result[0]["RPE Pairs"] is None
 
 
 def test_build_wide_metric_rows_keeps_separate_rows_for_distinct_run_ids() -> None:

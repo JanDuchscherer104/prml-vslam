@@ -1,8 +1,10 @@
 """Post-run trajectory evaluation discovery and aggregation helpers.
 
-This module is the read-only counterpart to the metric computation service. It
-discovers runs, loads persisted trajectory evaluation manifests, and prepares
-rows for app review without invoking evo or mutating run artifacts.
+This module is the primary counterpart to the metric computation service for
+discovery and loading. Most of its surface is read-only: it discovers runs,
+loads persisted trajectory evaluation manifests, and prepares rows for app
+review. The exception is :meth:`TrajectoryEvaluationQueryService.recompute_run_evaluation`,
+which explicitly invokes evo metric computation and overwrites persisted artifacts.
 """
 
 from __future__ import annotations
@@ -120,7 +122,10 @@ class RunTrajectoryEvaluation(BaseData):
 
 
 class TrajectoryEvaluationQueryService:
-    """Read-only post-run query service for trajectory evaluation artifacts."""
+    """Post-run query service for trajectory evaluation artifacts.
+
+    All methods except :meth:`recompute_run_evaluation` are read-only.
+    """
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
@@ -295,6 +300,10 @@ class TrajectoryEvaluationQueryService:
 
     def recompute_run_evaluation(self, run: DiscoveredRun) -> TrajectoryEvaluationManifest:
         """Recompute and persist trajectory metrics for one discovered run from its artifact data.
+
+        **This method is mutating**: it invokes evo APE/RPE computation and overwrites
+        ``evaluation/trajectory/manifest.json`` and ``evaluation/trajectory/metrics_long.csv``
+        under the run's artifact root. It is not safe to call concurrently on the same run.
 
         Reads ``benchmark/inputs.json`` for reference and candidate trajectories, remapping
         absolute paths written on other machines to the local artifact root. Falls back to
