@@ -20,7 +20,8 @@ from prml_vslam.eval.contracts import (
     CloudAlignmentSelection,
     MetricStats,
 )
-from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
+from prml_vslam.align.icp import CloudAlignmentService
+from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
 from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
@@ -610,7 +611,7 @@ def _planar_yawed_pair(
 
 
 def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
-    from prml_vslam.eval.services import _sim3_up_axis_tilt_deg
+    from prml_vslam.align.trajectory_sim3 import sim3_up_axis_tilt_deg as _sim3_up_axis_tilt_deg
     from prml_vslam.utils.geometry import yaw_similarity_align
 
     estimate, reference, _ = _planar_yawed_pair(yaw_deg=175.0, scale=1.3)
@@ -624,7 +625,7 @@ def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
 
 
 def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
-    from prml_vslam.eval.services import _is_gravity_aligned_target
+    from prml_vslam.align.gravity import is_gravity_aligned_target as _is_gravity_aligned_target
 
     assert _is_gravity_aligned_target("advio_gt_world")
     assert _is_gravity_aligned_target("advio_arkit_world")
@@ -635,7 +636,8 @@ def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
 def test_align_estimate_sim3_gravity_lock_keeps_up_axis_flat() -> None:
     from evo.core.trajectory import PoseTrajectory3D
 
-    from prml_vslam.eval.services import _align_estimate_sim3, _sim3_up_axis_tilt_deg
+    from prml_vslam.align.trajectory_sim3 import align_estimate_sim3 as _align_estimate_sim3
+    from prml_vslam.align.trajectory_sim3 import sim3_up_axis_tilt_deg as _sim3_up_axis_tilt_deg
 
     estimate_xyz, reference_xyz, timestamps = _planar_yawed_pair(yaw_deg=176.0, scale=1.2, vertical_jitter=0.01)
     quaternions = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (len(timestamps), 1))
