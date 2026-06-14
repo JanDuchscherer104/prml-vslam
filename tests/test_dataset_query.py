@@ -238,7 +238,7 @@ def test_recompute_run_evaluation_regenerates_manifest_from_benchmark_inputs_jso
     artifacts = tmp_path / "artifacts"
     run_root = artifacts / "advio-20" / "vista"
     _write_sequence_manifest(run_root / "input", sequence_id="advio-20", dataset_id="advio")
-    estimate_path = _write_four_pose_trajectory(run_root / "slam" / "trajectory.tum")
+    _write_four_pose_trajectory(run_root / "slam" / "trajectory.tum")
     reference_path = _write_four_pose_trajectory(run_root / "benchmark" / "ground_truth.tum")
     _write_benchmark_inputs_json(run_root, reference_path=reference_path)
 
