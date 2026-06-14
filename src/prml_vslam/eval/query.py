@@ -15,11 +15,17 @@ from pydantic import Field
 
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
+    SelectionSnapshot,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
 )
 from prml_vslam.methods.stage.backend_config import MethodId
-from prml_vslam.sources.contracts import SequenceManifest
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.registry import list_sequence_slugs
 from prml_vslam.utils import BaseData, PathConfig
@@ -287,11 +293,101 @@ class TrajectoryEvaluationQueryService:
         """Return the canonical long-form trajectory metric table path for a run."""
         return (run_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
 
+    def recompute_run_evaluation(self, run: DiscoveredRun) -> TrajectoryEvaluationManifest:
+        """Recompute and persist trajectory metrics for one discovered run from its artifact data.
+
+        Reads ``benchmark/inputs.json`` for reference and candidate trajectories, remapping
+        absolute paths written on other machines to the local artifact root. Falls back to
+        ``benchmark/ground_truth.tum`` when no inputs file is present.
+        """
+        from prml_vslam.eval.services import TrajectoryEvaluationService
+
+        sequence_manifest = _load_run_sequence_manifest(run.artifact_root)
+        sequence_slug = sequence_manifest.sequence_id if sequence_manifest else run.artifact_root.name
+        dataset_id = sequence_manifest.dataset_id if sequence_manifest else None
+
+        benchmark_inputs = _load_benchmark_inputs(run.artifact_root)
+        reference: ReferenceTrajectoryRef | None = None
+        candidate_trajectories: list[ReferenceTrajectoryRef] | None = None
+
+        if benchmark_inputs is not None:
+            raw_ref = benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
+            if raw_ref is not None:
+                reference = _remap_reference(raw_ref, run.artifact_root)
+            candidate_trajectories = [
+                _remap_reference(c, run.artifact_root) for c in benchmark_inputs.candidate_trajectories
+            ]
+
+        if reference is None:
+            gt_path = run.artifact_root / "benchmark" / "ground_truth.tum"
+            if not gt_path.exists():
+                raise FileNotFoundError(f"No reference trajectory found for run at {run.artifact_root}")
+            reference = ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=gt_path)
+
+        selection = SelectionSnapshot(
+            sequence_slug=sequence_slug,
+            reference_path=reference.path,
+            target_frame=reference.target_frame or _infer_target_frame_for_dataset(dataset_id),
+            coordinate_status=reference.coordinate_status.value
+            if reference.coordinate_status
+            else _infer_coord_status_for_dataset(dataset_id),
+            reference_source=reference.source.value,
+            run=run,
+        )
+        return TrajectoryEvaluationService(path_config=self.path_config).compute_evaluation(
+            selection=selection,
+            candidate_trajectories=candidate_trajectories,
+        )
+
     @staticmethod
     def load_error_series_values(path: Path) -> np.ndarray:
         """Load metric error values from an `.npz` error-series artifact."""
         with np.load(path) as payload:
             return np.asarray(payload["values"], dtype=np.float64)
+
+
+def _load_benchmark_inputs(artifact_root: Path) -> PreparedBenchmarkInputs | None:
+    inputs_path = artifact_root / "benchmark" / "inputs.json"
+    if not inputs_path.exists():
+        return None
+    try:
+        return PreparedBenchmarkInputs.model_validate_json(inputs_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _remap_reference(ref: ReferenceTrajectoryRef, local_artifact_root: Path) -> ReferenceTrajectoryRef:
+    path = _remap_artifact_path(ref.path, local_artifact_root)
+    metadata_path = _remap_artifact_path(ref.metadata_path, local_artifact_root) if ref.metadata_path else None
+    return ref.model_copy(update={"path": path, "metadata_path": metadata_path})
+
+
+def _remap_artifact_path(path: Path, local_artifact_root: Path) -> Path:
+    """Remap an absolute path written on another machine to the local artifact root."""
+    if path.exists():
+        return path
+    for marker in ("benchmark", "slam", "evaluation", "input"):
+        parts = path.parts
+        for i, part in enumerate(parts):
+            if part == marker:
+                candidate = local_artifact_root / Path(*parts[i:])
+                if candidate.exists():
+                    return candidate
+    return path
+
+
+def _infer_target_frame_for_dataset(dataset_id: DatasetId | None) -> str:
+    if dataset_id is DatasetId.ADVIO:
+        return "advio_gt_world"
+    if dataset_id is DatasetId.TUM_RGBD:
+        return "tum_rgbd_world"
+    return "world"
+
+
+def _infer_coord_status_for_dataset(dataset_id: DatasetId | None) -> str:
+    if dataset_id is DatasetId.ADVIO:
+        return "aligned"
+    return "source_native"
 
 
 def _matches_dataset(sequence_manifest: SequenceManifest | None, dataset: DatasetId) -> bool:
