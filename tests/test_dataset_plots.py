@@ -12,10 +12,14 @@ from prml_vslam.eval.dataset_aggregation import (
     PerSequenceRow,
     build_heatmap_data,
 )
+import numpy as np
+
 from prml_vslam.plotting.metrics import (
     build_coverage_chart,
     build_dataset_heatmap,
     build_grouped_bar_per_sequence,
+    build_trajectory_error_box,
+    build_trajectory_error_cdf,
     build_violin_by_method,
 )
 
@@ -213,3 +217,48 @@ def test_build_violin_by_method_returns_one_violin_per_source() -> None:
     assert "vista/raw" in trace_names
     assert "arcore/source_native" in trace_names
     assert all(isinstance(t, go.Violin) for t in figure.data)
+
+
+# ---------------------------------------------------------------------------
+# build_trajectory_error_cdf / build_trajectory_error_box
+# ---------------------------------------------------------------------------
+
+
+def _error_series() -> dict[str, np.ndarray]:
+    return {
+        "vista/raw": np.array([0.1, 0.2, 0.3, 0.5], dtype=np.float64),
+        "arcore/source_native": np.array([0.2, 0.4, 0.6], dtype=np.float64),
+    }
+
+
+def test_build_trajectory_error_cdf_uses_custom_title_and_unit() -> None:
+    figure = build_trajectory_error_cdf(_error_series(), title="RPE Translation CDF", unit="m")
+
+    assert figure.layout.title.text == "RPE Translation CDF"
+    assert "m" in figure.layout.xaxis.title.text
+    assert figure.layout.yaxis.title.text == "Cumulative Fraction"
+    assert len(figure.data) == 2
+
+
+def test_build_trajectory_error_cdf_defaults_to_generic_title() -> None:
+    figure = build_trajectory_error_cdf(_error_series())
+
+    assert figure.layout.title.text == "Error CDF"
+    assert figure.layout.xaxis.title.text == "Error (m)"
+
+
+def test_build_trajectory_error_box_uses_custom_title_and_unit() -> None:
+    figure = build_trajectory_error_box(_error_series(), title="APE Rotation Distribution", unit="deg")
+
+    assert figure.layout.title.text == "APE Rotation Distribution"
+    assert "deg" in figure.layout.yaxis.title.text
+    assert len(figure.data) == 2
+
+
+def test_build_trajectory_error_cdf_skips_empty_series() -> None:
+    series = {"empty": np.array([], dtype=np.float64), "valid": np.array([0.1, 0.2], dtype=np.float64)}
+
+    figure = build_trajectory_error_cdf(series)
+
+    assert len(figure.data) == 1
+    assert figure.data[0].name == "valid"

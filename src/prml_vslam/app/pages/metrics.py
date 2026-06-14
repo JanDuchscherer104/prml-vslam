@@ -16,7 +16,7 @@ from prml_vslam.eval.dataset_aggregation import (
     build_leaderboard,
     build_per_sequence_table,
 )
-from prml_vslam.eval.query import RunTrajectoryEvaluation
+from prml_vslam.eval.query import RunTrajectoryEvaluation, TrajectoryEvaluationQueryService
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 from prml_vslam.plotting.metrics import (
     build_coverage_chart,
@@ -64,8 +64,8 @@ def render(context: AppContext) -> None:
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
         body=(
-            "Inspect persisted trajectory evaluation manifests across runs. This page never computes evo metrics; "
-            "rerun the trajectory evaluation stage when manifests are missing."
+            "Inspect persisted trajectory evaluation manifests across runs. "
+            "Use **Recompute Metrics** to regenerate manifests from existing artifact data."
         ),
     )
     page_state = context.state.metrics
@@ -109,6 +109,7 @@ def render(context: AppContext) -> None:
 
     loaded = [query.load_run_evaluation(run) for run in selection.runs]
     _render_run_status(loaded)
+    _render_recompute_button(query, selection.runs)
     metric_rows = [row for loaded_run in loaded for row in loaded_run.metric_rows]
     if not metric_rows:
         st.info("No persisted trajectory metric rows are available for this sequence yet.")
@@ -118,7 +119,7 @@ def render(context: AppContext) -> None:
     if not filtered_rows:
         st.warning("No metric rows match the selected filters.")
         return
-    _render_ranked_table(filtered_rows)
+    _render_wide_metric_table(filtered_rows)
     _render_summary_plots(context, filtered_rows)
 
 
@@ -143,21 +144,36 @@ def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
         st.dataframe(rows, hide_index=True, width="stretch")
 
 
+def _render_recompute_button(
+    query: TrajectoryEvaluationQueryService,
+    runs: list,
+    *,
+    label: str = "Recompute Metrics",
+) -> None:
+    if st.button(label, icon=":material/refresh:"):
+        errors: list[str] = []
+        n = len(runs)
+        progress = st.progress(0.0, text="Starting…")
+        for i, run in enumerate(runs):
+            progress.progress((i + 0.5) / n, text=f"Recomputing {run.label}…")
+            try:
+                query.recompute_run_evaluation(run)
+            except Exception as exc:
+                errors.append(f"{run.label}: {exc}")
+        progress.progress(1.0, text="Done.")
+        for err in errors:
+            st.warning(err)
+        st.rerun()
+
+
 def _render_filters(rows: list[TrajectoryMetricResultRow]) -> list[TrajectoryMetricResultRow]:
     with st.container(border=True):
         st.subheader("Filters")
-        columns = st.columns(4, gap="small")
-        families = _multi_select(columns[0], "Metric Family", [row.metric_family for row in rows])
-        relations = _multi_select(columns[1], "Pose Relation", [row.pose_relation.value for row in rows])
-        references = _multi_select(columns[2], "Reference", [row.reference_source for row in rows])
-        estimates = _multi_select(columns[3], "Estimate", [row.estimate_source for row in rows])
+        columns = st.columns(2, gap="small")
+        references = _multi_select(columns[0], "Reference", [row.reference_source for row in rows])
+        estimates = _multi_select(columns[1], "Estimate", [row.estimate_source.split("/")[0] for row in rows])
     return [
-        row
-        for row in rows
-        if row.metric_family in families
-        and row.pose_relation.value in relations
-        and row.reference_source in references
-        and row.estimate_source in estimates
+        row for row in rows if row.reference_source in references and row.estimate_source.split("/")[0] in estimates
     ]
 
 
@@ -166,44 +182,79 @@ def _multi_select(column, label: str, values: list[str]) -> list[str]:
     return column.multiselect(label, options=options, default=options)
 
 
-def _render_ranked_table(rows: list[TrajectoryMetricResultRow]) -> None:
-    table_rows = [
-        {
-            "Run": row.run_id,
-            "Sequence": row.sequence_id,
-            "Reference": row.reference_source,
-            "Estimate": row.estimate_source,
-            "Metric": f"{row.metric_family}.{row.pose_relation.name}",
-            "Statistic": row.statistic,
-            "Value": row.value,
-            "Unit": row.unit or "",
-            "Matched Pairs": row.matched_pairs,
-        }
-        for row in sorted(rows, key=lambda item: (item.statistic != "rmse", item.value))
-    ]
+def _render_wide_metric_table(rows: list[TrajectoryMetricResultRow]) -> None:
+    table_rows = _build_wide_metric_rows(rows)
     with st.container(border=True):
-        st.subheader("Ranked Metrics")
+        st.subheader("Metrics")
         st.dataframe(table_rows, hide_index=True, width="stretch")
+
+
+def _build_wide_metric_rows(rows: list[TrajectoryMetricResultRow]) -> list[dict]:
+    """Pivot long-format RMSE rows into one wide row per (run, reference, estimate, coordinate status)."""
+    rmse_rows = [r for r in rows if r.statistic == "rmse"]
+    groups: dict[tuple[str, str, str, str], dict] = {}
+    for row in rmse_rows:
+        source, _, coord = row.estimate_source.partition("/")
+        key = (row.run_id, row.reference_source, source, coord)
+        if key not in groups:
+            groups[key] = {
+                "Run": row.run_id,
+                "Reference": row.reference_source,
+                "Estimate": source,
+                "Coordinate Status": coord,
+                "APE Trans. RMSE (m)": None,
+                "APE Rot. RMSE (deg)": None,
+                "RPE Trans. RMSE (m)": None,
+                "RPE Rot. RMSE (deg)": None,
+                "Matched Pairs": None,
+            }
+        pose = row.pose_relation.name
+        family = row.metric_family
+        if family == "ape" and pose == "translation_part":
+            groups[key]["APE Trans. RMSE (m)"] = round(row.value, 4)
+            groups[key]["Matched Pairs"] = row.matched_pairs
+        elif family == "ape" and pose == "rotation_angle_deg":
+            groups[key]["APE Rot. RMSE (deg)"] = round(row.value, 4)
+        elif family == "rpe" and pose == "translation_part":
+            groups[key]["RPE Trans. RMSE (m)"] = round(row.value, 4)
+        elif family == "rpe" and pose == "rotation_angle_deg":
+            groups[key]["RPE Rot. RMSE (deg)"] = round(row.value, 4)
+    return sorted(groups.values(), key=lambda r: (r["Run"], r["Reference"], r["Estimate"], r["Coordinate Status"]))
+
+
+_PLOT_METRIC_SPECS = [
+    ("ape", "translation_part", "APE Translation", "m"),
+    ("ape", "rotation_angle_deg", "APE Rotation", "deg"),
+    ("rpe", "translation_part", "RPE Translation", "m"),
+    ("rpe", "rotation_angle_deg", "RPE Rotation", "deg"),
+]
 
 
 def _render_summary_plots(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> None:
     plot_rows = [row for row in rows if row.statistic == "rmse"]
     if plot_rows:
         st.plotly_chart(build_trajectory_rmse_bar(plot_rows), width="stretch")
-    cdf_rows = [
-        row
-        for row in rows
-        if row.statistic == "rmse"
-        and row.metric_family == "ape"
-        and row.pose_relation.name == "translation_part"
-        and row.error_series_path is not None
-    ]
-    if not cdf_rows:
-        return
-    series_by_label = _load_error_series_by_label(context, cdf_rows)
-    figures = st.columns(2, gap="large")
-    figures[0].plotly_chart(build_trajectory_error_cdf(series_by_label), width="stretch")
-    figures[1].plotly_chart(build_trajectory_error_box(series_by_label), width="stretch")
+    for family, pose_name, label, unit in _PLOT_METRIC_SPECS:
+        group_rows = [
+            row
+            for row in rows
+            if row.statistic == "rmse"
+            and row.metric_family == family
+            and row.pose_relation.name == pose_name
+            and row.error_series_path is not None
+        ]
+        if not group_rows:
+            continue
+        series_by_label = _load_error_series_by_label(context, group_rows)
+        if not any(v.size > 0 for v in series_by_label.values()):
+            continue
+        col_cdf, col_box = st.columns(2, gap="large")
+        col_cdf.plotly_chart(
+            build_trajectory_error_cdf(series_by_label, title=f"{label} CDF", unit=unit), width="stretch"
+        )
+        col_box.plotly_chart(
+            build_trajectory_error_box(series_by_label, title=f"{label} Distribution", unit=unit), width="stretch"
+        )
 
 
 def _load_error_series_by_label(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> dict[str, np.ndarray]:
@@ -227,6 +278,9 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     """Render the dataset-wide benchmark summary view."""
     query = context.trajectory_evaluation_query
     page_state = context.state.metrics
+
+    runs = query.discover_dataset_runs(dataset)
+    _render_recompute_button(query, runs, label="Recompute All Dataset Metrics")
 
     with st.spinner("Loading dataset evaluation…"):
         dataset_selection = query.load_dataset_evaluation(dataset)
@@ -280,6 +334,9 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     with st.container(border=True):
         st.subheader("Coverage")
         st.plotly_chart(build_coverage_chart(coverage_matrix), width="stretch")
+
+    if dataset_selection.metric_rows:
+        _render_wide_metric_table(dataset_selection.metric_rows)
 
     if per_seq_rows:
         leaderboard = build_leaderboard(per_seq_rows, n_total_sequences=n_total)

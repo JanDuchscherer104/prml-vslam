@@ -83,7 +83,12 @@ def build_trajectory_rmse_bar(rows: list[TrajectoryMetricResultRow]) -> go.Figur
     return figure
 
 
-def build_trajectory_error_cdf(series_by_label: dict[str, np.ndarray]) -> go.Figure:
+def build_trajectory_error_cdf(
+    series_by_label: dict[str, np.ndarray],
+    *,
+    title: str = "Error CDF",
+    unit: str = "m",
+) -> go.Figure:
     """Build an empirical CDF for one or more persisted error series."""
     figure = go.Figure()
     for label, values in series_by_label.items():
@@ -93,15 +98,20 @@ def build_trajectory_error_cdf(series_by_label: dict[str, np.ndarray]) -> go.Fig
         cdf = np.arange(1, sorted_values.size + 1, dtype=np.float64) / float(sorted_values.size)
         figure.add_trace(go.Scatter(x=sorted_values, y=cdf, mode="lines", name=label))
     figure.update_layout(
-        title="Absolute Position Error CDF",
-        xaxis_title="Error (m)",
+        title=title,
+        xaxis_title=f"Error ({unit})",
         yaxis_title="Cumulative Fraction",
         margin={"l": 48, "r": 24, "t": 48, "b": 48},
     )
     return figure
 
 
-def build_trajectory_error_box(series_by_label: dict[str, np.ndarray]) -> go.Figure:
+def build_trajectory_error_box(
+    series_by_label: dict[str, np.ndarray],
+    *,
+    title: str = "Error Distribution",
+    unit: str = "m",
+) -> go.Figure:
     """Build a distribution box plot for one or more persisted error series."""
     figure = go.Figure()
     for label, values in series_by_label.items():
@@ -109,8 +119,8 @@ def build_trajectory_error_box(series_by_label: dict[str, np.ndarray]) -> go.Fig
             continue
         figure.add_trace(go.Box(y=values, name=label, boxmean=True))
     figure.update_layout(
-        title="Absolute Position Error Distribution",
-        yaxis_title="Error (m)",
+        title=title,
+        yaxis_title=f"Error ({unit})",
         margin={"l": 48, "r": 24, "t": 48, "b": 96},
     )
     return figure
