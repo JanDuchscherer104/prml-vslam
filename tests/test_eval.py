@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from evo.core import metrics
 
+from prml_vslam.align.icp import CloudAlignmentService
 from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
@@ -20,7 +21,6 @@ from prml_vslam.eval.contracts import (
     CloudAlignmentSelection,
     MetricStats,
 )
-from prml_vslam.align.icp import CloudAlignmentService
 from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
 from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime

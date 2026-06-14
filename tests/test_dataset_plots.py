@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import plotly.graph_objects as go
 import pytest
 from evo.core import metrics
@@ -12,8 +13,6 @@ from prml_vslam.eval.dataset_aggregation import (
     PerSequenceRow,
     build_heatmap_data,
 )
-import numpy as np
-
 from prml_vslam.plotting.metrics import (
     build_coverage_chart,
     build_dataset_heatmap,
