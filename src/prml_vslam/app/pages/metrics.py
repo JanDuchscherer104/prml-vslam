@@ -151,6 +151,9 @@ def _render_recompute_button(
     label: str = "Recompute Metrics",
 ) -> None:
     if st.button(label, icon=":material/refresh:"):
+        if not runs:
+            st.info("No runs to recompute.")
+            return
         errors: list[str] = []
         n = len(runs)
         progress = st.progress(0.0, text="Starting…")
@@ -206,19 +209,23 @@ def _build_wide_metric_rows(rows: list[TrajectoryMetricResultRow]) -> list[dict]
                 "APE Rot. RMSE (deg)": None,
                 "RPE Trans. RMSE (m)": None,
                 "RPE Rot. RMSE (deg)": None,
-                "Matched Pairs": None,
+                "APE Pairs": None,
+                "RPE Pairs": None,
             }
         pose = row.pose_relation.name
         family = row.metric_family
         if family == "ape" and pose == "translation_part":
             groups[key]["APE Trans. RMSE (m)"] = round(row.value, 4)
-            groups[key]["Matched Pairs"] = row.matched_pairs
+            groups[key]["APE Pairs"] = row.matched_pairs
         elif family == "ape" and pose == "rotation_angle_deg":
             groups[key]["APE Rot. RMSE (deg)"] = round(row.value, 4)
+            groups[key]["APE Pairs"] = row.matched_pairs
         elif family == "rpe" and pose == "translation_part":
             groups[key]["RPE Trans. RMSE (m)"] = round(row.value, 4)
+            groups[key]["RPE Pairs"] = row.matched_pairs
         elif family == "rpe" and pose == "rotation_angle_deg":
             groups[key]["RPE Rot. RMSE (deg)"] = round(row.value, 4)
+            groups[key]["RPE Pairs"] = row.matched_pairs
     return sorted(groups.values(), key=lambda r: (r["Run"], r["Reference"], r["Estimate"], r["Coordinate Status"]))
 
 

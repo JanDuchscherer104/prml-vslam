@@ -22,7 +22,6 @@ import numpy as np
 from evo.core import metrics, sync
 from evo.tools import file_interface
 
-from prml_vslam.align.gravity import _RDF_DOWN_AXIS
 from prml_vslam.align.trajectory_sim3 import align_estimate_sim3, sim3_up_axis_tilt_deg, trajectory_supports_sim3
 from prml_vslam.eval.alignment_contracts import (
     TrajectoryAlignmentArtifact,
