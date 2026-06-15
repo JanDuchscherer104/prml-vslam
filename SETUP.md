@@ -208,6 +208,110 @@ curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt 
   -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
 
+## Dataset × Method Sweep
+
+The sweep feature runs a cross-product of datasets and methods through the
+existing single-run pipeline, writing local artifacts only.  No aggregation,
+dashboards, or W&B integration are included.
+
+### Sweep TOML
+
+A sweep is described by a single TOML file with three sections:
+
+```toml
+[sweep]
+name       = "vista-vs-mast3r"   # prefix for all run IDs
+output_dir = ".artifacts/sweeps" # shared artifact root
+
+# One [[datasets]] block per dataset/sequence combination.
+[[datasets]]
+dataset_id          = "tum_rgbd"              # "tum_rgbd" | "advio"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 1
+baseline_source     = "ground_truth"          # ReferenceSource enum value
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+reconstruction      = false
+align_cloud         = false
+evaluate_cloud      = false
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# One [methods.<id>] block per SLAM method.
+# Only [stages.slam] is read from each template; all other sections are ignored.
+[methods.vista]
+config_path = ".configs/templates/vista-slam.toml"
+
+[methods.mast3r]
+config_path = ".configs/templates/mast3r-slam.toml"
+```
+
+Run IDs are derived deterministically:
+`{sweep.name}-{dataset_id}-{sequence_id}-{method_id}`
+
+### Method Templates
+
+A method template is a standard pipeline TOML that must contain
+`[stages.slam]`.  All other sections are silently ignored by the sweep loader.
+
+```toml
+# .configs/templates/vista-slam.toml
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "vista"
+    max_frames  = 50
+    random_seed = 43
+```
+
+Ready-to-use templates live in `.configs/templates/`.
+
+### CLI Commands
+
+Inspect the expanded plan without executing:
+
+```bash
+uv run prml-vslam plan-sweep-config .configs/sweeps/example-sweep.toml
+```
+
+Execute all runs sequentially (stops on first failure):
+
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml
+```
+
+Attempt all runs and report failures at the end:
+
+```bash
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml \
+    --continue-on-failure
+```
+
+Each run writes its own timestamped log under the configured run-log directory
+and its artifacts under `[sweep].output_dir`.  Artifacts from summary stages
+under `summary/run-events.jsonl` remain the only source of truth for downstream
+query and aggregation.
+
+### Example Sweep
+
+`.configs/sweeps/example-sweep.toml` runs ViSTA and MASt3R on two sequences
+from TUM RGB-D and ADVIO.
+
 ## Streamlit Workbench
 
 For the Streamlit app without ViSTA:

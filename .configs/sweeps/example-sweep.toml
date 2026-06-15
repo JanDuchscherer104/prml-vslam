@@ -1,0 +1,52 @@
+# Example sweep: ViSTA vs MASt3R across two datasets.
+#
+# Inspect the expanded plan (no execution):
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/example-sweep.toml
+#
+# Execute sequentially, stop on first failure:
+#   uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml
+#
+# Execute sequentially, attempt all runs:
+#   uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml \
+#       --continue-on-failure
+#
+# Expanded run IDs (in execution order):
+#   vista-vs-mast3r-tum_rgbd-freiburg3_large_cabinet-vista
+#   vista-vs-mast3r-tum_rgbd-freiburg3_large_cabinet-mast3r
+#   vista-vs-mast3r-advio-advio-15-vista
+#   vista-vs-mast3r-advio-advio-15-mast3r
+
+[sweep]
+name       = "vista-vs-mast3r"
+output_dir = ".artifacts/sweeps"
+
+# ── Dataset 1: TUM RGB-D ────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 1
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+reconstruction      = false
+align_cloud         = false
+evaluate_cloud      = false
+
+# ── Dataset 2: ADVIO ────────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Methods ─────────────────────────────────────────────────────────────────
+# Each method entry points to a template TOML.  Only [stages.slam] is read.
+
+[methods.vista]
+config_path = ".configs/templates/vista-slam.toml"
+
+[methods.mast3r]
+config_path = ".configs/templates/mast3r-slam.toml"

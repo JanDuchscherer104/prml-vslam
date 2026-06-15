@@ -198,3 +198,180 @@ def test_eval_trajectory_command_uses_advio_provider_baseline_file(
 
     assert result.exit_code == 0
     assert captured["reference_path"] == reference_path
+
+
+# ---------------------------------------------------------------------------
+# Sweep CLI tests
+# ---------------------------------------------------------------------------
+
+_VISTA_SLAM_TOML = """\
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "vista"
+    max_frames  = 50
+    random_seed = 43
+"""
+
+_MAST3R_SLAM_TOML = """\
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "mast3r"
+    max_frames  = 50
+    random_seed = 43
+"""
+
+
+def _write_sweep_fixtures(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Return (sweep_toml, vista_template, mast3r_template) paths."""
+    vista = tmp_path / "vista-slam.toml"
+    vista.write_text(_VISTA_SLAM_TOML, encoding="utf-8")
+    mast3r = tmp_path / "mast3r-slam.toml"
+    mast3r.write_text(_MAST3R_SLAM_TOML, encoding="utf-8")
+    sweep = tmp_path / "sweep.toml"
+    sweep.write_text(
+        f"""\
+[sweep]
+name       = "cli-sweep"
+output_dir = "{(tmp_path / "out").as_posix()}"
+
+[[datasets]]
+dataset_id = "tum_rgbd"
+sequence_id = "freiburg1_xyz"
+frame_stride = 1
+baseline_source = "ground_truth"
+
+[[datasets]]
+dataset_id = "advio"
+sequence_id = "advio-15"
+frame_stride = 2
+
+[methods.vista]
+config_path = "{vista.as_posix()}"
+
+[methods.mast3r]
+config_path = "{mast3r.as_posix()}"
+""",
+        encoding="utf-8",
+    )
+    return sweep, vista, mast3r
+
+
+def test_plan_sweep_config_outputs_valid_json(tmp_path: Path) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+    result = runner.invoke(app, ["plan-sweep-config", str(sweep)])
+
+    assert result.exit_code == 0, result.output
+    # stdout must contain the four expanded run IDs
+    assert "cli-sweep-tum_rgbd-freiburg1_xyz-vista" in result.stdout
+    assert "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r" in result.stdout
+    assert "cli-sweep-advio-advio-15-vista" in result.stdout
+    assert "cli-sweep-advio-advio-15-mast3r" in result.stdout
+
+
+def test_plan_sweep_config_stable_ordering(tmp_path: Path) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+    result = runner.invoke(app, ["plan-sweep-config", str(sweep)])
+
+    assert result.exit_code == 0, result.output
+    positions = [
+        result.stdout.find(rid)
+        for rid in [
+            "cli-sweep-tum_rgbd-freiburg1_xyz-vista",
+            "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r",
+            "cli-sweep-advio-advio-15-vista",
+            "cli-sweep-advio-advio-15-mast3r",
+        ]
+    ]
+    assert positions == sorted(positions), "Run IDs must appear in dataset×method order"
+
+
+def test_plan_sweep_config_fails_on_missing_template(tmp_path: Path) -> None:
+    sweep = tmp_path / "sweep.toml"
+    sweep.write_text(
+        """\
+[sweep]
+name       = "bad-sweep"
+output_dir = ".artifacts/sweeps"
+
+[[datasets]]
+dataset_id  = "tum_rgbd"
+sequence_id = "freiburg1_xyz"
+
+[methods.vista]
+config_path = "/nonexistent/path/vista.toml"
+""",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["plan-sweep-config", str(sweep)])
+    assert result.exit_code == 1
+
+
+def test_run_sweep_config_fail_fast_stops_on_first_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+    executed: list[str] = []
+
+    def fake_run_config_loaded(*, run_cfg, path_config):
+        executed.append(run_cfg.experiment_name)
+        raise typer.Exit(code=1)
+
+    monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    result = runner.invoke(app, ["run-sweep-config", str(sweep), "--fail-fast"])
+
+    assert result.exit_code == 1
+    assert len(executed) == 1, "fail-fast must stop after the first failure"
+
+
+def test_run_sweep_config_continue_on_failure_attempts_all_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+    executed: list[str] = []
+
+    def fake_run_config_loaded(*, run_cfg, path_config):
+        executed.append(run_cfg.experiment_name)
+        raise typer.Exit(code=1)
+
+    monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    result = runner.invoke(app, ["run-sweep-config", str(sweep), "--continue-on-failure"])
+
+    assert result.exit_code == 1
+    assert len(executed) == 4, "continue-on-failure must attempt all four runs"
+
+
+def test_run_sweep_config_exits_zero_when_all_succeed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+
+    def fake_run_config_loaded(*, run_cfg, path_config):
+        pass  # success
+
+    monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    result = runner.invoke(app, ["run-sweep-config", str(sweep)])
+
+    assert result.exit_code == 0
