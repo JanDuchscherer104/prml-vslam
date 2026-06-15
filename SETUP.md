@@ -281,36 +281,78 @@ Ready-to-use templates live in `.configs/templates/`.
 
 ### CLI Commands
 
-Inspect the expanded plan without executing:
+Inspect the expanded plan without executing (no GPU required, works for any sweep):
 
 ```bash
-uv run prml-vslam plan-sweep-config .configs/sweeps/example-sweep.toml
+uv run prml-vslam plan-sweep-config .configs/sweeps/<sweep>.toml
 ```
 
-Execute all runs sequentially (stops on first failure):
+Each run writes its own timestamped log under `.logs/runs/<run-id>/` and its
+artifacts under `[sweep].output_dir`.  Artifacts from summary stages under
+`summary/run-events.jsonl` remain the only source of truth for downstream query
+and aggregation.  Sweep artifacts are discovered automatically by the Streamlit
+app via its recursive artifact scan.
+
+### ViSTA sweeps
 
 ```bash
 mamba activate prml-vslam
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml
-```
 
-Attempt all runs and report failures at the end:
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml
 
-```bash
-uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-sweep.toml \
+# All 40 sequences
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/full-vista-sweep.toml \
     --continue-on-failure
 ```
 
-Each run writes its own timestamped log under the configured run-log directory
-and its artifacts under `[sweep].output_dir`.  Artifacts from summary stages
-under `summary/run-events.jsonl` remain the only source of truth for downstream
-query and aggregation.
+### MASt3R sweeps
 
-### Example Sweep
+Requires a separate install (conflicts with `vista` and `lingbot`):
 
-`.configs/sweeps/example-sweep.toml` runs ViSTA and MASt3R on two sequences
-from TUM RGB-D and ADVIO.
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv sync --extra dev --extra streaming --extra mast3r
+
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/example-mast3r-sweep.toml
+
+# All 40 sequences
+uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/full-mast3r-sweep.toml \
+    --continue-on-failure
+```
+
+### LingBot sweeps
+
+Requires a separate install (conflicts with `vista` and `mast3r`).  LingBot is
+trained within ~320 direct-mode views; the sweep files use higher frame strides
+(TUM ×5, ADVIO ×10) to stay within that range.
+
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv sync --extra dev --extra streaming --extra lingbot
+
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/example-lingbot-sweep.toml
+
+# All 40 sequences
+uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-sweep.toml \
+    --continue-on-failure
+```
+
+### Sweep file reference
+
+| File | Method | Sequences |
+|---|---|---|
+| `example-vista-sweep.toml` | ViSTA | 4 (2 TUM + 2 ADVIO) |
+| `example-mast3r-sweep.toml` | MASt3R | 4 (2 TUM + 2 ADVIO) |
+| `example-lingbot-sweep.toml` | LingBot | 4 (2 TUM + 2 ADVIO) |
+| `full-vista-sweep.toml` | ViSTA | 40 (all TUM + all ADVIO) |
+| `full-mast3r-sweep.toml` | MASt3R | 40 (all TUM + all ADVIO) |
+| `full-lingbot-sweep.toml` | LingBot | 40 (all TUM + all ADVIO) |
 
 ## Streamlit Workbench
 
