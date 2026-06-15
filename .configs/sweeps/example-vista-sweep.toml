@@ -1,0 +1,64 @@
+# ViSTA-SLAM sweep across four sequences (2 TUM RGB-D + 2 ADVIO).
+#
+# Inspect the expanded plan (no execution):
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/example-vista-sweep.toml
+#
+# Execute sequentially, stop on first failure:
+#   mamba activate prml-vslam
+#   export UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX
+#   uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml
+#
+# Execute sequentially, attempt all runs:
+#   uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml \
+#       --continue-on-failure
+#
+# Expanded run IDs (in execution order):
+#   example-vista-tum_rgbd-freiburg3_large_cabinet-vista
+#   example-vista-tum_rgbd-freiburg1_desk-vista
+#   example-vista-advio-advio-15-vista
+#   example-vista-advio-advio-01-vista
+
+[sweep]
+name       = "example-vista"
+output_dir = ".artifacts/sweeps"
+
+# ── Dataset 1: TUM RGB-D fr3/large_cabinet ───────────────────────────────────
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 1
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 2: TUM RGB-D fr1/desk ────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk"
+frame_stride        = 1
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 3: ADVIO 15 ──────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 4: ADVIO 01 ──────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-01"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Methods ──────────────────────────────────────────────────────────────────
+[methods.vista]
+config_path = ".configs/templates/vista-slam.toml"
