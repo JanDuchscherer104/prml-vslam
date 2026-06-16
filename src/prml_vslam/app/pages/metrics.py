@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -193,14 +194,18 @@ def _render_wide_metric_table(rows: list[TrajectoryMetricResultRow]) -> None:
 
 
 def _build_wide_metric_rows(rows: list[TrajectoryMetricResultRow]) -> list[dict]:
-    """Pivot long-format RMSE rows into one wide row per (run, reference, estimate, coordinate status)."""
+    """Pivot long-format RMSE rows into one wide row per sequence/run/reference/estimate/status."""
     rmse_rows = [r for r in rows if r.statistic == "rmse"]
-    groups: dict[tuple[str, str, str, str], dict] = {}
+    groups: dict[tuple[str, str, str, str, str], dict] = {}
+    aggregate_groups: dict[tuple[str, str, str, str], dict] = {}
+    family_sequence_pairs: dict[tuple[str, str, str, str, str, str], int] = {}
     for row in rmse_rows:
         source, _, coord = row.estimate_source.partition("/")
-        key = (row.run_id, row.reference_source, source, coord)
+        key = (row.sequence_id, row.run_id, row.reference_source, source, coord)
+        aggregate_key = (row.run_id, row.reference_source, source, coord)
         if key not in groups:
             groups[key] = {
+                "Sequence": row.sequence_id,
                 "Run": row.run_id,
                 "Reference": row.reference_source,
                 "Estimate": source,
@@ -212,21 +217,111 @@ def _build_wide_metric_rows(rows: list[TrajectoryMetricResultRow]) -> list[dict]
                 "APE Pairs": None,
                 "RPE Pairs": None,
             }
+        if aggregate_key not in aggregate_groups:
+            aggregate_groups[aggregate_key] = {
+                "Sequence": "All sequences",
+                "Run": row.run_id,
+                "Reference": row.reference_source,
+                "Estimate": source,
+                "Coordinate Status": coord,
+                "APE Trans. RMSE (m)": None,
+                "APE Rot. RMSE (deg)": None,
+                "RPE Trans. RMSE (m)": None,
+                "RPE Rot. RMSE (deg)": None,
+                "APE Pairs": None,
+                "RPE Pairs": None,
+                "_ape_trans": [],
+                "_ape_rot": [],
+                "_rpe_trans": [],
+                "_rpe_rot": [],
+            }
         pose = row.pose_relation.name
         family = row.metric_family
         if family == "ape" and pose == "translation_part":
             groups[key]["APE Trans. RMSE (m)"] = round(row.value, 4)
             groups[key]["APE Pairs"] = row.matched_pairs
+            aggregate_groups[aggregate_key]["_ape_trans"].append((row.value, row.matched_pairs))
         elif family == "ape" and pose == "rotation_angle_deg":
             groups[key]["APE Rot. RMSE (deg)"] = round(row.value, 4)
             groups[key]["APE Pairs"] = row.matched_pairs
+            aggregate_groups[aggregate_key]["_ape_rot"].append((row.value, row.matched_pairs))
         elif family == "rpe" and pose == "translation_part":
             groups[key]["RPE Trans. RMSE (m)"] = round(row.value, 4)
             groups[key]["RPE Pairs"] = row.matched_pairs
+            aggregate_groups[aggregate_key]["_rpe_trans"].append((row.value, row.matched_pairs))
         elif family == "rpe" and pose == "rotation_angle_deg":
             groups[key]["RPE Rot. RMSE (deg)"] = round(row.value, 4)
             groups[key]["RPE Pairs"] = row.matched_pairs
-    return sorted(groups.values(), key=lambda r: (r["Run"], r["Reference"], r["Estimate"], r["Coordinate Status"]))
+            aggregate_groups[aggregate_key]["_rpe_rot"].append((row.value, row.matched_pairs))
+        family_sequence_key = (*aggregate_key, row.metric_family, row.sequence_id)
+        family_sequence_pairs[family_sequence_key] = max(
+            family_sequence_pairs.get(family_sequence_key, 0),
+            row.matched_pairs,
+        )
+
+    aggregate_rows = []
+    for aggregate_key, aggregate_row in aggregate_groups.items():
+        run_id, reference, source, coord = aggregate_key
+        aggregate_row["APE Trans. RMSE (m)"] = _pooled_rmse(aggregate_row.pop("_ape_trans"))
+        aggregate_row["APE Rot. RMSE (deg)"] = _pooled_rmse(aggregate_row.pop("_ape_rot"))
+        aggregate_row["RPE Trans. RMSE (m)"] = _pooled_rmse(aggregate_row.pop("_rpe_trans"))
+        aggregate_row["RPE Rot. RMSE (deg)"] = _pooled_rmse(aggregate_row.pop("_rpe_rot"))
+        aggregate_row["APE Pairs"] = _sum_family_pairs(
+            family_sequence_pairs,
+            run_id=run_id,
+            reference=reference,
+            source=source,
+            coord=coord,
+            family="ape",
+        )
+        aggregate_row["RPE Pairs"] = _sum_family_pairs(
+            family_sequence_pairs,
+            run_id=run_id,
+            reference=reference,
+            source=source,
+            coord=coord,
+            family="rpe",
+        )
+        aggregate_rows.append(aggregate_row)
+
+    table_rows = [*groups.values(), *aggregate_rows]
+    return sorted(
+        table_rows,
+        key=lambda r: (
+            r["Run"],
+            r["Reference"],
+            r["Estimate"],
+            r["Coordinate Status"],
+            r["Sequence"] == "All sequences",
+            r["Sequence"],
+        ),
+    )
+
+
+def _pooled_rmse(values_and_pairs: list[tuple[float, int]]) -> float | None:
+    total_pairs = sum(pairs for _, pairs in values_and_pairs)
+    if total_pairs <= 0:
+        return None
+    pooled = math.sqrt(sum(pairs * value**2 for value, pairs in values_and_pairs) / total_pairs)
+    return round(pooled, 4)
+
+
+def _sum_family_pairs(
+    family_sequence_pairs: dict[tuple[str, str, str, str, str, str], int],
+    *,
+    run_id: str,
+    reference: str,
+    source: str,
+    coord: str,
+    family: str,
+) -> int | None:
+    total = sum(
+        pairs
+        for (item_run, item_reference, item_source, item_coord, item_family, _), pairs in family_sequence_pairs.items()
+        if (item_run, item_reference, item_source, item_coord, item_family)
+        == (run_id, reference, source, coord, family)
+    )
+    return total or None
 
 
 _PLOT_METRIC_SPECS = [
