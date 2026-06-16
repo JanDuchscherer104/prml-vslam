@@ -361,8 +361,8 @@ def _load_benchmark_inputs(artifact_root: Path) -> PreparedBenchmarkInputs | Non
         return None
     try:
         return PreparedBenchmarkInputs.model_validate_json(inputs_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Could not load benchmark inputs from '{inputs_path}': {exc}") from exc
 
 
 def _remap_reference(ref: ReferenceTrajectoryRef, local_artifact_root: Path) -> ReferenceTrajectoryRef:
