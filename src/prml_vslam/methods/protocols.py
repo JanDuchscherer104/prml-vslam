@@ -46,6 +46,26 @@ class OfflineSlamBackend(Protocol):
 
 
 @runtime_checkable
+class OfflineSequenceSlamBackend(Protocol):
+    """Execute a backend directly over a normalized offline sequence manifest."""
+
+    method_id: MethodId
+
+    @abstractmethod
+    def run_sequence(
+        self,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        *,
+        backend_config: SlamBackendConfig,
+        output_policy: SlamOutputPolicy,
+        artifact_root: Path,
+    ) -> SlamArtifacts:
+        """Run the backend over a prepared source manifest and persist artifacts."""
+
+
+@runtime_checkable
 class StreamingSlamBackend(Protocol):
     """Expose streaming SLAM lifecycle directly on the backend.
 
@@ -89,6 +109,7 @@ class SlamBackend(OfflineSlamBackend, StreamingSlamBackend, Protocol):
 
 __all__ = [
     "OfflineSlamBackend",
+    "OfflineSequenceSlamBackend",
     "SlamBackend",
     "StreamingSlamBackend",
 ]

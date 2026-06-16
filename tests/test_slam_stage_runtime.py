@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from pydantic import PrivateAttr
 
+import prml_vslam.methods.stage.runtime as slam_stage_runtime
 from prml_vslam.interfaces import FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts
@@ -78,6 +79,30 @@ class _FakeBackend:
 
     def finish_streaming(self) -> SlamArtifacts:
         return self.runtime.finish()
+
+
+class _FakeSequenceBackend(_FakeBackend):
+    def __init__(self, artifact_root: Path) -> None:
+        super().__init__(artifact_root)
+        self.sequence_manifest: SequenceManifest | None = None
+
+    def run_sequence(
+        self,
+        sequence_manifest: SequenceManifest,
+        benchmark_inputs: PreparedBenchmarkInputs | None,
+        baseline_source: ReferenceSource,
+        *,
+        backend_config,
+        output_policy,
+        artifact_root: Path,
+    ) -> SlamArtifacts:
+        del benchmark_inputs, baseline_source, backend_config, output_policy
+        self.sequence_manifest = sequence_manifest
+        return _slam_artifacts(artifact_root)
+
+    def run_observations(self, *args, **kwargs) -> SlamArtifacts:
+        del args, kwargs
+        raise AssertionError("Sequence-aware backend should not dematerialize observations.")
 
 
 class _FakeStreamingRuntime:
@@ -182,6 +207,41 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     assert isinstance(result.payload, SlamStageOutput)
     assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
+
+
+def test_slam_runtime_offline_prefers_sequence_backend_without_loading_observations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
+    plan = _plan(tmp_path, run_config)
+    backend = _FakeSequenceBackend(plan.artifact_root)
+    backend_config = _FakeBackendConfig(backend)
+    runtime = SlamStageRuntime()
+    sequence_manifest = _sequence_manifest(tmp_path)
+
+    def fail_observation_loading(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("Sequence-aware backend should receive the manifest before observation loading.")
+
+    monkeypatch.setattr(slam_stage_runtime, "iter_sequence_manifest_observations", fail_observation_loading)
+
+    result = runtime.run_offline(
+        SlamOfflineStageInput(
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            sequence_manifest=sequence_manifest,
+            benchmark_inputs=None,
+        )
+    )
+
+    assert backend.sequence_manifest == sequence_manifest
+    assert backend.observations == []
+    assert result.stage_key is StageKey.SLAM
+    assert result.outcome.status is StageStatus.COMPLETED
 
 
 def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path) -> None:

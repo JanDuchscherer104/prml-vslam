@@ -19,7 +19,7 @@ def iter_sequence_manifest_observations(
     max_frames: int | None = None,
 ) -> Iterator[Observation]:
     """Yield RGB observations from a normalized source sequence manifest."""
-    image_paths, timestamps_ns = _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
+    image_paths, timestamps_ns = load_sequence_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
     provenance = _manifest_provenance(sequence)
     for seq, (image_path, timestamp_ns) in enumerate(zip(image_paths, timestamps_ns, strict=True)):
         yield Observation(
@@ -29,6 +29,15 @@ def iter_sequence_manifest_observations(
             rgb=_load_rgb(image_path),
             provenance=provenance.model_copy(update={"source_frame_index": seq}),
         )
+
+
+def load_sequence_manifest_rgb_inputs(
+    *,
+    sequence: SequenceManifest,
+    max_frames: int | None = None,
+) -> tuple[list[Path], list[int]]:
+    """Return validated normalized RGB payload paths and timestamps without loading rasters."""
+    return _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
 
 
 def _load_manifest_rgb_inputs(
@@ -93,4 +102,4 @@ def _manifest_provenance(sequence: SequenceManifest) -> ObservationProvenance:
     )
 
 
-__all__ = ["iter_sequence_manifest_observations"]
+__all__ = ["iter_sequence_manifest_observations", "load_sequence_manifest_rgb_inputs"]
