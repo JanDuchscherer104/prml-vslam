@@ -159,11 +159,10 @@ The most important dataset-owned DTOs and outputs are:
   - inspect scenes
   - download selected full scenes
   - resolve dataset sequence ids for pipeline execution
-  - prepare normalized sequence manifests and benchmark inputs
-  - open a replay stream for the app or pipeline surfaces
+  - build normalized-store-backed sources for app and pipeline surfaces
 - [AdvioSequence](./advio/advio_sequence.py:138)
   - load one offline sample
-  - open one replay stream
+  - parse native observations for normalized-store ingestion
   - prepare one `SequenceManifest`
   - prepare one `PreparedBenchmarkInputs`
 - [TumRgbdDatasetService](./tum_rgbd/tum_rgbd_service.py:14)
@@ -172,7 +171,7 @@ The most important dataset-owned DTOs and outputs are:
   - prepare RGB-directory sequence manifests and ground-truth TUM references
 - [TumRgbdSequence](./tum_rgbd/tum_rgbd_sequence.py:52)
   - load one local sequence
-  - open one RGB-D image-sequence replay stream
+  - parse native RGB-D observations for normalized-store ingestion
   - prepare one `SequenceManifest`
   - prepare one `PreparedBenchmarkInputs`
 
@@ -234,31 +233,31 @@ print(sample.calibration.intrinsics)
 print(sample.ground_truth.timestamps.shape)
 ```
 
-Open a replay stream:
+Open a normalized replay stream:
 
 ```python
-from pathlib import Path
-
-from prml_vslam.sources.datasets.advio import (
-    AdvioPoseFrameMode,
-    AdvioPoseSource,
-    AdvioSequence,
-    AdvioSequenceConfig,
-    AdvioServingConfig,
+from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalization import (
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
 )
-from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.sources.datasets.advio import AdvioDatasetService
+from prml_vslam.utils import PathConfig
 
-sequence = AdvioSequence(
-    config=AdvioSequenceConfig(dataset_root=Path(".data/advio"), sequence_id=15)
-)
-stream = sequence.open_stream(
-    dataset_serving=AdvioServingConfig(
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+path_config = PathConfig()
+service = AdvioDatasetService(path_config)
+source_config = AdvioSourceConfig(sequence_id="advio-15")
+source = service.build_normalized_source(
+    sequence_id=service.resolve_sequence_id(source_config.sequence_id),
+    normalized_store=normalized_store_for_service(DatasetId.ADVIO, path_config),
+    normalized_profile=normalized_profile_for_dataset(
+        dataset_id=DatasetId.ADVIO,
+        service=service,
+        source_config=source_config,
     ),
-    replay_mode=ReplayMode.REALTIME,
-    normalize_video_orientation=True,
 )
+stream = source.open_stream(loop=False)
 
 stream.connect()
 observation = stream.wait_for_observation()
@@ -280,7 +279,8 @@ statuses = service.local_scene_statuses()
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
 - Simplification in this package must not reintroduce partial modality downloads or drop TUM RGB-D reference-cloud preparation.
+- App and pipeline dataset replay must come from `.data/vslam-datastore/<dataset>/`; native dataset readers are parser/ingestion internals.
 - Generic replay mechanics stay in `prml_vslam.sources.replay`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
-  corresponding sequence classes over rebuilding dataset path, manifest, or
-  replay logic directly.
+  corresponding normalized store helpers over rebuilding dataset path, manifest,
+  or replay logic directly.

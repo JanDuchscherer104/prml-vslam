@@ -8,6 +8,8 @@ import streamlit as st
 
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalized_query import normalized_sequence_options
 
 from ..live_session import live_poll_interval, render_live_action_slot, render_live_fragment, rerun_after_action
 from ..models import PipelineTelemetryMetricId, PipelineTelemetryViewMode
@@ -54,8 +56,7 @@ def render(context: AppContext) -> None:
             "live previews, trajectory output, and artifacts."
         ),
     )
-    statuses = context.advio_service.local_scene_statuses()
-    previewable_statuses = [status for status in statuses if status.replay_ready]
+    advio_records = normalized_sequence_options(DatasetId.ADVIO, context.path_config)
     snapshot = context.run_service.snapshot()
     is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container():
@@ -78,7 +79,6 @@ def render(context: AppContext) -> None:
                 context=context,
                 config_path=selected_config_path,
                 run_config=template_request,
-                statuses=statuses,
             )
             page_state = context.state.pipeline
 
@@ -92,7 +92,7 @@ def render(context: AppContext) -> None:
                 context=context,
                 page_state=page_state,
                 selected_config_path=selected_config_path,
-                previewable_statuses=previewable_statuses,
+                advio_records=advio_records,
             )
 
         preview_request, preview_error = build_run_config_from_action(context, action)
@@ -102,7 +102,7 @@ def render(context: AppContext) -> None:
         support_error = request_support_error(
             request=preview_request,
             plan=preview_plan,
-            previewable_statuses=previewable_statuses,
+            path_config=context.path_config,
         )
         start_error = support_error or identity_input_error or source_error
 

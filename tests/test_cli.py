@@ -112,6 +112,40 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
     assert "'stats_long_row_count': 9" in result.stdout
 
 
+def test_advio_summary_reports_normalized_entries_and_native_cache(monkeypatch) -> None:
+    class FakeService:
+        dataset_root = Path(".data/advio")
+        catalog = SimpleNamespace(
+            upstream=SimpleNamespace(model_dump=lambda *, mode: {"repo_url": "https://example.test", "mode": mode})
+        )
+
+        def __init__(self, path_config: PathConfig) -> None:
+            self.path_config = path_config
+
+        def summarize(self) -> SimpleNamespace:
+            return SimpleNamespace(model_dump=lambda *, mode: {"cached_archive_count": 1, "mode": mode})
+
+        def local_scene_statuses(self) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    scene=SimpleNamespace(sequence_id=15),
+                    sequence_dir=Path(".data/advio/advio-15"),
+                )
+            ]
+
+    normalized = SimpleNamespace(model_dump=lambda *, mode: {"records": [{"sequence_id": "advio-15"}], "mode": mode})
+    monkeypatch.setattr(main_module, "AdvioDatasetService", FakeService)
+    monkeypatch.setattr(main_module, "query_normalized_dataset", lambda dataset_id, path_config: normalized)
+
+    result = runner.invoke(app, ["advio", "summary"])
+
+    assert result.exit_code == 0
+    assert "'normalized': {'records': [{'sequence_id': 'advio-15'}], 'mode': 'json'}" in result.stdout
+    assert "'native_cache':" in result.stdout
+    assert "'sequence_ids': [15]" in result.stdout
+    assert "'local_sequence_ids'" not in result.stdout
+
+
 def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 

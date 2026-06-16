@@ -58,6 +58,7 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_store_for_service,
     parse_dataset_id,
 )
+from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
 from prml_vslam.sources.datasets.normalized_store import normalized_entry_analysis_summary
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
@@ -836,7 +837,7 @@ def write_demo_config(
     """Persist the canonical ADVIO demo run config as TOML."""
     path_config = get_path_config()
     advio_service = AdvioDatasetService(path_config)
-    resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
+    resolved_sequence_id = _resolve_demo_sequence_id(path_config, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
     resolved_config_path = persist_advio_demo_run_config(
         path_config=path_config,
@@ -938,7 +939,7 @@ def pipeline_demo(
     """Run the bounded ADVIO replay demo without starting Streamlit."""
     path_config = get_path_config()
     advio_service = AdvioDatasetService(path_config)
-    resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
+    resolved_sequence_id = _resolve_demo_sequence_id(path_config, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
     run_config = build_advio_demo_run_config(
         path_config=path_config,
@@ -1007,15 +1008,20 @@ def launch_app(
 
 @record3d_app.command("summary")
 def record3d_summary() -> None:
-    """Print committed and local Record3D dataset coverage."""
-    service = Record3DDatasetService(get_path_config())
+    """Print normalized Record3D coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = Record3DDatasetService(path_config)
     summary = service.summarize()
+    normalized = query_normalized_dataset(DatasetId.RECORD3D, path_config)
     payload = {
-        "dataset_root": str(service.dataset_root),
-        "summary": summary.model_dump(mode="json"),
-        "local_sequence_ids": [
-            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
-        ],
+        "normalized": normalized.model_dump(mode="json"),
+        "native_cache": {
+            "dataset_root": str(service.dataset_root),
+            "summary": summary.model_dump(mode="json"),
+            "sequence_ids": [
+                status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+            ],
+        },
     }
     console.plog(payload)
 
@@ -1158,16 +1164,21 @@ def dataset_summary(
 
 @advio_app.command("summary")
 def advio_summary() -> None:
-    """Print committed and local ADVIO dataset coverage."""
-    service = AdvioDatasetService(get_path_config())
+    """Print normalized ADVIO coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = AdvioDatasetService(path_config)
     summary = service.summarize()
+    normalized = query_normalized_dataset(DatasetId.ADVIO, path_config)
     payload = {
-        "dataset_root": str(service.dataset_root),
         "upstream": service.catalog.upstream.model_dump(mode="json"),
-        "summary": summary.model_dump(mode="json"),
-        "local_sequence_ids": [
-            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
-        ],
+        "normalized": normalized.model_dump(mode="json"),
+        "native_cache": {
+            "dataset_root": str(service.dataset_root),
+            "summary": summary.model_dump(mode="json"),
+            "sequence_ids": [
+                status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+            ],
+        },
     }
     console.plog(payload)
 
@@ -1208,16 +1219,21 @@ def advio_download(
 
 @tum_rgbd_app.command("summary")
 def tum_rgbd_summary() -> None:
-    """Print committed and local TUM RGB-D dataset coverage."""
-    service = TumRgbdDatasetService(get_path_config())
+    """Print normalized TUM RGB-D coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = TumRgbdDatasetService(path_config)
     summary = service.summarize()
+    normalized = query_normalized_dataset(DatasetId.TUM_RGBD, path_config)
     payload = {
-        "dataset_root": str(service.dataset_root),
         "upstream": service.catalog.upstream,
-        "summary": summary.model_dump(mode="json"),
-        "local_sequence_ids": [
-            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
-        ],
+        "normalized": normalized.model_dump(mode="json"),
+        "native_cache": {
+            "dataset_root": str(service.dataset_root),
+            "summary": summary.model_dump(mode="json"),
+            "sequence_ids": [
+                status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
+            ],
+        },
     }
     console.plog(payload)
 
@@ -1256,16 +1272,21 @@ def tum_rgbd_download(
     console.plog(payload)
 
 
-def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence_id: int | None) -> int:
-    """Resolve one replay-ready ADVIO sequence for the CLI demo."""
+def _resolve_demo_sequence_id(path_config: PathConfig, *, explicit_sequence_id: int | None) -> int:
+    """Resolve one normalized ADVIO sequence for the CLI demo."""
     if explicit_sequence_id is not None:
         return explicit_sequence_id
-    previewable_ids = [status.scene.sequence_id for status in service.local_scene_statuses() if status.replay_ready]
-    if not previewable_ids:
+    records = query_normalized_dataset(DatasetId.ADVIO, path_config).default_records
+    sequence_ids = [
+        int(record.sequence_id.split("-", maxsplit=1)[1])
+        for record in records
+        if record.sequence_id.startswith("advio-") and record.sequence_id.split("-", maxsplit=1)[1].isdigit()
+    ]
+    if not sequence_ids:
         raise typer.BadParameter(
-            "No replay-ready ADVIO scenes were found. Download a complete scene first or pass --sequence."
+            "No normalized ADVIO entries were found. Run `prml-vslam dataset normalize --dataset advio` first or pass --sequence."
         )
-    return previewable_ids[0]
+    return sequence_ids[0]
 
 
 def _apply_dotted_overrides_to_run_config(run_config: RunConfig, args: list[str]) -> RunConfig:

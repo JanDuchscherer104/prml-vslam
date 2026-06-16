@@ -153,25 +153,29 @@ class DatasetServiceBase:
     def resolve_sequence_id(self, sequence_slug: str) -> SequenceKey:
         return self.scene(sequence_slug).sequence_id
 
-    def build_offline_source(
-        self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
-    ) -> DatasetSequenceSource:
-        return self._build_source(sequence_id=sequence_id, frame_selection=frame_selection)
-
-    def build_streaming_source(
+    def build_normalized_source(
         self,
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
-        **stream_kwargs: Any,
+        replay_mode: ReplayMode = ReplayMode.REALTIME,
+        normalized_store: NormalizedDatasetStore,
+        normalized_profile: NormalizedDatasetProfile,
     ) -> DatasetSequenceSource:
-        return self._build_streaming_source(
+        return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection,
-            **stream_kwargs,
+            replay_mode=replay_mode,
+            normalized_store=normalized_store,
+            normalized_profile=normalized_profile,
         )
 
-    def open_preview_stream(
+    def _build_raw_source(
+        self, *, sequence_id: SequenceKey, frame_selection: FrameSelectionConfig | None = None
+    ) -> DatasetSequenceSource:
+        return self._build_source(sequence_id=sequence_id, frame_selection=frame_selection)
+
+    def _open_raw_preview_stream(
         self,
         *,
         sequence_id: SequenceKey,

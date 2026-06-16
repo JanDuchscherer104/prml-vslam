@@ -69,7 +69,7 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
             )
         return statuses
 
-    def build_streaming_source(
+    def _build_raw_streaming_source(
         self,
         *,
         sequence_id: SequenceKey,

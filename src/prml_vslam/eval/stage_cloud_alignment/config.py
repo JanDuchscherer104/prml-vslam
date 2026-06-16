@@ -15,10 +15,12 @@ from prml_vslam.sources.config import (
     SourceBackendConfig,
     TumRgbdSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceCloudSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudSource
 from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
-    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+from prml_vslam.sources.datasets.normalization import (
+    dataset_service,
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
 )
 from prml_vslam.utils import PathConfig
 
@@ -91,11 +93,21 @@ def _source_reference_cloud_available(
 
 
 def _tum_rgbd_reference_cloud_inputs_available(*, sequence_id: str, path_config: PathConfig) -> bool:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
-    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
+    source_backend = TumRgbdSourceConfig(sequence_id=sequence_id)
+    service = dataset_service(DatasetId.TUM_RGBD, path_config)
+    profile = normalized_profile_for_dataset(
+        dataset_id=DatasetId.TUM_RGBD,
+        service=service,
+        source_config=source_backend,
+    )
+    try:
+        entry = normalized_store_for_service(DatasetId.TUM_RGBD, path_config).load_entry(profile)
+        benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return False
-    return (sequence_dir / "depth.txt").exists() and (sequence_dir / "depth").is_dir()
+    return any(ref.path.exists() and ref.metadata_path.exists() for ref in benchmark_inputs.reference_clouds)
 
 
 __all__ = ["CloudAlignmentStageConfig"]

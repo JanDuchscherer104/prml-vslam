@@ -198,18 +198,22 @@ def test_tum_rgbd_cloud_alignment_plan_does_not_require_local_ci_data(tmp_path: 
         config.compile_plan(path_config, fail_on_unavailable=True)
 
 
-def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp_path: Path) -> None:
+def test_tum_rgbd_cloud_alignment_plan_requires_normalized_reference_cloud_without_reconstruction(
+    tmp_path: Path,
+) -> None:
     data_dir = tmp_path / ".data"
     sequence_dir = data_dir / "tum_rgbd" / "rgbd_dataset_freiburg1_desk"
     (sequence_dir / "rgb").mkdir(parents=True)
+    (sequence_dir / "depth").mkdir()
     (sequence_dir / "rgb.txt").write_text("0.000000 rgb/0.000000.png\n", encoding="utf-8")
+    (sequence_dir / "depth.txt").write_text("0.000000 depth/0.000000.png\n", encoding="utf-8")
     (sequence_dir / "groundtruth.txt").write_text(
         "0.000000 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n",
         encoding="utf-8",
     )
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=data_dir)
     config = build_run_config(
-        experiment_name="tum-rgbd-cloud-alignment-missing-depth",
+        experiment_name="tum-rgbd-cloud-alignment-missing-normalized-reference-cloud",
         output_dir=path_config.artifacts_dir,
         source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
         method=MethodId.VISTA,
@@ -279,7 +283,7 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
     assert run_config.visualization.decimation_random_seed == 0
 
 
-def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:
+def test_run_plan_expected_fps_ignores_raw_advio_cadence_without_normalized_entry(tmp_path: Path) -> None:
     native_fps = 60.04133960359873
     frames_path = tmp_path / ".data" / "advio" / "advio-20" / "iphone" / "frames.csv"
     frames_path.parent.mkdir(parents=True)
@@ -301,8 +305,8 @@ def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) 
 
     plan = run_config.compile_plan(path_config)
 
-    assert plan.source.expected_fps == pytest.approx(native_fps / 5)
-    assert plan.model_dump(mode="json")["source"]["expected_fps"] == pytest.approx(native_fps / 5)
+    assert plan.source.expected_fps is None
+    assert plan.model_dump(mode="json")["source"]["expected_fps"] is None
 
 
 def test_run_plan_expected_fps_uses_target_fps_without_native_metadata(tmp_path: Path) -> None:

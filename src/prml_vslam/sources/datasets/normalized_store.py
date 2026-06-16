@@ -13,7 +13,7 @@ from typing import Any, Protocol
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from prml_vslam.interfaces import ObservationSequenceIndex, ObservationSequenceRef, write_camera_intrinsics_yaml
 from prml_vslam.sources.contracts import (
@@ -92,8 +92,14 @@ class NormalizedDatasetEntry(BaseData):
     root: Path
     sequence_manifest_path: Path
     benchmark_inputs_path: Path
-    stats_long_path: Path | None = None
-    metadata_long_path: Path | None = None
+    stats_long_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("stats_long_path", "stats_long_csv_path"),
+    )
+    metadata_long_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("metadata_long_path", "metadata_long_csv_path"),
+    )
     created_at_ns: int = Field(default_factory=time.time_ns)
 
 

@@ -7,47 +7,32 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
-import numpy as np
 import streamlit as st
-from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 
-import prml_vslam.plotting as plots
-from prml_vslam.interfaces import CameraIntrinsics, Observation
+from prml_vslam.interfaces import Observation
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
-    AdvioLocalSceneStatus,
-    AdvioOfflineSample,
-    AdvioPoseFrameMode,
-    AdvioPoseSource,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary, LocalSceneStatus
 from prml_vslam.sources.datasets.normalization import (
-    dataset_service,
-    normalized_profile_for_dataset,
-    normalized_store_for_service,
     open_normalized_dataset_stream,
     source_config_for_normalization,
 )
-from prml_vslam.sources.datasets.normalized_store import (
-    METADATA_LONG_FILENAME,
-    STATS_LONG_FILENAME,
-    NormalizedDatasetEntry,
-    load_normalized_entry_metadata,
-    load_normalized_entry_stats,
+from prml_vslam.sources.datasets.normalized_query import (
+    NormalizedDatasetQuery,
+    NormalizedSequenceRecord,
+    normalized_advio_pose_sources,
+    normalized_query_fingerprint,
+    query_normalized_dataset,
 )
 from prml_vslam.sources.datasets.record3d import (
-    Record3DDatasetService,
     Record3DDownloadRequest,
-    Record3DOfflineSample,
     Record3DSceneMetadata,
 )
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
-    TumRgbdOfflineSample,
-    TumRgbdPoseSource,
-    TumRgbdSceneMetadata,
 )
 from prml_vslam.utils import BaseConfig, JsonObject, PathConfig
 
@@ -56,14 +41,12 @@ from ..advio_controller import (
     AdvioPreviewFormData,
     build_advio_page_data,
     handle_advio_preview_action,
-    load_advio_explorer_sample,
     sync_advio_download_state,
     sync_advio_preview_state,
 )
 from ..live_session import (
     LiveMetric,
     live_poll_interval,
-    render_camera_intrinsics,
     render_live_action_slot,
     render_live_fragment,
     render_live_packet_tabs,
@@ -75,7 +58,6 @@ from ..models import (
     AdvioPreviewSnapshot,
     DatasetPageData,
     DatasetTableRow,
-    NormalizedDatasetSnapshot,
     PreviewStreamState,
     Record3DDatasetPageState,
     Record3DDatasetPoseSource,
@@ -137,12 +119,18 @@ def _render_advio_tab(context: AppContext) -> None:
         "Scene and archive metadata in this page is pinned from the official ADVIO repository and Zenodo release."
     )
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.ADVIO)
-    _render_summary_metrics(page_data.summary)
+    _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
     page_data.rows = _rows_with_normalized_status(DatasetId.ADVIO, page_data.rows, normalized)
-    _render_advio_overview(page_data.statuses)
-    _render_advio_sequence_explorer(context, page_data.statuses)
-    _render_advio_loop_preview(context, page_data.statuses)
+    _render_download_cache_summary(page_data.summary)
+    _render_sequence_explorer_impl(
+        context=context,
+        records=normalized.default_records,
+        page_state=context.state.advio,
+        dataset_label="ADVIO",
+        state_field="explorer_sequence_id",
+    )
+    _render_advio_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
 
 
@@ -166,12 +154,18 @@ def _render_tum_rgbd_tab(context: AppContext) -> None:
     )
     st.caption("Scene metadata is pinned to the TUM RGB-D sequences used by ViSTA-SLAM evaluation scripts.")
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.TUM_RGBD)
-    _render_summary_metrics(page_data.summary)
+    _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
     page_data.rows = _rows_with_normalized_status(DatasetId.TUM_RGBD, page_data.rows, normalized)
-    tum_statuses = cast(list[LocalSceneStatus[TumRgbdSceneMetadata]], page_data.statuses)
-    _render_tum_rgbd_sequence_explorer(context, tum_statuses)
-    _render_tum_rgbd_loop_preview(context, tum_statuses)
+    _render_download_cache_summary(page_data.summary)
+    _render_sequence_explorer_impl(
+        context=context,
+        records=normalized.default_records,
+        page_state=context.state.tum_rgbd,
+        dataset_label="TUM RGB-D",
+        state_field="explorer_sequence_id",
+    )
+    _render_tum_rgbd_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
 
 
@@ -188,12 +182,18 @@ def _render_record3d_tab(context: AppContext) -> None:
     _render_links((("Zenodo Record", "https://zenodo.org/records/20591352"),))
     st.caption("Scene metadata is pinned to the Record3D `.r3d` archives used by offline RGB-D evaluation.")
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.RECORD3D)
-    _render_summary_metrics(page_data.summary)
+    _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
     page_data.rows = _record3d_rows_with_normalized_status(page_data.rows, normalized)
-    record3d_statuses = cast(list[LocalSceneStatus[Record3DSceneMetadata]], page_data.statuses)
-    _render_record3d_sequence_explorer(context, record3d_statuses)
-    _render_record3d_loop_preview(context, record3d_statuses, normalized)
+    _render_download_cache_summary(page_data.summary)
+    _render_sequence_explorer_impl(
+        context=context,
+        records=normalized.default_records,
+        page_state=context.state.record3d_dataset,
+        dataset_label="Record3D",
+        state_field="explorer_sequence_id",
+    )
+    _render_record3d_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
 
 
@@ -235,9 +235,8 @@ def _build_tum_rgbd_page_data(context: AppContext, form: _DownloadFormData) -> D
                 "Sequence": status.scene.sequence_id,
                 "Category": status.scene.category,
                 "Packed Size (MB)": round(status.scene.archive_size_bytes / 1e6, 1),
-                "Local": status.sequence_dir is not None,
-                "Replay Ready": status.replay_ready,
-                "Offline Ready": status.offline_ready,
+                "Downloaded Cache": status.sequence_dir is not None,
+                "Cached Archive": status.archive_path is not None,
             }
             for status in statuses
         ],
@@ -282,9 +281,8 @@ def _record3d_scene_rows(statuses: list[LocalSceneStatus[Record3DSceneMetadata]]
                 "Packed Size (MB)": None
                 if status.scene.archive_size_bytes <= 0
                 else round(status.scene.archive_size_bytes / 1e6, 1),
-                "Local": status.sequence_dir is not None,
-                "Replay Ready": status.replay_ready,
-                "Offline Ready": status.offline_ready,
+                "Downloaded Cache": status.sequence_dir is not None,
+                "Cached Archive": status.archive_path is not None,
             }
         )
     return rows
@@ -293,14 +291,14 @@ def _record3d_scene_rows(statuses: list[LocalSceneStatus[Record3DSceneMetadata]]
 def _rows_with_normalized_status(
     dataset_id: DatasetId,
     rows: list[DatasetTableRow],
-    normalized: NormalizedDatasetSnapshot,
+    normalized: NormalizedDatasetQuery,
 ) -> list[DatasetTableRow]:
     return [{**row, "Normalized": _row_sequence_id(dataset_id, row) in normalized.sequence_ids} for row in rows]
 
 
 def _record3d_rows_with_normalized_status(
     rows: list[DatasetTableRow],
-    normalized: NormalizedDatasetSnapshot,
+    normalized: NormalizedDatasetQuery,
 ) -> list[DatasetTableRow]:
     return [
         {
@@ -318,9 +316,7 @@ def _row_sequence_id(dataset_id: DatasetId, row: DatasetTableRow) -> str:
     return str(row.get("Sequence", ""))
 
 
-def _load_normalized_dataset_snapshot_for_context(
-    context: AppContext, dataset_id: DatasetId
-) -> NormalizedDatasetSnapshot:
+def _load_normalized_dataset_snapshot_for_context(context: AppContext, dataset_id: DatasetId) -> NormalizedDatasetQuery:
     return _load_normalized_dataset_snapshot(
         context.path_config.root.as_posix(),
         context.path_config.data_dir.as_posix(),
@@ -329,7 +325,7 @@ def _load_normalized_dataset_snapshot_for_context(
     )
 
 
-def _render_normalized_characterization(normalized: NormalizedDatasetSnapshot) -> None:
+def _render_normalized_characterization(normalized: NormalizedDatasetQuery) -> None:
     with st.container(border=True):
         st.subheader("Normalized Dataset Entries")
         st.caption(
@@ -344,11 +340,11 @@ def _render_normalized_characterization(normalized: NormalizedDatasetSnapshot) -
             st.info("No usable normalized entries found for this dataset.")
             return
         st.metric("Normalized Entries", str(len(normalized.records)))
-        st.dataframe(normalized.records, hide_index=True, width="stretch")
+        st.dataframe(normalized.table_rows(), hide_index=True, width="stretch")
         _render_normalized_analysis_tables(normalized)
 
 
-def _render_normalized_analysis_tables(normalized: NormalizedDatasetSnapshot) -> None:
+def _render_normalized_analysis_tables(normalized: NormalizedDatasetQuery) -> None:
     if not normalized.stats_rows and not normalized.metadata_rows:
         st.info("No persisted normalized analysis tables found. Rebuild entries to populate stats and metadata CSVs.")
         return
@@ -382,65 +378,15 @@ def _motion_class_counts(rows: list[JsonObject]) -> dict[str, int]:
 @st.cache_data
 def _load_normalized_dataset_snapshot(
     root: str, data_dir: str, dataset_id: str, freshness_token: tuple[tuple[str, int, int], ...]
-) -> NormalizedDatasetSnapshot:
+) -> NormalizedDatasetQuery:
     del freshness_token
     path_config = PathConfig(root=Path(root), data_dir=Path(data_dir))
     dataset = DatasetId(dataset_id)
-    store = normalized_store_for_service(dataset, path_config)
-    entries = store.summary(strict=False)
-    records = [entry.model_dump(mode="json") for entry in entries]
-    stats_rows = [row for entry in entries for row in load_normalized_entry_stats(entry)]
-    metadata_rows = [row for entry in entries for row in load_normalized_entry_metadata(entry)]
-    profile_counts: dict[str, int] = {}
-    for row in records:
-        sequence_id = str(row.get("sequence_id", ""))
-        profile_counts[sequence_id] = profile_counts.get(sequence_id, 0) + 1
-    return NormalizedDatasetSnapshot(
-        records=records,
-        issues=[issue.model_dump(mode="json") for issue in store.issues()],
-        stats_rows=stats_rows,
-        metadata_rows=metadata_rows,
-        sequence_ids=set(profile_counts),
-        default_profile_sequence_ids=_default_profile_sequence_ids(
-            dataset=dataset, entries=entries, path_config=path_config
-        ),
-        profile_counts=profile_counts,
-    )
-
-
-def _default_profile_sequence_ids(
-    *, dataset: DatasetId, entries: list[NormalizedDatasetEntry], path_config: PathConfig
-) -> set[str]:
-    if dataset is not DatasetId.RECORD3D:
-        return {str(entry.sequence_id) for entry in entries}
-    service = dataset_service(dataset, path_config)
-    default_sequence_ids: set[str] = set()
-    for entry in entries:
-        source_config = source_config_for_normalization(dataset_id=dataset, sequence_id=str(entry.sequence_id))
-        profile = normalized_profile_for_dataset(dataset_id=dataset, service=service, source_config=source_config)
-        if entry.profile_key == profile.profile_key:
-            default_sequence_ids.add(str(entry.sequence_id))
-    return default_sequence_ids
+    return query_normalized_dataset(dataset, path_config)
 
 
 def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
-    store_root = context.path_config.resolve_normalized_datastore_dir(dataset_id.value)
-    if not store_root.exists():
-        return ()
-    paths = sorted(
-        path
-        for pattern in (
-            "*/*/entry.json",
-            "*/*/sequence_manifest.json",
-            "*/*/benchmark_inputs.json",
-            f"*/*/{STATS_LONG_FILENAME}",
-            f"*/*/{METADATA_LONG_FILENAME}",
-        )
-        for path in store_root.glob(pattern)
-    )
-    return tuple(
-        (path.relative_to(store_root).as_posix(), path.stat().st_mtime_ns, path.stat().st_size) for path in paths
-    )
+    return normalized_query_fingerprint(context.path_config, dataset_id)
 
 
 def _dataset_root(context: AppContext, dataset_id: DatasetId) -> Path:
@@ -451,31 +397,6 @@ def _dataset_root(context: AppContext, dataset_id: DatasetId) -> Path:
             return context.tum_rgbd_service.dataset_root
         case DatasetId.RECORD3D:
             return context.record3d_dataset_service.dataset_root
-
-
-def _load_tum_rgbd_explorer_sample(
-    context: AppContext, *, sequence_id: str
-) -> tuple[TumRgbdOfflineSample | None, str | None]:
-    save_model_updates(context.store, context.state, context.state.tum_rgbd, explorer_sequence_id=sequence_id)
-    try:
-        return context.tum_rgbd_service.load_local_sample(sequence_id), None
-    except (FileNotFoundError, ValueError) as exc:
-        return None, str(exc)
-
-
-def _load_record3d_explorer_sample(
-    context: AppContext, *, sequence_id: str
-) -> tuple[Record3DOfflineSample | None, str | None]:
-    save_model_updates(
-        context.store,
-        context.state,
-        context.state.record3d_dataset,
-        explorer_sequence_id=sequence_id,
-    )
-    try:
-        return context.record3d_dataset_service.load_local_sample(sequence_id), None
-    except (FileNotFoundError, ValueError) as exc:
-        return None, str(exc)
 
 
 def _sync_tum_rgbd_preview_state(
@@ -527,15 +448,21 @@ def _handle_tum_rgbd_preview_action(
         return None
     try:
         scene = context.tum_rgbd_service.scene(sequence_id)
+        stream = open_normalized_dataset_stream(
+            dataset_id=DatasetId.TUM_RGBD,
+            service=context.tum_rgbd_service,
+            source_config=source_config_for_normalization(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id),
+            include_depth=include_depth,
+            path_config=context.path_config,
+            output_dir=context.path_config.resolve_output_dir(
+                Path("dataset-preview") / "tum_rgbd" / str(sequence_id), create=True
+            ),
+        )
         context.advio_runtime.start(
             sequence_id=sequence_id,
             sequence_label=scene.display_name,
             pose_source=pose_source,
-            stream=context.tum_rgbd_service.open_preview_stream(
-                sequence_id=sequence_id,
-                pose_source=pose_source,
-                include_depth=include_depth,
-            ),
+            stream=stream,
         )
     except Exception as exc:
         save_model_updates(context.store, context.state, context.state.tum_rgbd, preview_is_running=False)
@@ -602,15 +529,26 @@ def _render_links(links: tuple[tuple[str, str], ...]) -> None:
         column.link_button(label, url, width="stretch")
 
 
-def _render_summary_metrics(summary: DatasetSummary) -> None:
+def _render_normalized_summary_metrics(normalized: NormalizedDatasetQuery) -> None:
     metrics = (
-        ("Total Scenes", summary.total_scene_count),
-        ("Local Scenes", summary.local_scene_count),
-        ("Replay Ready", summary.replay_ready_scene_count),
-        ("Offline Ready", summary.offline_ready_scene_count),
+        ("Normalized Entries", len(normalized.records)),
+        ("Sequences", len(normalized.sequence_ids)),
+        ("Default Profiles", len(normalized.default_profile_sequence_ids)),
+        ("Stats Rows", len(normalized.stats_rows)),
+        ("Metadata Rows", len(normalized.metadata_rows)),
+        ("Issues", len(normalized.issues)),
+    )
+    for column, (label, value) in zip(st.columns(6, gap="small"), metrics, strict=True):
+        column.metric(label, str(value))
+
+
+def _render_download_cache_summary(summary: DatasetSummary) -> None:
+    metrics = (
+        ("Catalog Scenes", summary.total_scene_count),
+        ("Downloaded Cache", summary.local_scene_count),
         ("Cached Archives", summary.cached_archive_count),
     )
-    for column, (label, value) in zip(st.columns(5, gap="small"), metrics, strict=True):
+    for column, (label, value) in zip(st.columns(3, gap="small"), metrics, strict=True):
         column.metric(label, str(value))
 
 
@@ -618,21 +556,6 @@ def _render_catalog(rows: list[DatasetTableRow]) -> None:
     with st.container(border=True):
         st.subheader("Scene Catalog")
         st.dataframe(rows, hide_index=True, width="stretch")
-
-
-def _render_advio_overview(statuses: list[AdvioLocalSceneStatus]) -> None:
-    with st.container(border=True):
-        st.subheader("Dataset Overview")
-        st.caption(
-            "These plots combine the committed ADVIO catalog with current local availability so the page stays useful before and after any downloads."
-        )
-        figure_rows = (
-            (plots.build_scene_mix_figure(statuses), plots.build_local_readiness_figure(statuses)),
-            (plots.build_crowd_density_figure(statuses), plots.build_scene_attribute_figure(statuses)),
-        )
-        for figures in figure_rows:
-            for column, figure in zip(st.columns(2, gap="large"), figures, strict=True):
-                column.plotly_chart(figure, width="stretch")
 
 
 def _render_advio_download_form(context: AppContext) -> AdvioDownloadFormData:
@@ -708,267 +631,57 @@ def _render_download_form_fields(
     return request_type(sequence_ids=sequence_ids, overwrite=overwrite), submitted
 
 
-def _render_advio_sequence_explorer(context: AppContext, statuses: list[AdvioLocalSceneStatus]) -> None:
-    _render_sequence_explorer_impl(
-        context=context,
-        statuses=statuses,
-        page_state=context.state.advio,
-        service=context.advio_service,
-        dataset_label="ADVIO",
-        load_sample=lambda selected_id: load_advio_explorer_sample(context, sequence_id=int(selected_id)),
-        render_details=_render_advio_sequence_details,
-    )
-
-
-def _render_tum_rgbd_sequence_explorer(
-    context: AppContext, statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]]
-) -> None:
-    _render_sequence_explorer_impl(
-        context=context,
-        statuses=statuses,
-        page_state=context.state.tum_rgbd,
-        service=context.tum_rgbd_service,
-        dataset_label="TUM RGB-D",
-        load_sample=lambda selected_id: _load_tum_rgbd_explorer_sample(context, sequence_id=str(selected_id)),
-        render_details=_render_tum_rgbd_sequence_details,
-    )
-
-
-def _render_record3d_sequence_explorer(
-    context: AppContext, statuses: list[LocalSceneStatus[Record3DSceneMetadata]]
-) -> None:
-    _render_sequence_explorer_impl(
-        context=context,
-        statuses=statuses,
-        page_state=context.state.record3d_dataset,
-        service=context.record3d_dataset_service,
-        dataset_label="Record3D",
-        load_sample=lambda selected_id: _load_record3d_explorer_sample(context, sequence_id=str(selected_id)),
-        render_details=_render_record3d_sequence_details,
-    )
-
-
 def _render_sequence_explorer_impl(
     *,
     context: AppContext,
-    statuses: (
-        list[AdvioLocalSceneStatus]
-        | list[LocalSceneStatus[TumRgbdSceneMetadata]]
-        | list[LocalSceneStatus[Record3DSceneMetadata]]
-    ),
+    records: list[NormalizedSequenceRecord],
     page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
-    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     dataset_label: str,
-    load_sample: Callable[
-        [int | str], tuple[AdvioOfflineSample | TumRgbdOfflineSample | Record3DOfflineSample | None, str | None]
-    ],
-    render_details: Callable[[AdvioOfflineSample | TumRgbdOfflineSample | Record3DOfflineSample], None],
+    state_field: str,
 ) -> None:
-    del context
-    offline_ids = [status.scene.sequence_id for status in statuses if status.offline_ready]
-    has_partial_scene = any(status.sequence_dir is not None and not status.offline_ready for status in statuses)
+    sequence_ids = [record.sequence_id for record in records]
     with st.container(border=True):
         st.subheader("Sequence Explorer")
-        if not offline_ids:
-            (st.warning if has_partial_scene else st.info)(
-                f"Local {dataset_label} scenes exist, but none are complete yet. Finish downloading a full scene to unlock trajectory and timing views."
-                if has_partial_scene
-                else f"Download at least one {dataset_label} scene to unlock trajectory and timing views."
-            )
+        if not sequence_ids:
+            st.info(f"Build at least one normalized {dataset_label} entry to unlock sequence statistics.")
             return
+        current = getattr(page_state, state_field)
+        selected_id = current if current in sequence_ids else sequence_ids[0]
         selected_id = st.selectbox(
-            "Local Scene",
-            options=offline_ids,
-            index=offline_ids.index(
-                page_state.explorer_sequence_id
-                if page_state is not None and page_state.explorer_sequence_id in offline_ids
-                else offline_ids[0]
+            "Normalized Scene",
+            options=sequence_ids,
+            index=sequence_ids.index(selected_id),
+            format_func=lambda sequence_id: next(
+                record.sequence_label for record in records if record.sequence_id == sequence_id
             ),
-            format_func=lambda sequence_id: service.scene(sequence_id).display_name,
         )
-        sample, error_message = load_sample(selected_id)
-        if error_message:
-            st.warning(error_message)
-        elif sample is not None:
-            render_details(sample)
-
-
-def _render_advio_sequence_details(sample: AdvioOfflineSample) -> None:
-    intrinsics = sample.calibration.intrinsics
-    pose_frame_mode = st.segmented_control(
-        "Trajectory Comparison",
-        options=[AdvioPoseFrameMode.PROVIDER_WORLD, AdvioPoseFrameMode.LOCAL_FIRST_POSE],
-        default=AdvioPoseFrameMode.PROVIDER_WORLD,
-        format_func=lambda item: item.label,
-        selection_mode="single",
-        width="stretch",
-        key=f"advio_compare_mode_{sample.sequence_id}",
-    )
-    resolved_mode = AdvioPoseFrameMode.PROVIDER_WORLD if pose_frame_mode is None else pose_frame_mode
-    st.caption(
-        "Provider World shows each trajectory in its own source frame. Local First Pose rebases each trajectory to its own first valid pose."
-    )
-    trajectories = plots.build_advio_comparison_trajectories(
-        ground_truth=sample.ground_truth,
-        arcore=sample.arcore,
-        arkit=sample.arkit,
-        pose_frame_mode=resolved_mode,
-    )
-    timing = [
-        ("Video Frames", sample.frame_timestamps_ns.astype(np.float64) / 1e9),
-        ("Ground Truth", np.asarray(sample.ground_truth.timestamps, dtype=np.float64)),
-        ("ARCore", np.asarray(sample.arcore.timestamps, dtype=np.float64)),
-    ]
-    if sample.arkit is not None:
-        timing.append(("ARKit", np.asarray(sample.arkit.timestamps, dtype=np.float64)))
-    _render_sequence_details(
-        duration_s=sample.duration_s,
-        frame_count=int(len(sample.frame_timestamps_ns)),
-        intrinsics=intrinsics,
-        metrics=(("ARKit", "Available" if sample.arkit is not None else "Missing"),),
-        trajectories=trajectories,
-        timing=timing,
-        paths=(
-            ("Video", sample.paths.video_path),
-            ("Timestamps", sample.paths.frame_timestamps_path),
-            ("Calibration", sample.paths.calibration_path),
-            ("Ground Truth", sample.paths.ground_truth_csv_path),
-            ("ARCore", sample.paths.arcore_csv_path),
-            ("ARKit", sample.paths.arkit_csv_path or "Missing"),
-        ),
-        bev_axes=(0, 2),
-        height_axis=1,
-    )
-
-
-def _render_tum_rgbd_sequence_details(sample: TumRgbdOfflineSample) -> None:
-    _render_sequence_details(
-        duration_s=sample.duration_s,
-        frame_count=int(len(sample.frame_timestamps_ns)),
-        intrinsics=sample.intrinsics,
-        metrics=(
-            ("Depth", "Available" if any(item.depth_path is not None for item in sample.associations) else "Missing"),
-        ),
-        trajectories=[("Ground Truth", sample.ground_truth)],
-        timing=[
-            ("RGB Frames", sample.frame_timestamps_ns.astype(np.float64) / 1e9),
-            ("Ground Truth", np.asarray(sample.ground_truth.timestamps, dtype=np.float64)),
-        ],
-        paths=(
-            ("RGB List", sample.paths.rgb_list_path),
-            ("Depth List", sample.paths.depth_list_path or "Missing"),
-            ("Ground Truth", sample.paths.ground_truth_path),
-        ),
-    )
-
-
-def _render_record3d_sequence_details(sample: Record3DOfflineSample) -> None:
-    trajectory = _record3d_metadata_trajectory(sample)
-    timestamps_s = sample.frame_timestamps_ns.astype(np.float64) / 1e9
-    _render_sequence_details(
-        duration_s=sample.duration_s,
-        frame_count=int(len(sample.frames)),
-        intrinsics=sample.depth_intrinsics,
-        metrics=(("Depth", "Available"),),
-        trajectories=[("Record3D / ARKit", trajectory)],
-        timing=[
-            ("RGB-D Frames", timestamps_s),
-            ("Record3D / ARKit", timestamps_s),
-        ],
-        paths=(
-            ("Archive", sample.archive_path),
-            ("RGB Intrinsics", f"{sample.rgb_intrinsics.width_px}x{sample.rgb_intrinsics.height_px}"),
-            ("Depth Intrinsics", f"{sample.depth_intrinsics.width_px}x{sample.depth_intrinsics.height_px}"),
-        ),
-        bev_axes=(0, 2),
-        height_axis=1,
-    )
-
-
-def _record3d_metadata_trajectory(sample: Record3DOfflineSample) -> PoseTrajectory3D:
-    pose_fields = np.asarray([pose.to_tum_fields() for pose in sample.poses_world_camera], dtype=np.float64)
-    if pose_fields.size == 0:
-        return PoseTrajectory3D(
-            positions_xyz=np.zeros((0, 3), dtype=np.float64),
-            orientations_quat_wxyz=np.zeros((0, 4), dtype=np.float64),
-            timestamps=np.asarray([], dtype=np.float64),
+        save_model_updates(context.store, context.state, page_state, **{state_field: selected_id})
+        selected_records = [record for record in records if record.sequence_id == selected_id]
+        st.dataframe(
+            [
+                {
+                    "Profile": record.profile_key,
+                    "Default Profile": record.is_default_profile,
+                    "Stats Rows": record.stats_row_count,
+                    "Metadata Rows": record.metadata_row_count,
+                    "Root": record.root.as_posix(),
+                }
+                for record in selected_records
+            ],
+            hide_index=True,
+            width="stretch",
         )
-    quaternions_xyzw = pose_fields[:, 3:]
-    quaternion_norms = np.linalg.norm(quaternions_xyzw, axis=1, keepdims=True)
-    if np.any(quaternion_norms == 0.0):
-        raise ValueError("Record3D metadata trajectory contains a zero-norm quaternion.")
-    return PoseTrajectory3D(
-        positions_xyz=pose_fields[:, :3],
-        orientations_quat_wxyz=np.roll(quaternions_xyzw / quaternion_norms, 1, axis=1),
-        timestamps=sample.frame_timestamps_ns.astype(np.float64) / 1e9,
-    )
 
 
-def _render_sequence_details(
-    *,
-    duration_s: float,
-    frame_count: int,
-    intrinsics: CameraIntrinsics,
-    metrics: tuple[tuple[str, str], ...],
-    trajectories: list[tuple[str, PoseTrajectory3D]],
-    timing: list[tuple[str, np.ndarray]],
-    paths: tuple[tuple[str, Path | str], ...],
-    bev_axes: tuple[int, int] = (0, 1),
-    height_axis: int = 2,
-) -> None:
-    mean_fps = 0.0 if duration_s <= 0.0 else float(max(frame_count - 1, 0) / duration_s)
-    metric_values = (
-        ("Duration", f"{duration_s:.1f} s"),
-        ("Frames", str(frame_count)),
-        ("Mean FPS", f"{mean_fps:.2f}"),
-        ("GT Path Length", f"{plots.trajectory_length_m(trajectories[0][1]):.1f} m"),
-        *metrics,
-    )
-    for column, (label, value) in zip(st.columns(5, gap="small"), metric_values, strict=True):
-        column.metric(label, value)
-    st.caption(
-        f"Camera: {intrinsics.width_px}×{intrinsics.height_px}px, fx={intrinsics.fx:.1f}, fy={intrinsics.fy:.1f}, cx={intrinsics.cx:.1f}, cy={intrinsics.cy:.1f}"
-    )
-    tabs = st.tabs(["Trajectories", "Motion", "Timing", "Camera"])
-    figure_rows = (
-        (
-            plots.build_bev_trajectory_figure(trajectories, plane_axes=bev_axes),
-            plots.build_3d_trajectory_figure(trajectories, pose_axes_name="Ground Truth", pose_axis_stride=30),
-        ),
-        (
-            plots.build_speed_profile_figure(trajectories),
-            plots.build_height_profile_figure(trajectories, height_axis=height_axis),
-        ),
-        (
-            plots.build_sample_interval_figure(timing),
-            plots.build_sample_interval_figure(timing[1:], title="Trajectory Cadence"),
-        ),
-    )
-    for tab, figures in zip(tabs[:3], figure_rows, strict=True):
-        with tab:
-            for column, figure in zip(st.columns(2, gap="large"), figures, strict=True):
-                column.plotly_chart(figure, width="stretch")
-    with tabs[3]:
-        left, right = st.columns((0.9, 1.1), gap="large")
-        with left:
-            st.markdown("**Camera Intrinsics**")
-            render_camera_intrinsics(
-                intrinsics=intrinsics,
-                missing_message="Camera intrinsics are not available for the current sample.",
-            )
-        with right:
-            st.markdown("**Modalities and Paths**")
-            st.markdown("\n".join(f"- {label}: `{value}`" for label, value in paths))
-
-
-def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSceneStatus]) -> None:
+def _render_advio_loop_preview(context: AppContext, normalized: NormalizedDatasetQuery) -> None:
     _render_loop_preview_impl(
-        statuses=statuses,
+        records=normalized.default_records,
         page_state=context.state.advio,
-        service=context.advio_service,
-        pose_source_type=AdvioPoseSource,
-        pose_source_options=lambda selected_id: _advio_preview_pose_sources(statuses, sequence_id=int(selected_id)),
-        caption="Run a replay-ready ADVIO scene in a local loop with the PyAV replay source and inspect frames, trajectory, and camera metadata live.",
+        pose_source_options=lambda sequence_id: normalized_advio_pose_sources(
+            normalized.records,
+            sequence_id=str(sequence_id),
+        ),
+        caption="Run a normalized ADVIO scene in a local loop and inspect frames, trajectory, and camera metadata live.",
         option_label="Normalize video display orientation",
         option_key="preview_normalize_video_orientation",
         initial_option_value=context.state.advio.preview_normalize_video_orientation,
@@ -976,7 +689,7 @@ def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSce
         action=lambda selected_id, pose_source, option_value, start, stop: handle_advio_preview_action(
             context,
             AdvioPreviewFormData(
-                sequence_id=int(selected_id),
+                sequence_id=int(str(selected_id).split("-", maxsplit=1)[1]),
                 pose_source=pose_source,
                 normalize_video_orientation=option_value,
                 start_requested=start,
@@ -987,14 +700,12 @@ def _render_advio_loop_preview(context: AppContext, statuses: list[AdvioLocalSce
     )
 
 
-def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]]) -> None:
+def _render_tum_rgbd_loop_preview(context: AppContext, normalized: NormalizedDatasetQuery) -> None:
     _render_loop_preview_impl(
-        statuses=statuses,
+        records=normalized.default_records,
         page_state=context.state.tum_rgbd,
-        service=context.tum_rgbd_service,
-        pose_source_type=TumRgbdPoseSource,
         pose_source_options=None,
-        caption="Run a replay-ready TUM RGB-D scene in a local loop and inspect RGB-D frames, trajectory, and camera metadata live.",
+        caption="Run a normalized TUM RGB-D scene in a local loop and inspect RGB-D frames, trajectory, and camera metadata live.",
         option_label="Include depth frames",
         option_key="preview_include_depth",
         initial_option_value=context.state.tum_rgbd.preview_include_depth,
@@ -1013,17 +724,11 @@ def _render_tum_rgbd_loop_preview(context: AppContext, statuses: list[LocalScene
 
 def _render_record3d_loop_preview(
     context: AppContext,
-    statuses: list[LocalSceneStatus[Record3DSceneMetadata]],
-    normalized: NormalizedDatasetSnapshot,
+    normalized: NormalizedDatasetQuery,
 ) -> None:
-    normalized_statuses = [
-        status for status in statuses if status.scene.sequence_id in normalized.default_profile_sequence_ids
-    ]
     _render_loop_preview_impl(
-        statuses=normalized_statuses,
+        records=normalized.default_records,
         page_state=context.state.record3d_dataset,
-        service=context.record3d_dataset_service,
-        pose_source_type=Record3DDatasetPoseSource,
         pose_source_options=lambda _selected_id: [Record3DDatasetPoseSource.ARKIT],
         caption="Run a normalized Record3D scene in a local loop and inspect RGB-D frames, trajectory, and camera metadata live.",
         option_label="Include depth frames",
@@ -1044,14 +749,8 @@ def _render_record3d_loop_preview(
 
 def _render_loop_preview_impl(
     *,
-    statuses: (
-        list[AdvioLocalSceneStatus]
-        | list[LocalSceneStatus[TumRgbdSceneMetadata]]
-        | list[LocalSceneStatus[Record3DSceneMetadata]]
-    ),
+    records: list[NormalizedSequenceRecord],
     page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
-    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
-    pose_source_type: type[StrEnum],
     pose_source_options: Callable[[int | str], list[StrEnum]] | None,
     caption: str,
     option_label: str,
@@ -1061,12 +760,12 @@ def _render_loop_preview_impl(
     action: Callable[[int | str, StrEnum, bool, bool, bool], str | None],
     sync_snapshot: Callable[[], AdvioPreviewSnapshot],
 ) -> None:
-    previewable_ids = [status.scene.sequence_id for status in statuses if status.replay_ready]
+    previewable_ids = [record.sequence_id for record in records]
     with st.container(border=True):
         st.subheader("Loop Preview")
         st.caption(caption)
         if not previewable_ids:
-            st.info("Download at least one complete scene to unlock loop preview.")
+            st.info("Build at least one normalized entry to unlock loop preview.")
             return
         selected_id = (
             page_state.preview_sequence_id if page_state.preview_sequence_id in previewable_ids else previewable_ids[0]
@@ -1076,11 +775,13 @@ def _render_loop_preview_impl(
             "Preview Scene",
             options=previewable_ids,
             index=previewable_ids.index(selected_id),
-            format_func=lambda sequence_id: service.scene(sequence_id).display_name,
+            format_func=lambda sequence_id: next(
+                record.sequence_label for record in records if record.sequence_id == sequence_id
+            ),
             key=f"{action_key_prefix}:scene",
         )
         available_pose_sources = (
-            list(pose_source_type) if pose_source_options is None else pose_source_options(selected_id)
+            [page_state.preview_pose_source] if pose_source_options is None else pose_source_options(selected_id)
         )
         pose_source = (
             page_state.preview_pose_source
@@ -1114,22 +815,6 @@ def _render_loop_preview_impl(
             run_every=live_poll_interval(is_active=page_state.preview_is_running, interval_seconds=0.2),
             render_body=lambda: _render_preview_snapshot(sync_snapshot()),
         )
-
-
-def _advio_preview_pose_sources(
-    statuses: list[AdvioLocalSceneStatus],
-    *,
-    sequence_id: int,
-) -> list[AdvioPoseSource]:
-    status = next((status for status in statuses if status.scene.sequence_id == sequence_id), None)
-    if status is None:
-        return [AdvioPoseSource.GROUND_TRUTH, AdvioPoseSource.NONE]
-    options = [AdvioPoseSource.GROUND_TRUTH, AdvioPoseSource.NONE]
-    if status.arcore_ready:
-        options.insert(1, AdvioPoseSource.ARCORE)
-    if status.arkit_ready:
-        options.append(AdvioPoseSource.ARKIT)
-    return options
 
 
 def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:

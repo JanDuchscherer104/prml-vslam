@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -78,23 +77,7 @@ def load_tum_rgbd_list(path: Path) -> list[tuple[float, Path]]:
 
 def load_tum_rgbd_ground_truth(path: Path) -> PoseTrajectory3D:
     """Load raw TUM RGB-D ground truth with deterministic timestamp canonicalization."""
-    rows_by_timestamp: dict[float, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        fields = stripped.split()
-        if len(fields) < 8:
-            raise ValueError(f"Invalid TUM trajectory row in {path}: {line!r}")
-        rows_by_timestamp[float(fields[0])] = stripped
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        canonical_path = Path(tmp_dir) / path.name
-        canonical_path.write_text(
-            "".join(f"{rows_by_timestamp[timestamp]}\n" for timestamp in sorted(rows_by_timestamp)),
-            encoding="utf-8",
-        )
-        return load_tum_trajectory(canonical_path)
+    return load_tum_trajectory(path, canonicalize_timestamps=True)
 
 
 def load_tum_rgbd_ground_truth_rdf(path: Path) -> PoseTrajectory3D:

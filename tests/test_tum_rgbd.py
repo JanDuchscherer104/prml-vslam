@@ -353,7 +353,7 @@ def test_dataset_sequence_source_reference_cloud_uses_manifest_frame_selection(t
     _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", frame_count=5)
     catalog = _build_fake_catalog(tmp_path)
     service = TumRgbdDatasetService(PathConfig(root=tmp_path), catalog=catalog)
-    source = service.build_offline_source(
+    source = service._build_raw_source(
         sequence_id="freiburg1_desk",
         frame_selection=FrameSelectionConfig(frame_stride=2),
     )
@@ -445,7 +445,7 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
     )
-    raw_source = service.build_streaming_source(
+    raw_source = service._build_raw_streaming_source(
         sequence_id="freiburg1_desk",
         frame_selection=FrameSelectionConfig(),
         replay_mode=source_config.replay_mode,
