@@ -119,7 +119,13 @@ def _load_slam_stage_from_template(path: Path) -> SlamStageConfig:
             f"Method template {path} has no [stages.slam] section. "
             "Each method template must define exactly one [stages.slam] block."
         )
-    return SlamStageConfig.model_validate(slam_raw)
+    slam_stage = SlamStageConfig.model_validate(slam_raw)
+    if slam_stage.backend is None:
+        raise ValueError(
+            f"Method template {path} has [stages.slam] but no [stages.slam.backend] section. "
+            "Each method template must declare a backend (e.g. [stages.slam.backend] with method_id)."
+        )
+    return slam_stage
 
 
 def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfig:
@@ -203,7 +209,7 @@ class SweepDataset(BaseConfig):
     sequence_id: str
     """Dataset-specific sequence slug."""
 
-    frame_stride: int = 1
+    frame_stride: int = Field(default=1, ge=1)
     """Frame sub-sampling stride forwarded to the source backend."""
 
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
@@ -226,6 +232,13 @@ class SweepDataset(BaseConfig):
 
     evaluate_cloud: bool = False
     """Enable dense-cloud evaluation stage."""
+
+    @model_validator(mode="after")
+    def validate_ids_are_slugs(self) -> Self:
+        """Ensure *dataset_id* and *sequence_id* are safe to embed in run IDs."""
+        _assert_slug(self.dataset_id, "dataset_id")
+        _assert_slug(self.sequence_id, "sequence_id")
+        return self
 
 
 class SweepMethod(BaseConfig):
