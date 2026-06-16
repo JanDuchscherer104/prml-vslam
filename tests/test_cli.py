@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -275,11 +276,12 @@ def test_plan_sweep_config_outputs_valid_json(tmp_path: Path) -> None:
     result = runner.invoke(app, ["plan-sweep-config", str(sweep)])
 
     assert result.exit_code == 0, result.output
-    # stdout must contain the four expanded run IDs
-    assert "cli-sweep-tum_rgbd-freiburg1_xyz-vista" in result.stdout
-    assert "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r" in result.stdout
-    assert "cli-sweep-advio-advio-15-vista" in result.stdout
-    assert "cli-sweep-advio-advio-15-mast3r" in result.stdout
+    parsed = json.loads(result.stdout)
+    run_ids = [item["run_id"] for item in parsed]
+    assert "cli-sweep-tum_rgbd-freiburg1_xyz-vista" in run_ids
+    assert "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r" in run_ids
+    assert "cli-sweep-advio-advio-15-vista" in run_ids
+    assert "cli-sweep-advio-advio-15-mast3r" in run_ids
 
 
 def test_plan_sweep_config_stable_ordering(tmp_path: Path) -> None:

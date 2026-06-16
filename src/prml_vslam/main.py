@@ -715,7 +715,7 @@ def plan_sweep_config(
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog([item.model_dump(mode="json") for item in items])
+    print(json.dumps([item.model_dump(mode="json") for item in items], indent=2))
 
 
 @app.command("run-sweep-config")
@@ -763,7 +763,14 @@ def run_sweep_config(
 
     for idx, item in enumerate(items, start=1):
         console.info("Sweep run %d/%d: %s", idx, total, item.run_id)
-        run_cfg = build_run_config_from_sweep_item(item)
+        try:
+            run_cfg = build_run_config_from_sweep_item(item)
+        except Exception as exc:
+            console.error("Sweep run %s failed to build config (run %d/%d): %s", item.run_id, idx, total, exc)
+            failures.append(item.run_id)
+            if fail_fast:
+                raise typer.Exit(code=1) from exc
+            continue
         run_id = path_config.slugify_experiment_name(run_cfg.experiment_name)
         with _capture_run_config_logs(path_config=path_config, run_id=run_id) as log_path:
             console.info("Persisting run-config log to '%s'.", log_path)
