@@ -14,7 +14,7 @@ from pydantic import ValidationError
 # Import pipeline first to keep visualization and curated pipeline exports initialized
 # in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef

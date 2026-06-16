@@ -3,7 +3,7 @@
 Alignment is a derived interpretation layer over normalized SLAM outputs. It
 may estimate viewer-scoped transforms such as ``T_viewer_world_world``, but it
 must not mutate native trajectories or point clouds in place. Runtime services
-consume these configs through :mod:`prml_vslam.alignment.services`; pipeline
+consume these configs through :mod:`prml_vslam.align.gravity.services`; pipeline
 stage configs merely decide whether the alignment stage should run.
 """
 

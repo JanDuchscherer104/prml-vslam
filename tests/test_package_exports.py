@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import prml_vslam.alignment.stage as alignment_stage_package
+import prml_vslam.align.gravity as alignment_stage_package
 import prml_vslam.eval.stage_trajectory as trajectory_stage_package
 import prml_vslam.interfaces as interfaces_package
 import prml_vslam.methods as methods_package

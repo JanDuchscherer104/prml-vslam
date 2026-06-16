@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from evo.core import metrics
 
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata

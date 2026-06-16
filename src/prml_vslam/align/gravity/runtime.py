@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment.services import GroundAlignmentService
-from prml_vslam.alignment.stage.contracts import GroundAlignmentStageInput
+from prml_vslam.align.gravity.services import GroundAlignmentService
+from prml_vslam.align.gravity.stage_contracts import GroundAlignmentStageInput
 from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -18,7 +18,7 @@ class GroundAlignmentRuntime(OfflineStageRuntime[GroundAlignmentStageInput]):
 
     The runtime owns stage-result construction, artifact registration, and live
     status for the pipeline. Plane fitting and frame semantics remain
-    alignment-owned in :mod:`prml_vslam.alignment.services`.
+    alignment-owned in :mod:`prml_vslam.align.gravity.services`.
     """
 
     def __init__(self, *, service_type: type[GroundAlignmentService] | None = None) -> None:

@@ -8,12 +8,24 @@ import math
 import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.align.gravity import _RDF_DOWN_AXIS, is_gravity_aligned_target
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.utils.geometry import (
     apply_similarity_to_trajectory,
     yaw_similarity_align,
 )
+
+# Down-axis for the RDF camera convention; ADVIO worlds are gravity-aligned about this axis.
+_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+
+
+def is_gravity_aligned_target(target_frame: str) -> bool:
+    """Whether the benchmark target frame is gravity-aligned (up == RDF -Y).
+
+    ADVIO provider worlds derive from Apple Y-up, so RDF ``-Y`` is gravity. The
+    TUM first-camera RDF frame is *not* gravity-aligned, so it keeps full Umeyama.
+    """
+    return target_frame.startswith("advio_") and target_frame.endswith("_world")
+
 
 __all__ = [
     "align_estimate_sim3",

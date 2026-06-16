@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
+from prml_vslam.align.gravity import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationStageInput,
@@ -65,7 +65,7 @@ def test_ground_alignment_runtime_returns_stage_result(
             )
 
     monkeypatch.setattr(
-        "prml_vslam.alignment.stage.runtime.GroundAlignmentService",
+        "prml_vslam.align.gravity.runtime.GroundAlignmentService",
         FakeGroundAlignmentService,
     )
 
