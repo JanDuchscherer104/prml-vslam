@@ -11,21 +11,21 @@ import pytest
 from evo.core import metrics
 
 from prml_vslam.align.icp import CloudAlignmentService
-from prml_vslam.eval.alignment_contracts import (
+from prml_vslam.align.icp.runtime import CloudAlignmentRuntime
+from prml_vslam.align.icp.stage_contracts import CloudAlignmentStageInput
+from prml_vslam.align.trajectory_sim3.contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
 )
+from prml_vslam.align.trajectory_sim3.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.contracts import (
     CloudAlignmentArtifact,
     CloudAlignmentSelection,
     MetricStats,
 )
 from prml_vslam.eval.services import TrajectoryEvaluationService, compute_trajectory_ape_preview
-from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
-from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
-from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
-from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
@@ -566,7 +566,7 @@ def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: P
 
 
 def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
-    from prml_vslam.eval.stage_alignment.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
+    from prml_vslam.align.trajectory_sim3.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
 
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.TRAJECTORY_ALIGNMENT
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
@@ -574,8 +574,8 @@ def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
 
 
 def test_cloud_alignment_stage_spec_is_well_formed() -> None:
+    from prml_vslam.align.icp.spec import CLOUD_ALIGNMENT_STAGE_SPEC
     from prml_vslam.eval.stage_cloud.spec import CLOUD_EVALUATION_STAGE_SPEC
-    from prml_vslam.eval.stage_cloud_alignment.spec import CLOUD_ALIGNMENT_STAGE_SPEC
 
     assert CLOUD_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.CLOUD_ALIGNMENT
     assert CLOUD_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
@@ -625,7 +625,7 @@ def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
 
 
 def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
-    from prml_vslam.align.gravity import is_gravity_aligned_target as _is_gravity_aligned_target
+    from prml_vslam.align.trajectory_sim3 import is_gravity_aligned_target as _is_gravity_aligned_target
 
     assert _is_gravity_aligned_target("advio_gt_world")
     assert _is_gravity_aligned_target("advio_arkit_world")

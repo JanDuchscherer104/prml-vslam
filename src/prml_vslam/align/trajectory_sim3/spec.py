@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
-from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignmentStageInput
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import FailureFingerprint

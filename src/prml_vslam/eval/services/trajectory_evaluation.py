@@ -1,13 +1,4 @@
-"""Concrete evaluation services built on normalized run artifacts.
-
-This module implements the explicit evaluation work described by
-:mod:`prml_vslam.eval.contracts` and :mod:`prml_vslam.eval.protocols`. App and
-post-run aggregation discovery lives in :mod:`prml_vslam.eval.query`; this
-module owns eval-stage computation and persistence.
-
-Alignment algorithms (Sim3, ICP, gravity detection) live in
-:mod:`prml_vslam.align`.
-"""
+"""Trajectory evaluation service for pipeline-driven APE/RPE computation and persistence."""
 
 from __future__ import annotations
 
@@ -23,12 +14,16 @@ from evo.core import metrics, sync
 from evo.tools import file_interface
 
 from prml_vslam.align.trajectory_sim3 import align_estimate_sim3, sim3_up_axis_tilt_deg, trajectory_supports_sim3
-from prml_vslam.eval.alignment_contracts import (
+from prml_vslam.align.trajectory_sim3.contracts import (
     TrajectoryAlignmentArtifact,
     TrajectoryAlignmentCloudUseStatus,
     TrajectoryAlignmentMode,
 )
-from prml_vslam.eval.contracts import MetricStats
+from prml_vslam.eval.services.preview import (
+    _EVO_ASSOCIATION_MAX_DIFF_S,
+    compute_trajectory_ape_preview,
+    compute_trajectory_rpe_preview,
+)
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
@@ -47,20 +42,13 @@ from prml_vslam.utils.geometry import (
 )
 from prml_vslam.utils.path_config import PathConfig
 
-__all__ = [
-    "TrajectoryEvaluationService",
-    "compute_trajectory_ape_preview",
-    "compute_trajectory_rpe_preview",
-]
-
-_EVO_ASSOCIATION_MAX_DIFF_S = 0.01
-_SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
-_SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
-_SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
-
 if TYPE_CHECKING:
     from prml_vslam.pipeline.config import RunConfig
     from prml_vslam.pipeline.contracts.plan import RunPlan
+
+_SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
+_SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
+_SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,18 +71,6 @@ _POSE_RELATION_UNIT: dict[metrics.PoseRelation, str] = {
     metrics.PoseRelation.translation_part: "m",
     metrics.PoseRelation.rotation_angle_deg: "deg",
 }
-
-
-@dataclass(slots=True)
-class _TrajectoryMetricPreview:
-    """Internal single-metric preview kept until the full evo metric loop lands."""
-
-    error_timestamps_s: np.ndarray
-    error_values: np.ndarray
-    reference_positions_xyz: np.ndarray
-    estimate_positions_xyz: np.ndarray
-    stats: MetricStats
-    alignment: TrajectoryAlignmentArtifact | None = None
 
 
 @dataclass(slots=True)
@@ -424,117 +400,6 @@ class TrajectoryEvaluationService:
         return run_root / "evaluation" / "trajectory" / "metrics_long.csv"
 
 
-def compute_trajectory_ape_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
-    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
-    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-    target_frame: str = "world",
-    source_frame: str = "slam_world",
-    reference_source: str = "reference",
-    method_id: str | None = None,
-    method_label: str | None = None,
-) -> _TrajectoryMetricPreview:
-    """Compute in-memory APE for two normalized TUM trajectory artifacts.
-
-    Uses evo's timestamp association and APE implementation over
-    :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns an
-    internal preview and leaves persistence to :class:`TrajectoryEvaluationService`.
-    """
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    try:
-        associated_reference, associated_estimate = sync.associate_trajectories(
-            reference_trajectory,
-            estimate_trajectory,
-            max_diff=max_diff_s,
-        )
-    except sync.SyncException as exc:
-        raise ValueError(
-            f"No matching trajectory timestamps were found for evo APE (max_diff={max_diff_s:.3f}s)."
-        ) from exc
-
-    evaluation_estimate = associated_estimate
-    alignment = None
-    if alignment_mode is TrajectoryAlignmentMode.SIM3_UMEYAMA:
-        if trajectory_supports_sim3(associated_reference, associated_estimate):
-            evaluation_estimate, alignment = align_estimate_sim3(
-                reference=associated_reference,
-                estimate=associated_estimate,
-                max_diff_s=max_diff_s,
-                target_frame=target_frame,
-                source_frame=source_frame,
-                reference_source=reference_source,
-                method_id=method_id,
-                method_label=method_label,
-            )
-    elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
-        raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
-
-    metric = metrics.APE(pose_relation)
-    metric.process_data((associated_reference, evaluation_estimate))
-    error_values = np.asarray(metric.error, dtype=np.float64)
-    if error_values.size == 0:
-        raise ValueError("evo APE produced zero matched trajectory pairs.")
-    return _TrajectoryMetricPreview(
-        error_timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
-        error_values=error_values,
-        reference_positions_xyz=np.asarray(associated_reference.positions_xyz, dtype=np.float64),
-        estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz, dtype=np.float64),
-        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
-        alignment=alignment,
-    )
-
-
-def compute_trajectory_rpe_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
-    delta: float = 1.0,
-    delta_unit: metrics.Unit = metrics.Unit.meters,
-    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
-) -> _TrajectoryMetricPreview:
-    """Compute in-memory RPE for two normalized TUM trajectory artifacts.
-
-    No alignment is applied — RPE measures relative motion between fixed-distance
-    pose pairs, so the global alignment cancels in the subtraction.
-    """
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    try:
-        associated_reference, associated_estimate = sync.associate_trajectories(
-            reference_trajectory,
-            estimate_trajectory,
-            max_diff=max_diff_s,
-        )
-    except sync.SyncException as exc:
-        raise ValueError(
-            f"No matching trajectory timestamps were found for evo RPE (max_diff={max_diff_s:.3f}s)."
-        ) from exc
-
-    metric = metrics.RPE(pose_relation, delta=delta, delta_unit=delta_unit, all_pairs=False)
-    try:
-        metric.process_data((associated_reference, associated_estimate))
-    except Exception as exc:
-        raise ValueError(f"evo RPE computation failed: {exc}") from exc
-
-    error_values = np.asarray(metric.error, dtype=np.float64)
-    if error_values.size == 0:
-        raise ValueError("evo RPE produced zero matched trajectory pairs.")
-    n = error_values.size
-    return _TrajectoryMetricPreview(
-        error_timestamps_s=np.asarray(associated_reference.timestamps[:n], dtype=np.float64),
-        error_values=error_values,
-        reference_positions_xyz=np.asarray(associated_reference.positions_xyz[:n], dtype=np.float64),
-        estimate_positions_xyz=np.asarray(associated_estimate.positions_xyz[:n], dtype=np.float64),
-        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
-        alignment=None,
-    )
-
-
 def _method_world_frame(method_id: str | None) -> str:
     token = "slam" if method_id is None else _entity_token(str(method_id))
     return f"{token}_slam_world"
@@ -651,3 +516,6 @@ def _write_aligned_point_cloud(
     translation = np.asarray(alignment.translation, dtype=np.float64)
     aligned_points = alignment.scale * (points_xyz @ rotation.T) + translation
     write_point_cloud_ply(output_path, aligned_points, colors_rgb=colors_rgb)
+
+
+__all__ = ["TrajectoryEvaluationService"]
