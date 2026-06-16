@@ -1,11 +1,10 @@
 # Main LingBot-Map benchmark configuration
 # ----------------------------------------
-# This config favors the best verified quality profile over the smaller
-# GPU-survival smoke settings while fitting the local 12 GB RTX 3080 Ti
-# FlashInfer path. It keeps the TUM cabinet sequence near LingBot's 320-frame
-# direct-mode training range after source sampling.
+# This config is the full-scene LingBot robustness profile. It targets ADVIO-20
+# without source-side sampling or SLAM frame caps, so backend memory settings
+# favor completion on the local 12 GB RTX 3080 Ti FlashInfer path.
 
-experiment_name          = "lingbot-tum-cabinet-full"
+experiment_name          = "lingbot-advio20-full"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -14,14 +13,13 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id   = "tum_rgbd"
-    sequence_id = "freiburg3_large_cabinet"
-    # LingBot is trained/evaluated most directly within roughly 320 direct-mode
-    # views. The cabinet subset has about 1000 RGB frames, so stride 5 keeps
-    # this benchmark near 200 processed frames while preserving
-    # the same dataset and normalized source artifacts.
-    frame_stride = 5
+    source_id   = "advio"
+    sequence_id = "advio-20"
     replay_mode  = "fast_as_possible"
+
+        [stages.source.backend.dataset_serving]
+        pose_source     = "ground_truth"
+        pose_frame_mode = "provider_world"
 
 [stages.slam]
 enabled  = true
@@ -50,15 +48,12 @@ sampling_interval_ms    = 1000
     # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
     device = "cuda"
 
-    # Windowed inference is the accepted local benchmark profile: it completed
-    # the full TUM cabinet run without OOM and improved trajectory RMSE over
-    # streaming on the 12 GB RTX 3080 Ti.
+    # Windowed inference bounds GPU residency for long scenes.
     mode = "windowed"
 
-    # Upstream/paper default input width is 518, but the local FlashInfer path OOMs
-    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the best full-run
-    # trajectory profile found so far.
-    image_size = 392
+    # ADVIO-20 has 18k+ frames. Keep the full-sequence dense prediction tensors
+    # within local RAM while preserving the DINO/GCT patch grid.
+    image_size = 84
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
     # patch-grid aligned with upstream.
@@ -67,8 +62,8 @@ sampling_interval_ms    = 1000
     # LingBot's video RoPE is part of the long-range geometric context model.
     enable_3d_rope = true
 
-    # Model's configured frame-position capacity. This matches upstream default
-    # and is safely above the source-strided cabinet benchmark frame count.
+    # Windowed inference operates within per-window frame spans; keep upstream
+    # default temporal capacity without sizing FlashInfer caches to all frames.
     max_frame_num = 1024
 
     # Number of bidirectional anchor/scale frames. The paper default is 8, but
@@ -99,8 +94,7 @@ sampling_interval_ms    = 1000
     # native 518-wide grid.
     checkpoint_pos_embed = "interpolate"
 
-    # Windowed fallback parameters promoted to the benchmark profile after the
-    # full TUM cabinet run improved trajectory RMSE without OOM.
+    # Windowed fallback parameters for long-scene robustness.
     window_size = 128
     overlap_keyframes = 8
 
@@ -140,7 +134,7 @@ enabled = true
 enabled = true
 
 [stages.align_cloud]
-enabled                       = true
+enabled                       = false
 max_correspondence_distance_m = 0.1
 
 [stages.reconstruction]
@@ -154,13 +148,13 @@ enabled = true
 
 [visualization]
 connect_live_viewer                         = false
-export_viewer_rrd                           = true
+export_viewer_rrd                           = false
 grpc_url                                    = "rerun+http://127.0.0.1:9876/proxy"
 viewer_blueprint_path                       = ".configs/visualization/vista_blueprint.rbl"
 preserve_native_rerun                       = false
 log_source_rgb                              = false
 log_diagnostic_preview                      = false
-log_camera_image_rgb                        = true
+log_camera_image_rgb                        = false
 show_tracking_trajectory                    = true
 trajectory_pose_axis_length                 = 0.0
 point_cloud_decimation_keep_ratio           = 0.05
