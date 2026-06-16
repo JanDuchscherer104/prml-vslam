@@ -43,7 +43,9 @@ from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetProfile,
     NormalizedDatasetStore,
     load_depth_array,
+    load_normalized_entry_metadata,
     load_normalized_entry_stats,
+    normalized_entry_analysis_summary,
     normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import (
@@ -150,7 +152,7 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
     )
-    raw_source = service.build_streaming_source(
+    raw_source = service._build_raw_streaming_source(
         sequence_id="synthetic",
         frame_selection=FrameSelectionConfig(),
         replay_mode=source_config.replay_mode,
@@ -389,7 +391,7 @@ def test_record3d_dataset_service_and_registry_discover_local_archives(tmp_path:
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
 
-    source = service.build_streaming_source(
+    source = service._build_raw_streaming_source(
         sequence_id="synthetic",
         frame_selection=None,
         replay_mode=ReplayMode.FAST_AS_POSSIBLE,
@@ -447,6 +449,29 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
     assert stats[("reference_trajectory", "arkit/aligned", "ego_motion_class")] == "low_curvature"
     assert records[0]["schema_version"] == 4
+
+
+def test_normalized_entry_accepts_legacy_analysis_csv_path_fields(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    entry_path = fixture.entry.root / "entry.json"
+    payload = json.loads(entry_path.read_text(encoding="utf-8"))
+    payload["stats_long_csv_path"] = payload.pop("stats_long_path")
+    payload["metadata_long_csv_path"] = payload.pop("metadata_long_path")
+    entry_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    entry = fixture.store.load_entry(fixture.profile)
+    summary = normalized_entry_analysis_summary(entry)
+
+    assert entry.stats_long_path == fixture.entry.root / "stats_long.csv"
+    assert entry.metadata_long_path == fixture.entry.root / "metadata_long.csv"
+    assert summary["stats_long_row_count"] > 0
+    assert summary["metadata_long_row_count"] > 0
+    assert load_normalized_entry_stats(entry)
+    assert load_normalized_entry_metadata(entry)
+    assert "stats_long_csv_path" not in entry.model_dump(mode="json")
+    assert "metadata_long_csv_path" not in entry.model_dump(mode="json")
+    assert fixture.store.summary(strict=False) == [entry]
+    assert fixture.store.issues() == []
 
 
 def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) -> None:
@@ -884,11 +909,11 @@ def test_record3d_dataset_source_requires_normalized_store_entry(tmp_path: Path)
         source.prepare_sequence_manifest(tmp_path / "run" / "input")
 
 
-def test_record3d_dataset_stream_honors_target_fps(tmp_path: Path) -> None:
+def test_record3d_raw_ingestion_stream_honors_target_fps(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
-    source = service.build_streaming_source(
+    source = service._build_raw_streaming_source(
         sequence_id="synthetic",
         frame_selection=FrameSelectionConfig(target_fps=5.0),
         replay_mode=ReplayMode.FAST_AS_POSSIBLE,
@@ -1053,9 +1078,13 @@ def test_record3d_archive_frames_must_match_metadata_indices(tmp_path: Path) -> 
 
 
 def test_record3d_source_config_plans_arkit_and_cloud_alignment_path(tmp_path: Path) -> None:
-    _write_record3d_archive(tmp_path / ".data" / "record3d")
-    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data", artifacts_dir=tmp_path / ".artifacts")
-    source_backend = Record3DDatasetSourceConfig(sequence_id="synthetic", frame_stride=2)
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    path_config = fixture.path_config.model_copy(update={"artifacts_dir": tmp_path / ".artifacts"})
+    source_backend = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        frame_stride=2,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
     run_config = build_run_config(
         experiment_name="record3d-plan",
         output_dir=path_config.artifacts_dir,
@@ -1078,8 +1107,8 @@ def test_record3d_source_config_plans_arkit_and_cloud_alignment_path(tmp_path: P
     assert plan.source.metadata["dataset_id"] == DatasetId.RECORD3D.value
     assert plan.source.metadata["pose_source"] == ReferenceSource.ARKIT.value
     assert plan.source.metadata["reference_cloud_source"] == ReferenceCloudSource.RECORD3D_LIDAR.value
-    assert plan.source.metadata["reference_cloud_depth_stride_px"] == 8
-    assert plan.source.metadata["reference_cloud_max_points"] == 100_000
+    assert plan.source.metadata["reference_cloud_depth_stride_px"] == 1
+    assert plan.source.metadata["reference_cloud_max_points"] == 20
     assert plan.source.metadata["reference_cloud_random_seed"] == 17
     assert plan.source.metadata["reference_cloud_min_confidence"] == 1
     assert next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT).available is True

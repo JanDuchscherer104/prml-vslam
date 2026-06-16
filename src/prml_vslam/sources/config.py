@@ -14,7 +14,7 @@ from prml_vslam.sources.datasets.normalized_store import (
     normalized_store_for_path_config,
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DMaterializationConfig, record3d_layout
-from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.record3d.source import Record3DStreamingSourceConfig
@@ -55,13 +55,10 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_streaming_source(
+        return service.build_normalized_source(
             sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
-            pose_source=TumRgbdPoseSource.GROUND_TRUTH,
-            include_depth=True,
-            reference_cloud=self.reference_cloud,
             normalized_store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
             normalized_profile=profile,
         )
@@ -87,12 +84,10 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_streaming_source(
+        return service.build_normalized_source(
             sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
-            dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
-            normalize_video_orientation=self.normalize_video_orientation,
             normalized_store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
             normalized_profile=profile,
         )
@@ -117,12 +112,10 @@ class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingS
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_streaming_source(
+        return service.build_normalized_source(
             sequence_id=sequence_id,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
-            materialization=self.materialization,
-            reference_cloud=self.reference_cloud,
             normalized_store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
             normalized_profile=profile,
         )

@@ -10,7 +10,8 @@ import streamlit as st
 from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig, MethodId, VistaSlamBackendConfig
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
-from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.normalized_query import NormalizedSequenceRecord, normalized_advio_pose_sources
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 
 from ..models import PipelinePageState, PipelineSourceId
@@ -26,7 +27,7 @@ def render_request_editor(
     context: AppContext,
     page_state: PipelinePageState,
     selected_config_path: Path,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    advio_records: list[NormalizedSequenceRecord],
 ) -> tuple[PipelinePageAction, str | None, str | None]:
     """Render grouped request controls and return the resolved action payload."""
     source_tab, run_tab, slam_tab, stages_tab, visualization_tab = st.tabs(
@@ -50,7 +51,7 @@ def render_request_editor(
             context=context,
             page_state=page_state,
             source_kind=source_kind,
-            previewable_statuses=previewable_statuses,
+            advio_records=advio_records,
         )
     with run_tab:
         experiment_name, mode = _render_request_identity_controls(page_state=page_state, source_kind=source_kind)
@@ -170,7 +171,7 @@ def _render_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    advio_records: list[NormalizedSequenceRecord],
 ) -> tuple[
     int | None,
     int,
@@ -207,7 +208,7 @@ def _render_source_settings(
         ) = _render_advio_source_settings(
             context=context,
             page_state=page_state,
-            previewable_statuses=previewable_statuses,
+            advio_records=advio_records,
         )
         if advio_sequence_id is None:
             source_input_error = "Select a replay-ready ADVIO scene."
@@ -238,25 +239,29 @@ def _render_advio_source_settings(
     *,
     context: AppContext,
     page_state: PipelinePageState,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    advio_records: list[NormalizedSequenceRecord],
 ) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, bool, int, float | None, str | None]:
-    status_by_sequence_id = {status.scene.sequence_id: status for status in previewable_statuses}
-    previewable_ids = [status.scene.sequence_id for status in previewable_statuses]
-    if previewable_ids:
+    del context
+    record_by_numeric_id = {_advio_record_sequence_id(record): record for record in advio_records}
+    available_ids = list(record_by_numeric_id)
+    if available_ids:
         selected_advio_sequence = (
-            page_state.advio_sequence_id if page_state.advio_sequence_id in previewable_ids else previewable_ids[0]
+            page_state.advio_sequence_id if page_state.advio_sequence_id in available_ids else available_ids[0]
         )
         advio_sequence_id = st.selectbox(
             "ADVIO Scene",
-            options=previewable_ids,
-            index=previewable_ids.index(selected_advio_sequence),
-            format_func=lambda sequence_id: context.advio_service.scene(sequence_id).display_name,
+            options=available_ids,
+            index=available_ids.index(selected_advio_sequence),
+            format_func=lambda sequence_id: record_by_numeric_id[sequence_id].sequence_label,
         )
     else:
         advio_sequence_id = None
-        st.info("No replay-ready ADVIO scenes are available.")
+        st.info("No normalized ADVIO scenes are available.")
     provider_options = (
-        _advio_provider_options(status_by_sequence_id.get(advio_sequence_id))
+        normalized_advio_pose_sources(
+            advio_records,
+            sequence_id=record_by_numeric_id[advio_sequence_id].sequence_id,
+        )
         if advio_sequence_id is not None
         else [AdvioPoseSource.GROUND_TRUTH]
     )
@@ -305,15 +310,9 @@ def _render_advio_source_settings(
     )
 
 
-def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioPoseSource]:
-    if status is None:
-        return [AdvioPoseSource.GROUND_TRUTH]
-    options = [AdvioPoseSource.GROUND_TRUTH]
-    if status.arcore_ready:
-        options.append(AdvioPoseSource.ARCORE)
-    if status.arkit_ready:
-        options.append(AdvioPoseSource.ARKIT)
-    return options
+def _advio_record_sequence_id(record: NormalizedSequenceRecord) -> int:
+    suffix = record.sequence_id.split("-", maxsplit=1)[1] if record.sequence_id.startswith("advio-") else ""
+    return int(suffix)
 
 
 def _render_record3d_source_settings(

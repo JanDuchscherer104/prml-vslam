@@ -34,14 +34,14 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             catalog=self.catalog,
         )
 
-    def build_offline_source(
+    def _build_raw_source(
         self,
         *,
         sequence_id: int,
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: AdvioServingConfig | None = None,
     ) -> DatasetSequenceSource:
-        """Build the ADVIO-backed offline source adapter for one sequence."""
+        """Build the raw ADVIO source used only for normalized-store ingestion."""
         selection = frame_selection or FrameSelectionConfig()
         sequence = self._sequence(sequence_id)
         return DatasetSequenceSource(
@@ -58,7 +58,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             ),
         )
 
-    def build_streaming_source(
+    def _build_raw_streaming_source(
         self,
         *,
         sequence_id: int,
@@ -69,7 +69,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         normalized_store: NormalizedDatasetStore | None = None,
         normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
-        """Build the ADVIO-backed streaming source adapter for one sequence."""
+        """Build the raw ADVIO streaming source used only for normalized-store ingestion."""
         selection = frame_selection or FrameSelectionConfig()
 
         def stream(_value: int, loop: bool, mode: ReplayMode, stream_selection: FrameSelectionConfig):
@@ -102,7 +102,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             normalized_profile=normalized_profile,
         )
 
-    def open_preview_stream(
+    def _open_raw_preview_stream(
         self,
         *,
         sequence_id: int,
@@ -112,7 +112,7 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalize_video_orientation: bool = True,
     ):
-        """Open the canonical ADVIO preview replay stream for one sequence."""
+        """Open the raw ADVIO preview stream for ingestion-only tests."""
         sequence = self._sequence(sequence_id)
         return open_dataset_sequence_stream(
             sequence=sequence,

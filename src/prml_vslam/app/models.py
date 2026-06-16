@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -24,7 +23,7 @@ from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary, Loc
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest, Record3DSceneMetadata
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource, TumRgbdSceneMetadata
 from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
-from prml_vslam.utils import BaseData, JsonObject
+from prml_vslam.utils import BaseData
 
 from .preview_runtime import PacketSessionSnapshot
 
@@ -44,19 +43,6 @@ class DatasetPageData(BaseData):
     rows: list[DatasetTableRow]
     notice_level: Literal["error", "warning", "success"] | None = None
     notice_message: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class NormalizedDatasetSnapshot:
-    """Cache-local normalized dataset rows used by one Streamlit render."""
-
-    records: list[JsonObject]
-    issues: list[JsonObject]
-    stats_rows: list[JsonObject]
-    metadata_rows: list[JsonObject]
-    sequence_ids: set[str]
-    default_profile_sequence_ids: set[str]
-    profile_counts: dict[str, int]
 
 
 class AppPageId(StrEnum):

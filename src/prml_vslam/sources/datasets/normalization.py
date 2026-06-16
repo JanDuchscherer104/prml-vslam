@@ -224,7 +224,7 @@ def raw_dataset_source(
         case DatasetId.ADVIO:
             if not isinstance(service, AdvioDatasetService) or not isinstance(source_config, AdvioSourceConfig):
                 raise TypeError("ADVIO normalization received mismatched service/config.")
-            return service.build_streaming_source(
+            return service._build_raw_streaming_source(
                 sequence_id=service.resolve_sequence_id(canonical_sequence_id),
                 frame_selection=FrameSelectionConfig(),
                 dataset_serving=source_config.dataset_serving,
@@ -234,7 +234,7 @@ def raw_dataset_source(
         case DatasetId.TUM_RGBD:
             if not isinstance(service, TumRgbdDatasetService) or not isinstance(source_config, TumRgbdSourceConfig):
                 raise TypeError("TUM RGB-D normalization received mismatched service/config.")
-            return service.build_streaming_source(
+            return service._build_raw_streaming_source(
                 sequence_id=canonical_sequence_id,
                 frame_selection=FrameSelectionConfig(),
                 replay_mode=source_config.replay_mode,
@@ -247,7 +247,7 @@ def raw_dataset_source(
                 source_config, Record3DDatasetSourceConfig
             ):
                 raise TypeError("Record3D normalization received mismatched service/config.")
-            return service.build_streaming_source(
+            return service._build_raw_streaming_source(
                 sequence_id=canonical_sequence_id,
                 frame_selection=FrameSelectionConfig(),
                 replay_mode=source_config.replay_mode,

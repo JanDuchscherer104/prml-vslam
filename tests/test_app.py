@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 from evo.core import metrics
 
+import prml_vslam.app.pipeline_controls as pipeline_controls
 from prml_vslam.app.bootstrap import _PAGE_SPECS
 from prml_vslam.app.live_session import render_live_action_slot
 from prml_vslam.app.models import (
@@ -495,7 +496,7 @@ def test_build_run_config_from_action_uses_record3d_frame_timeout(tmp_path: Path
     assert run_config.stages.source.backend.frame_timeout_seconds == 2.5
 
 
-def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path) -> None:
+def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path, monkeypatch) -> None:
     class _Store:
         def save(self, state: AppState) -> None:
             self.payload = state.model_dump(mode="json")
@@ -533,12 +534,16 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
             "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
         },
     )
+    monkeypatch.setattr(
+        pipeline_controls,
+        "resolve_normalized_advio_sequence_id",
+        lambda **_kwargs: (1, None),
+    )
 
     sync_pipeline_page_state_from_template(
         context=context,
         config_path=Path(".configs/pipelines/vista-full.toml"),
         run_config=run_config,
-        statuses=[],
     )
 
     backend_spec = context.state.pipeline.slam_backend_spec
@@ -572,7 +577,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
     )
     plan = run_config.compile_plan(path_config)
 
-    error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
+    error = request_support_error(request=run_config, plan=plan, path_config=path_config)
 
     assert error is not None
     assert "no runtime is registered yet" in error

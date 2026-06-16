@@ -582,7 +582,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
                 return 20
             return f"resolved-{sequence_id}"
 
-        def build_streaming_source(self, **kwargs):
+        def build_normalized_source(self, **kwargs):
             calls.append(("normalized", kwargs))
             return _ManifestOnlySource(rgb_dir=tmp_path)
 
@@ -613,7 +613,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
     assert calls[1][1]["sequence_id"] == 20
     assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[1][1]["normalize_video_orientation"] is True
+    assert "normalize_video_orientation" not in calls[1][1]
     assert calls[1][1]["frame_selection"].frame_stride == 3
     assert calls[1][1]["normalized_store"].dataset_id is DatasetId.ADVIO
     assert calls[1][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
