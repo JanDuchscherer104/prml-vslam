@@ -38,7 +38,7 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.sources.materialization import materialize_manifest
-from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
+from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations, load_sequence_manifest_rgb_inputs
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
@@ -171,6 +171,15 @@ def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path)
     observations = list(iter_sequence_manifest_observations(manifest, max_frames=2))
 
     assert [observation.seq for observation in observations] == [0, 1]
+
+
+def test_sequence_manifest_rgb_input_reader_returns_paths_without_loading(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=3, timestamps_ns=[10, 20, 30])
+
+    image_paths, timestamps_ns = load_sequence_manifest_rgb_inputs(sequence=manifest, max_frames=2)
+
+    assert [path.name for path in image_paths] == ["000000.png", "000001.png"]
+    assert timestamps_ns == [10, 20]
 
 
 def test_sequence_manifest_observation_reader_requires_rgb_dir(tmp_path: Path) -> None:

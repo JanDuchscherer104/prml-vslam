@@ -18,7 +18,7 @@ from prml_vslam.interfaces import Observation
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.interfaces.visualization import VisualizationArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
-from prml_vslam.methods.protocols import StreamingSlamBackend
+from prml_vslam.methods.protocols import OfflineSequenceSlamBackend, StreamingSlamBackend
 from prml_vslam.methods.stage.backend_config import BackendConfig, SlamOutputPolicy
 from prml_vslam.methods.stage.contracts import SlamOfflineStageInput, SlamStageOutput, SlamStreamingStartStageInput
 from prml_vslam.methods.stage.visualization import (
@@ -153,18 +153,28 @@ class SlamStageRuntime(
         try:
             backend_config = input_payload.backend
             backend = backend_config.setup_target(path_config=input_payload.path_config)
-            observations = iter_sequence_manifest_observations(
-                input_payload.sequence_manifest,
-                max_frames=backend_config.max_frames,
-            )
-            slam = backend.run_observations(
-                observations,
-                input_payload.benchmark_inputs,
-                input_payload.baseline_source,
-                backend_config=backend_config,
-                output_policy=input_payload.outputs,
-                artifact_root=input_payload.artifact_root,
-            )
+            if isinstance(backend, OfflineSequenceSlamBackend):
+                slam = backend.run_sequence(
+                    input_payload.sequence_manifest,
+                    input_payload.benchmark_inputs,
+                    input_payload.baseline_source,
+                    backend_config=backend_config,
+                    output_policy=input_payload.outputs,
+                    artifact_root=input_payload.artifact_root,
+                )
+            else:
+                observations = iter_sequence_manifest_observations(
+                    input_payload.sequence_manifest,
+                    max_frames=backend_config.max_frames,
+                )
+                slam = backend.run_observations(
+                    observations,
+                    input_payload.benchmark_inputs,
+                    input_payload.baseline_source,
+                    backend_config=backend_config,
+                    output_policy=input_payload.outputs,
+                    artifact_root=input_payload.artifact_root,
+                )
             result = self._stage_result(
                 backend_config=backend_config,
                 output_policy=input_payload.outputs,
