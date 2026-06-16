@@ -1,8 +1,8 @@
 # Main LingBot-Map benchmark configuration
 # ----------------------------------------
-# This config favors the upstream/paper default quality path over the smaller
-# GPU-survival smoke settings while fitting the local 12 GB RTX 3080 Ti SDPA
-# path. It keeps the TUM cabinet sequence inside LingBot's 320-frame
+# This config favors the best verified quality profile over the smaller
+# GPU-survival smoke settings while fitting the local 12 GB RTX 3080 Ti
+# FlashInfer path. It keeps the TUM cabinet sequence near LingBot's 320-frame
 # direct-mode training range after source sampling.
 
 experiment_name          = "lingbot-tum-cabinet-full"
@@ -50,13 +50,14 @@ sampling_interval_ms    = 1000
     # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
     device = "cuda"
 
-    # Upstream calls Direct Output Mode "streaming": frames are processed
-    # causally with anchor context, trajectory memory, and a local pose window.
-    mode = "streaming"
+    # Windowed inference is the accepted local benchmark profile: it completed
+    # the full TUM cabinet run without OOM and improved trajectory RMSE over
+    # streaming on the 12 GB RTX 3080 Ti.
+    mode = "windowed"
 
-    # Upstream/paper default input width is 518, but the local SDPA path OOMs
-    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the highest practical
-    # fit candidate so far.
+    # Upstream/paper default input width is 518, but the local FlashInfer path OOMs
+    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the best full-run
+    # trajectory profile found so far.
     image_size = 392
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
@@ -78,13 +79,12 @@ sampling_interval_ms    = 1000
     # Local pose-reference window size k. Paper and upstream benchmark use 64.
     kv_cache_sliding_window = 64
 
-    # Keep every second processed frame in the KV cache while still producing a
-    # pose/depth prediction for every processed frame. This keeps FlashInfer
-    # trajectory metrics comparable to the local SDPA reference on TUM cabinet.
-    keyframe_interval = 2
+    # Let upstream bound retained keyframes for the selected sequence length.
+    # This is required for the accepted windowed benchmark profile.
+    keyframe_interval = "auto"
 
-    # Use LingBot's FlashInfer backend. The repo worktree helper exposes the
-    # mamba CUDA driver stub to FlashInfer's JIT linker.
+    # Use LingBot's FlashInfer backend. Run from the prml-vslam mamba env so
+    # FlashInfer can see the CUDA compiler and driver stubs.
     use_sdpa = false
 
     # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
@@ -98,6 +98,11 @@ sampling_interval_ms    = 1000
     # Required when using the RTX 3080 Ti fit width instead of the checkpoint's
     # native 518-wide grid.
     checkpoint_pos_embed = "interpolate"
+
+    # Windowed fallback parameters promoted to the benchmark profile after the
+    # full TUM cabinet run improved trajectory RMSE without OOM.
+    window_size = 128
+    overlap_keyframes = 8
 
     # Camera-head iterative refinement steps. Upstream default is 4; lowering to
     # 1 is a speed-only tradeoff that costs pose accuracy.
