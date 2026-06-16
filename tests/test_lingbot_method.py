@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tomllib
 import types
 from pathlib import Path
 from typing import Any
@@ -130,10 +131,22 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     assert config.stages.slam.outputs.emit_sparse_points is False
 
 
+def test_lingbot_full_toml_targets_all_frame_advio20_without_source_sampling() -> None:
+    config_path = Path(".configs/pipelines/lingbot-full.toml")
+    raw_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    source_backend = raw_config["stages"]["source"]["backend"]
+    slam_backend = raw_config["stages"]["slam"]["backend"]
+
+    assert source_backend["source_id"] == "advio"
+    assert source_backend["sequence_id"] == "advio-20"
+    assert "frame_stride" not in source_backend
+    assert "max_frames" not in slam_backend
+
+
 @pytest.mark.parametrize(
     ("config_path", "image_size", "checkpoint_pos_embed"),
     [
-        (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
+        (".configs/pipelines/lingbot-full.toml", 84, "interpolate"),
         (".configs/pipelines/lingbot-smoke.toml", 518, "error"),
         (".configs/pipelines/lingbot-smoke-streaming.toml", 518, "error"),
     ],
