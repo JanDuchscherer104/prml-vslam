@@ -4,7 +4,7 @@
 # without source-side sampling or SLAM frame caps, so backend memory settings
 # favor completion on the local 12 GB RTX 3080 Ti FlashInfer path.
 
-experiment_name          = "lingbot-advio20-full"
+experiment_name          = "lingbot-freiburg3-large-cabinet"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -13,13 +13,12 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id   = "advio"
-    sequence_id = "advio-20"
-    replay_mode  = "fast_as_possible"
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
+    replay_mode = "fast_as_possible"
 
         [stages.source.backend.dataset_serving]
-        pose_source     = "ground_truth"
-        pose_frame_mode = "provider_world"
+        pose_source = "ground_truth"
 
 [stages.slam]
 enabled  = true
@@ -53,7 +52,7 @@ sampling_interval_ms    = 1000
 
     # ADVIO-20 has 18k+ frames. Keep the full-sequence dense prediction tensors
     # within local RAM while preserving the DINO/GCT patch grid.
-    image_size = 84
+    image_size = 392
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
     # patch-grid aligned with upstream.
@@ -95,7 +94,7 @@ sampling_interval_ms    = 1000
     checkpoint_pos_embed = "interpolate"
 
     # Windowed fallback parameters for long-scene robustness.
-    window_size = 128
+    window_size       = 128
     overlap_keyframes = 8
 
     # Camera-head iterative refinement steps. Upstream default is 4; lowering to
@@ -134,8 +133,8 @@ enabled = true
 enabled = true
 
 [stages.align_cloud]
-enabled                       = false
-max_correspondence_distance_m = 0.1
+enabled                       = true
+max_correspondence_distance_m = 0.05
 
 [stages.reconstruction]
 enabled = false
@@ -148,7 +147,7 @@ enabled = true
 
 [visualization]
 connect_live_viewer                         = false
-export_viewer_rrd                           = false
+export_viewer_rrd                           = true
 grpc_url                                    = "rerun+http://127.0.0.1:9876/proxy"
 viewer_blueprint_path                       = ".configs/visualization/vista_blueprint.rbl"
 preserve_native_rerun                       = false
@@ -157,7 +156,7 @@ log_diagnostic_preview                      = false
 log_camera_image_rgb                        = false
 show_tracking_trajectory                    = true
 trajectory_pose_axis_length                 = 0.0
-point_cloud_decimation_keep_ratio           = 0.05
-reference_point_cloud_decimation_keep_ratio = 0.95
+point_cloud_decimation_keep_ratio           = 0.5
+reference_point_cloud_decimation_keep_ratio = 0.5
 mesh_decimation_keep_ratio                  = 0.25
 decimation_random_seed                      = 0
