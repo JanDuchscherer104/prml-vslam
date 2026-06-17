@@ -17,7 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
+from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform, Observation
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.methods.contracts import SlamUpdate
@@ -29,7 +29,7 @@ from prml_vslam.methods.stage.backend_config import (
     SlamOutputPolicy,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
-from prml_vslam.sources.observation_reader import load_sequence_manifest_rgb_inputs
+from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations, load_sequence_manifest_rgb_inputs
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import (
     depth_map_to_world_points,
@@ -150,11 +150,17 @@ class LingbotMapSlamBackend(SlamBackend):
         config = _expect_lingbot_config(backend_config)
         _validate_output_policy(output_policy)
 
-        image_paths, timestamps_ns = load_sequence_manifest_rgb_inputs(
+        image_paths, _timestamps_ns = load_sequence_manifest_rgb_inputs(
             sequence=sequence_manifest,
             max_frames=config.max_frames,
         )
-        observations = _sequence_manifest_observations(sequence_manifest, timestamps_ns)
+        observations = list(
+            iter_sequence_manifest_observations(
+                sequence_manifest,
+                max_frames=config.max_frames,
+                load_rgb=False,
+            )
+        )
         runtime = _LingbotRuntime(config, path_config=self._path_config)
         predictions, processed_images = runtime.infer_paths(image_paths)
         return _build_lingbot_artifacts(
@@ -218,24 +224,6 @@ def _expect_lingbot_config(backend_config: SlamBackendConfig) -> LingbotMapSlamB
 def _validate_output_policy(output_policy: SlamOutputPolicy) -> None:
     if output_policy.emit_sparse_points:
         raise ValueError("LingBot-Map does not expose a separate sparse point-cloud artifact.")
-
-
-def _sequence_manifest_observations(sequence_manifest: SequenceManifest, timestamps_ns: list[int]) -> list[Observation]:
-    dataset_id = "" if sequence_manifest.dataset_id is None else sequence_manifest.dataset_id.value
-    provenance = ObservationProvenance(
-        source_id=dataset_id or "source_manifest",
-        dataset_id=dataset_id,
-        sequence_id=sequence_manifest.sequence_id,
-    )
-    return [
-        Observation(
-            seq=index,
-            timestamp_ns=timestamp_ns,
-            source_frame_index=index,
-            provenance=provenance.model_copy(update={"source_frame_index": index}),
-        )
-        for index, timestamp_ns in enumerate(timestamps_ns)
-    ]
 
 
 @dataclass(frozen=True, slots=True)

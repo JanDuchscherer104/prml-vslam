@@ -38,6 +38,7 @@ from prml_vslam.pipeline.demo import load_run_config_toml
 from prml_vslam.sources.config import TumRgbdSourceConfig
 from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.contracts import AdvioServingConfig, DatasetId
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import load_point_cloud_ply, load_tum_trajectory
@@ -131,14 +132,15 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     assert config.stages.slam.outputs.emit_sparse_points is False
 
 
-def test_lingbot_full_toml_targets_all_frame_advio20_without_source_sampling() -> None:
+def test_lingbot_full_toml_targets_tum_cabinet_without_source_sampling() -> None:
     config_path = Path(".configs/pipelines/lingbot-full.toml")
     raw_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     source_backend = raw_config["stages"]["source"]["backend"]
     slam_backend = raw_config["stages"]["slam"]["backend"]
 
-    assert source_backend["source_id"] == "advio"
-    assert source_backend["sequence_id"] == "advio-20"
+    assert source_backend["source_id"] == "tum_rgbd"
+    assert source_backend["sequence_id"] == "freiburg3_large_cabinet"
+    assert source_backend["load_rgb"] is False
     assert "frame_stride" not in source_backend
     assert "max_frames" not in slam_backend
 
@@ -146,7 +148,7 @@ def test_lingbot_full_toml_targets_all_frame_advio20_without_source_sampling() -
 @pytest.mark.parametrize(
     ("config_path", "image_size", "checkpoint_pos_embed"),
     [
-        (".configs/pipelines/lingbot-full.toml", 84, "interpolate"),
+        (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
         (".configs/pipelines/lingbot-smoke.toml", 518, "error"),
         (".configs/pipelines/lingbot-smoke-streaming.toml", 518, "error"),
     ],
@@ -540,7 +542,13 @@ def test_lingbot_run_sequence_uses_manifest_paths_without_rgb_payloads(
         path.write_bytes(b"fake-png")
     timestamps_path = tmp_path / "timestamps.json"
     timestamps_path.write_text(json.dumps({"timestamps_ns": [10, 20, 30]}), encoding="utf-8")
-    manifest = SequenceManifest(sequence_id="seq-1", rgb_dir=rgb_dir, timestamps_path=timestamps_path)
+    manifest = SequenceManifest(
+        sequence_id="seq-1",
+        dataset_id=DatasetId.ADVIO,
+        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.ARCORE),
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+    )
     captured: dict[str, Any] = {}
 
     class FakeRuntime:
@@ -562,6 +570,7 @@ def test_lingbot_run_sequence_uses_manifest_paths_without_rgb_payloads(
         observations = kwargs["observations"]
         captured["timestamps_ns"] = [observation.timestamp_ns for observation in observations]
         captured["rgb_payloads"] = [observation.rgb for observation in observations]
+        captured["pose_sources"] = [observation.provenance.pose_source for observation in observations]
         return original_build_artifacts(**kwargs)
 
     monkeypatch.setattr(lingbot_adapter, "_LingbotRuntime", FakeRuntime)
@@ -580,6 +589,7 @@ def test_lingbot_run_sequence_uses_manifest_paths_without_rgb_payloads(
     assert captured["paths"] == sorted(image_paths)[:2]
     assert captured["timestamps_ns"] == [10, 20]
     assert captured["rgb_payloads"] == [None, None]
+    assert captured["pose_sources"] == [AdvioPoseSource.ARCORE.value, AdvioPoseSource.ARCORE.value]
     assert artifacts.num_processed_frames == 2
     assert artifacts.num_keyframes == 2
 

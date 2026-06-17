@@ -18,6 +18,9 @@ class SourceStageInput(BaseData):
     mode: PipelineMode
     frame_stride: int = 1
     streaming_max_frames: int | None = None
+    load_rgb: bool = True
+    """Whether downstream offline observation readers should populate RGB payloads."""
+
     config_hash: str = ""
     input_fingerprint: str = ""
 
@@ -27,6 +30,8 @@ class SourceStageOutput(BaseData):
 
     sequence_manifest: SequenceManifest
     benchmark_inputs: PreparedBenchmarkInputs | None = None
+    load_rgb: bool = True
+    """Whether downstream offline observation readers should populate RGB payloads."""
 
 
 __all__ = ["SourceStageInput", "SourceStageOutput"]

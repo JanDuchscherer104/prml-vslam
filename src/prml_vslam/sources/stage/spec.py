@@ -31,6 +31,7 @@ def _build_offline_input(context: PipelineExecutionContext) -> SourceStageInput:
         mode=context.run_config.mode,
         frame_stride=1 if source_backend is None else source_backend.frame_stride,
         streaming_max_frames=None if slam_backend is None else slam_backend.max_frames,
+        load_rgb=True if source_backend is None else source_backend.load_rgb,
         config_hash=stable_hash(source_backend),
         input_fingerprint=stable_hash(source_backend),
     )

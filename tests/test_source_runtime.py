@@ -37,6 +37,8 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.datasets.advio import AdvioPoseSource, AdvioServingConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations, load_sequence_manifest_rgb_inputs
 from prml_vslam.sources.replay import ReplayMode
@@ -173,6 +175,37 @@ def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path)
     assert [observation.seq for observation in observations] == [0, 1]
 
 
+def test_sequence_manifest_observation_reader_can_skip_rgb_payloads(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=2, timestamps_ns=[10, 20])
+
+    observations = list(iter_sequence_manifest_observations(manifest, load_rgb=False))
+
+    assert [observation.seq for observation in observations] == [0, 1]
+    assert [observation.timestamp_ns for observation in observations] == [10, 20]
+    assert [observation.rgb for observation in observations] == [None, None]
+    assert observations[0].provenance.source_id == "source_manifest"
+    assert observations[0].provenance.sequence_id == "seq-rgb"
+
+
+def test_sequence_manifest_observation_reader_preserves_provenance_without_rgb(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=1).model_copy(
+        update={
+            "dataset_id": DatasetId.ADVIO,
+            "dataset_serving": AdvioServingConfig(pose_source=AdvioPoseSource.ARCORE),
+        }
+    )
+
+    loaded = list(iter_sequence_manifest_observations(manifest, load_rgb=True))
+    shells = list(iter_sequence_manifest_observations(manifest, load_rgb=False))
+
+    assert loaded[0].rgb is not None
+    assert shells[0].rgb is None
+    assert loaded[0].provenance == shells[0].provenance
+    assert shells[0].provenance.source_id == DatasetId.ADVIO.value
+    assert shells[0].provenance.dataset_id == DatasetId.ADVIO.value
+    assert shells[0].provenance.pose_source == AdvioPoseSource.ARCORE.value
+
+
 def test_sequence_manifest_rgb_input_reader_returns_paths_without_loading(tmp_path: Path) -> None:
     manifest = _write_rgb_manifest(tmp_path, frame_count=3, timestamps_ns=[10, 20, 30])
 
@@ -220,7 +253,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     runtime = SourceRuntime(source=_ManifestOnlySource(rgb_dir=rgb_dir))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root))
+    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root, load_rgb=False))
 
     assert result.stage_key is StageKey.SOURCE
     assert result.outcome.status is StageStatus.COMPLETED
@@ -228,6 +261,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     assert result.payload.sequence_manifest.sequence_id == "video-seq"
     assert result.payload.sequence_manifest.rgb_dir == rgb_dir
     assert result.payload.benchmark_inputs is None
+    assert result.payload.load_rgb is False
     run_paths = RunArtifactPaths.build(artifact_root)
     assert run_paths.sequence_manifest_path.exists()
     assert not run_paths.benchmark_inputs_path.exists()

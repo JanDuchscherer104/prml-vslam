@@ -1,8 +1,8 @@
 # Main LingBot-Map benchmark configuration
 # ----------------------------------------
-# This config is the full-scene LingBot robustness profile. It targets ADVIO-20
-# without source-side sampling or SLAM frame caps, so backend memory settings
-# favor completion on the local 12 GB RTX 3080 Ti FlashInfer path.
+# This config is the full-scene TUM cabinet LingBot quality profile. It keeps
+# the current source sequence unsampled and uses source-owned RGB-less
+# observations so LingBot can feed manifest paths to upstream preprocessing.
 
 experiment_name          = "lingbot-freiburg3-large-cabinet"
 mode                     = "offline"
@@ -13,12 +13,11 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id   = "tum_rgbd"
-    sequence_id = "freiburg3_large_cabinet"
-    replay_mode = "fast_as_possible"
-
-        [stages.source.backend.dataset_serving]
-        pose_source = "ground_truth"
+    source_id    = "tum_rgbd"
+    sequence_id  = "freiburg3_large_cabinet"
+    replay_mode  = "fast_as_possible"
+    frame_stride = 3
+    load_rgb     = false
 
 [stages.slam]
 enabled  = true
@@ -50,8 +49,8 @@ sampling_interval_ms    = 1000
     # Windowed inference bounds GPU residency for long scenes.
     mode = "windowed"
 
-    # ADVIO-20 has 18k+ frames. Keep the full-sequence dense prediction tensors
-    # within local RAM while preserving the DINO/GCT patch grid.
+    # 392 is the best full-run trajectory profile found so far on the local
+    # 12 GB RTX 3080 Ti FlashInfer path.
     image_size = 392
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
