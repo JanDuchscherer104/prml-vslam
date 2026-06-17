@@ -61,7 +61,6 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
             frame_selection=FrameSelectionConfig(
                 frame_stride=self.frame_stride,
                 target_fps=self.target_fps,
-                load_rgb=self.load_rgb,
             ),
             label=lambda sequence_id: sequence(sequence_id).scene.display_name,
             manifest=lambda sequence_id, output_dir, frame_selection: sequence(sequence_id).to_sequence_manifest(
@@ -139,7 +138,6 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             normalize_video_orientation=normalize_video_orientation,
             frame_stride=selection.frame_stride,
             target_fps=selection.target_fps,
-            load_rgb=selection.load_rgb,
         ).setup_target()
 
     def open_preview_stream(

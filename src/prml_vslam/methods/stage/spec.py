@@ -24,7 +24,6 @@ def _build_offline_input(context: PipelineExecutionContext) -> SlamOfflineStageI
         sequence_manifest=source_output.sequence_manifest,
         benchmark_inputs=source_output.benchmark_inputs,
         preserve_native_rerun=context.run_config.visualization.preserve_native_rerun,
-        load_rgb=source_output.load_rgb,
     )
 
 

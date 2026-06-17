@@ -253,7 +253,7 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     runtime = SourceRuntime(source=_ManifestOnlySource(rgb_dir=rgb_dir))
     artifact_root = tmp_path / "run"
 
-    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root, load_rgb=False))
+    result = runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root))
 
     assert result.stage_key is StageKey.SOURCE
     assert result.outcome.status is StageStatus.COMPLETED
@@ -261,7 +261,6 @@ def test_source_runtime_outputs_manifest_without_benchmark_inputs(tmp_path: Path
     assert result.payload.sequence_manifest.sequence_id == "video-seq"
     assert result.payload.sequence_manifest.rgb_dir == rgb_dir
     assert result.payload.benchmark_inputs is None
-    assert result.payload.load_rgb is False
     run_paths = RunArtifactPaths.build(artifact_root)
     assert run_paths.sequence_manifest_path.exists()
     assert not run_paths.benchmark_inputs_path.exists()

@@ -43,9 +43,6 @@ class SlamOfflineStageInput(BaseData):
     benchmark_inputs: PreparedBenchmarkInputs | None = None
     """Optional prepared benchmark-side inputs used by method wrappers."""
 
-    load_rgb: bool = True
-    """Whether source-manifest observations should include RGB arrays."""
-
 
 class SlamStreamingStartStageInput(BaseData):
     """Input needed to start one incremental SLAM runtime."""

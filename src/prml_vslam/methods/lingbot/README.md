@@ -7,8 +7,8 @@ writes repository-owned SLAM artifacts.
 ## Parameter Parity
 
 The main full-scene config is `.configs/pipelines/lingbot-full.toml`. It is
-tuned for the full TUM Freiburg3 cabinet sequence on an RTX 3080 Ti without
-source-side frame sampling or SLAM frame caps:
+tuned for the TUM Freiburg3 cabinet sequence on an RTX 3080 Ti with the current
+source stride and no SLAM frame cap:
 
 | Setting | Upstream / paper baseline | Repo benchmark choice | Rationale |
 | --- | --- | --- | --- |
@@ -18,17 +18,17 @@ source-side frame sampling or SLAM frame caps:
 | `kv_cache_sliding_window` | `64` | `64` | Matches the local pose-reference window size `k=64`. |
 | `keyframe_interval` | `auto`: `1` up to about 320 frames, then `ceil(N/320)` | `auto` | Lets upstream bound retained keyframes for the selected sequence length. |
 | `window_size` / `overlap_keyframes` | windowed inference controls | `128` / `8` | Windowed profile used for the full TUM cabinet sequence. |
-| source `load_rgb` | `true` for ordinary observation readers | `false` | Lets LingBot pass manifest RGB paths to upstream preprocessing without loading duplicate RGB arrays. |
 | `camera_num_iterations` | `4` | `4` | Keeps pose refinement at the accuracy-oriented default. |
 | `use_amp` / dtype | bfloat16/float16 inference through CUDA autocast | `use_amp=true`, `model_dtype=auto` | Matches upstream precision handling while reducing memory pressure. |
 | `use_sdpa` | `false` when FlashInfer is installed; SDPA fallback documented | `false` | Uses FlashInfer for benchmark runs from the `prml-vslam` mamba environment. |
 | `enable_point_head` | upstream benchmark notes depth backprojection is used | `false` | Avoids running an unsupported point-head path for the maintained checkpoint. |
 | `confidence_threshold` | upstream viewer/export default varies by entry point | `0.5` | Filters low-confidence depth before durable point-cloud export. |
 
-The current quality-sensitive choice is avoiding source sampling while keeping
-the largest locally stable LingBot input width. The full TUM cabinet config uses
-`image_size=392`, `checkpoint_pos_embed="interpolate"`, `load_rgb=false`, and
-windowed inference as the current completion profile.
+The current quality-sensitive choice is keeping the largest locally stable
+LingBot input width while using manifest RGB paths for upstream preprocessing.
+The TUM cabinet config uses `frame_stride=3`, `image_size=392`,
+`checkpoint_pos_embed="interpolate"`, and windowed inference as the current
+completion profile.
 
 ## Normalized Artifacts
 

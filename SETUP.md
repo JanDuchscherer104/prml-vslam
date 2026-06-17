@@ -200,6 +200,8 @@ unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
+git submodule update --init --recursive external/lingbot-map
+uv sync --extra lingbot
 mkdir -p external/lingbot-map/checkpoints
 curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
   -o external/lingbot-map/checkpoints/lingbot-map.pt

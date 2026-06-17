@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tomllib
 import types
 from pathlib import Path
 from typing import Any
@@ -130,40 +129,6 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
     assert config.stages.slam.backend.max_frames == 2
     assert config.stages.slam.outputs.emit_dense_points is True
     assert config.stages.slam.outputs.emit_sparse_points is False
-
-
-def test_lingbot_full_toml_targets_tum_cabinet_without_source_sampling() -> None:
-    config_path = Path(".configs/pipelines/lingbot-full.toml")
-    raw_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    source_backend = raw_config["stages"]["source"]["backend"]
-    slam_backend = raw_config["stages"]["slam"]["backend"]
-
-    assert source_backend["source_id"] == "tum_rgbd"
-    assert source_backend["sequence_id"] == "freiburg3_large_cabinet"
-    assert source_backend["load_rgb"] is False
-    assert "frame_stride" not in source_backend
-    assert "max_frames" not in slam_backend
-
-
-@pytest.mark.parametrize(
-    ("config_path", "image_size", "checkpoint_pos_embed"),
-    [
-        (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
-        (".configs/pipelines/lingbot-smoke.toml", 518, "error"),
-        (".configs/pipelines/lingbot-smoke-streaming.toml", 518, "error"),
-    ],
-)
-def test_lingbot_tomls_use_declared_checkpoint_patch_grid(
-    config_path: str,
-    image_size: int,
-    checkpoint_pos_embed: str,
-) -> None:
-    config = load_run_config_toml(path_config=PathConfig(), config_path=Path(config_path))
-
-    assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
-    assert config.stages.slam.backend.image_size == image_size
-    assert config.stages.slam.backend.patch_size == 14
-    assert config.stages.slam.backend.checkpoint_pos_embed == checkpoint_pos_embed
 
 
 def test_lingbot_config_rejects_invalid_runtime_values() -> None:

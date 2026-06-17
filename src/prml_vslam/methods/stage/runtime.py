@@ -166,7 +166,6 @@ class SlamStageRuntime(
                 observations = iter_sequence_manifest_observations(
                     input_payload.sequence_manifest,
                     max_frames=backend_config.max_frames,
-                    load_rgb=input_payload.load_rgb,
                 )
                 slam = backend.run_observations(
                     observations,
