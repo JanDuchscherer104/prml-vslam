@@ -9,10 +9,7 @@ import numpy as np
 from evo.core.trajectory import PoseTrajectory3D
 
 from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
-from prml_vslam.utils.geometry import (
-    apply_similarity_to_trajectory,
-    yaw_similarity_align,
-)
+from prml_vslam.utils.geometry import apply_similarity_to_trajectory, yaw_similarity_align
 
 # Down-axis for the RDF camera convention; ADVIO worlds are gravity-aligned about this axis.
 _RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)

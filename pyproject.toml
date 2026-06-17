@@ -28,6 +28,7 @@ dependencies = [
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
   "rerun-sdk==0.24.1",
+  "pandas",
 ]
 
   [project.optional-dependencies]
@@ -106,31 +107,23 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
-conflicts = [
-  [
-    { extra = "mast3r" },
-    { extra = "vista" },
-  ],
-]
-constraint-dependencies = [
-  "click==8.3.1",
-  "starlette==1.0.0",
-]
+conflicts               = [[{ extra = "mast3r" }, { extra = "vista" }]]
+constraint-dependencies = ["click==8.3.1", "starlette==1.0.0"]
 
   [tool.uv.extra-build-dependencies]
   MAST3R-SLAM = ["torch==2.5.1"]
-  curope = ["torch==2.5.1"]
-  xformers = ["torch==2.5.1"]
+  curope      = ["torch==2.5.1"]
+  xformers    = ["torch==2.5.1"]
 
   [tool.uv.sources]
-  DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
+  DBoW3Py     = { path = "external/vista-slam/DBoW3Py", editable = false }
   lingbot-map = { path = "external/lingbot-map", editable = true, extra = "lingbot" }
   MAST3R-SLAM = { path = "external/mast3r-slam", editable = true }
-  MAST3R = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
-  in3d = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
-  asmk = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true }
-  curope = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
-  imgui = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true }
+  MAST3R      = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
+  in3d        = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
+  asmk        = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true }
+  curope      = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+  imgui       = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true }
 
   # These metadata overrides replace upstream dynamic local file-URI dependencies
   # with portable path-source names so uv can lock the optional MASt3R graph.
@@ -183,8 +176,8 @@ constraint-dependencies = [
   ]
 
   [[tool.uv.dependency-metadata]]
-  name = "curope"
-  version = "0.0.0"
+  name          = "curope"
+  version       = "0.0.0"
   requires-dist = []
 
 [tool.mypy]
@@ -214,19 +207,13 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typin
   ignore_missing_imports = true
 
   [[tool.mypy.overrides]]
-  module = [
-    "open3d",
-    "open3d.*",
-  ]
+  module        = ["open3d", "open3d.*"]
   ignore_errors = true
 
 [tool.pyright]
-include = ["src", "tests", "typings"]
+include    = ["src", "tests", "typings"]
 extraPaths = ["src"]
-stubPath = "typings"
+stubPath   = "typings"
 
 [dependency-groups]
-dev = [
-  "graphifyy>=0.4.26",
-  "mcp>=1.27.0",
-]
+dev = ["graphifyy>=0.4.26", "mcp>=1.27.0"]

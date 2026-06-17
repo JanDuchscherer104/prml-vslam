@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import math
 from dataclasses import dataclass
@@ -14,13 +13,11 @@ from evo.core import metrics, sync
 from evo.tools import file_interface
 
 from prml_vslam.align.trajectory_sim3 import align_estimate_sim3, sim3_up_axis_tilt_deg, trajectory_supports_sim3
-from prml_vslam.align.trajectory_sim3.contracts import (
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentCloudUseStatus,
-    TrajectoryAlignmentMode,
-)
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.dataset_aggregation import metric_rows_to_frame
 from prml_vslam.eval.services.preview import (
     _EVO_ASSOCIATION_MAX_DIFF_S,
+    AlignmentUnsupportedError,
     compute_trajectory_ape_preview,
     compute_trajectory_rpe_preview,
 )
@@ -148,10 +145,7 @@ class TrajectoryEvaluationService:
             alignment,
             cloud_input_present=selection.run.point_cloud_path is not None,
         )
-        if (
-            selection.run.point_cloud_path is not None
-            and alignment.cloud_use_status is not TrajectoryAlignmentCloudUseStatus.REJECTED
-        ):
+        if selection.run.point_cloud_path is not None and not alignment.cloud_rejection_reasons:
             aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
             _write_aligned_point_cloud(
                 source_path=selection.run.point_cloud_path,
@@ -276,7 +270,6 @@ class TrajectoryEvaluationService:
                             reference_path=reference_path,
                             estimate_path=candidate.path,
                             pose_relation=spec.pose_relation,
-                            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
                             target_frame=selection.target_frame or "world",
                             source_frame=_method_world_frame(candidate.method_id),
                             reference_source=reference_source,
@@ -290,9 +283,18 @@ class TrajectoryEvaluationService:
                             pose_relation=spec.pose_relation,
                             delta=spec.delta or 1.0,
                             delta_unit=spec.delta_unit_enum or metrics.Unit.meters,
+                            target_frame=selection.target_frame or "world",
+                            source_frame=_method_world_frame(candidate.method_id),
+                            reference_source=reference_source,
+                            method_id=candidate.method_id,
+                            method_label=candidate.method_label,
                         )
                 except ValueError as exc:
-                    if spec.family == "ape" and spec.pose_relation is metrics.PoseRelation.translation_part:
+                    if (
+                        spec.family == "ape"
+                        and spec.pose_relation is metrics.PoseRelation.translation_part
+                        and not isinstance(exc, AlignmentUnsupportedError)
+                    ):
                         raise
                     skipped.append(
                         SkippedMetricRecord(
@@ -438,12 +440,7 @@ def _evaluation_candidates_for(
 
 def _write_metric_rows(path: Path, rows: list[TrajectoryMetricResultRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(TrajectoryMetricResultRow.model_fields)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row.model_dump(mode="json"))
+    metric_rows_to_frame(rows).to_csv(path, index=False)
 
 
 def _entity_token(value: str) -> str:
@@ -458,7 +455,6 @@ def _apply_sim3_cloud_use_policy(
 ) -> TrajectoryAlignmentArtifact:
     up_axis_tilt_deg = sim3_up_axis_tilt_deg(np.asarray(alignment.rotation, dtype=np.float64))
     reasons: list[str] = []
-    status = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
     if cloud_input_present:
         if alignment.matched_pairs < _SIM3_CLOUD_MIN_MATCHED_PAIRS:
             reasons.append("insufficient_matched_pairs")
@@ -470,15 +466,9 @@ def _apply_sim3_cloud_use_policy(
             reasons.append("unknown_up_axis_tilt")
         elif up_axis_tilt_deg > _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG:
             reasons.append("up_axis_tilt_too_high")
-        status = (
-            TrajectoryAlignmentCloudUseStatus.REJECTED
-            if "invalid_scale" in reasons
-            else TrajectoryAlignmentCloudUseStatus.ACCEPTED
-        )
     return alignment.model_copy(
         update={
             "cloud_input_present": cloud_input_present,
-            "cloud_use_status": status,
             "cloud_warning_reasons": reasons,
             "cloud_rejection_reasons": ["invalid_scale"] if "invalid_scale" in reasons else [],
             "cloud_gate_min_matched_pairs": _SIM3_CLOUD_MIN_MATCHED_PAIRS,

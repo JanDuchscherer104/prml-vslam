@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from evo.core import metrics
 
-from prml_vslam.app.pages.metrics import _build_wide_metric_rows
+from prml_vslam.eval.dataset_aggregation import build_wide_metric_rows
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 
 _AGGREGATE_SEQUENCE_LABEL = "All sequences"
@@ -64,7 +66,7 @@ def _aggregate_rows(rows: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# _build_wide_metric_rows
+# build_wide_metric_rows
 # ---------------------------------------------------------------------------
 
 
@@ -76,7 +78,7 @@ def test_build_wide_metric_rows_produces_one_row_per_run_reference_estimate() ->
         _rmse_row(metric_family="rpe", pose_relation=metrics.PoseRelation.rotation_angle_deg, value=0.8),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 1
     assert len(_aggregate_rows(result)) == 1
@@ -97,7 +99,7 @@ def test_build_wide_metric_rows_produces_one_row_per_run_reference_estimate() ->
 def test_build_wide_metric_rows_leaves_none_for_missing_metrics() -> None:
     rows = [_rmse_row(metric_family="ape", pose_relation=metrics.PoseRelation.translation_part, value=0.25)]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 1
     row = _sequence_rows(result)[0]
@@ -115,7 +117,7 @@ def test_build_wide_metric_rows_keeps_separate_rows_for_distinct_run_ids() -> No
         _rmse_row(run_id="run-b", estimate_source="vista/raw", value=0.30),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 2
     assert len(_aggregate_rows(result)) == 2
@@ -129,7 +131,7 @@ def test_build_wide_metric_rows_keeps_same_run_id_separate_across_sequences() ->
         _rmse_row(run_id="vista", sequence_id="advio-21", estimate_source="vista/raw", value=0.30),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 2
     assert len(_aggregate_rows(result)) == 1
@@ -146,7 +148,7 @@ def test_build_wide_metric_rows_splits_estimate_source_into_estimate_and_coord_s
         _rmse_row(estimate_source="arcore/aligned"),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 2
     assert len(_aggregate_rows(result)) == 2
@@ -162,7 +164,7 @@ def test_build_wide_metric_rows_ignores_non_rmse_statistics() -> None:
         _stat_row(statistic="median", value=0.18),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 1
     assert _sequence_rows(result)[0]["APE Trans. RMSE (m)"] == pytest.approx(0.25)
@@ -171,7 +173,7 @@ def test_build_wide_metric_rows_ignores_non_rmse_statistics() -> None:
 def test_build_wide_metric_rows_returns_empty_for_no_rmse_rows() -> None:
     rows = [_stat_row(statistic="mean"), _stat_row(statistic="median")]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert result == []
 
@@ -183,7 +185,7 @@ def test_build_wide_metric_rows_sorts_by_sequence_run_reference_estimate_coord()
         _rmse_row(sequence_id="advio-20", run_id="run-a", estimate_source="arcore/aligned"),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
     rows = _sequence_rows(result)
 
     assert len(rows) == 3
@@ -227,7 +229,7 @@ def test_build_wide_metric_rows_adds_pooled_all_sequences_row() -> None:
         ),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     assert len(_sequence_rows(result)) == 2
     aggregate = _aggregate_rows(result)[0]
@@ -247,7 +249,7 @@ def test_build_wide_metric_rows_aggregate_leaves_missing_metrics_empty() -> None
         _rmse_row(sequence_id="advio-21", metric_family="ape", value=0.30, matched_pairs=300),
     ]
 
-    result = _build_wide_metric_rows(rows)
+    result = build_wide_metric_rows(rows)
 
     aggregate = _aggregate_rows(result)[0]
     assert aggregate["APE Trans. RMSE (m)"] == pytest.approx(0.2646, abs=1e-4)
@@ -255,3 +257,21 @@ def test_build_wide_metric_rows_aggregate_leaves_missing_metrics_empty() -> None
     assert aggregate["RPE Trans. RMSE (m)"] is None
     assert aggregate["RPE Rot. RMSE (deg)"] is None
     assert aggregate["RPE Pairs"] is None
+
+
+def test_metrics_page_does_not_render_recompute_button() -> None:
+    source = (Path(__file__).parents[1] / "src" / "prml_vslam" / "app" / "pages" / "metrics.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "st.button" not in source
+    assert "_render_recompute_button" not in source
+
+
+def test_metrics_page_uses_available_persisted_metric_keys() -> None:
+    source = (Path(__file__).parents[1] / "src" / "prml_vslam" / "app" / "pages" / "metrics.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "_PRIMARY_METRIC_OPTIONS" not in source
+    assert "available_metric_keys(dataset_selection.metric_rows)" in source

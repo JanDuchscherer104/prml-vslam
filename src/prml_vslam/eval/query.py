@@ -1,33 +1,26 @@
 """Post-run trajectory evaluation discovery and aggregation helpers.
 
-This module is the primary counterpart to the metric computation service for
-discovery and loading. Most of its surface is read-only: it discovers runs,
-loads persisted trajectory evaluation manifests, and prepares rows for app
-review. The exception is :meth:`TrajectoryEvaluationQueryService.recompute_run_evaluation`,
-which explicitly invokes evo metric computation and overwrites persisted artifacts.
+This module is the read-only counterpart to the metric computation service. It
+discovers runs, loads persisted trajectory evaluation manifests, and prepares
+rows for app review without invoking evo or mutating run artifacts.
 """
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from pydantic import Field
 
+from prml_vslam.eval.dataset_aggregation import metric_frame_to_rows
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
-    SelectionSnapshot,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
 )
 from prml_vslam.methods.stage.backend_config import MethodId
-from prml_vslam.sources.contracts import (
-    PreparedBenchmarkInputs,
-    ReferenceSource,
-    ReferenceTrajectoryRef,
-    SequenceManifest,
-)
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.registry import list_sequence_slugs
 from prml_vslam.utils import BaseData, PathConfig
@@ -62,6 +55,9 @@ class DatasetRunCoverage(BaseData):
 
     skipped_metric_count: int = 0
     """Number of non-primary metrics that were attempted but skipped during evaluation."""
+
+    sim3_alignment_skip_count: int = 0
+    """Number of metrics skipped because Sim(3) alignment could not be applied."""
 
 
 class DatasetEvaluationSelection(BaseData):
@@ -122,10 +118,7 @@ class RunTrajectoryEvaluation(BaseData):
 
 
 class TrajectoryEvaluationQueryService:
-    """Post-run query service for trajectory evaluation artifacts.
-
-    All methods except :meth:`recompute_run_evaluation` are read-only.
-    """
+    """Read-only post-run query service for trajectory evaluation artifacts."""
 
     def __init__(self, path_config: PathConfig) -> None:
         self.path_config = path_config
@@ -183,6 +176,7 @@ class TrajectoryEvaluationQueryService:
                     matched_pairs=sum(r.matched_pairs for r in evaluation.metric_rows),
                     load_error=evaluation.load_error,
                     skipped_metric_count=evaluation.skipped_metric_count,
+                    sim3_alignment_skip_count=_sim3_alignment_skip_count(evaluation.manifest),
                 )
             )
             all_metric_rows.extend(evaluation.metric_rows)
@@ -273,20 +267,17 @@ class TrajectoryEvaluationQueryService:
         """Load the long-form metrics CSV emitted by the trajectory evaluator."""
         if not path.exists():
             return []
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            return [
-                TrajectoryMetricResultRow.model_validate(
-                    {
-                        **row,
-                        "value": float(row["value"]),
-                        "matched_pairs": int(row["matched_pairs"]),
-                        "delta": _optional_float(row.get("delta")),
-                        "delta_unit": row.get("delta_unit") or None,
-                        "error_series_path": _resolve_error_series_path(row.get("error_series_path"), path),
-                    }
-                )
-                for row in csv.DictReader(handle)
-            ]
+        return metric_frame_to_rows(
+            pd.read_csv(path, keep_default_na=False).assign(
+                value=lambda df: pd.to_numeric(df["value"]),
+                matched_pairs=lambda df: pd.to_numeric(df["matched_pairs"]).astype(int),
+                delta=lambda df: pd.to_numeric(df["delta"].replace("", pd.NA), errors="coerce"),
+                delta_unit=lambda df: df["delta_unit"].replace("", None),
+                error_series_path=lambda df: df["error_series_path"].map(
+                    lambda raw: _resolve_error_series_path(raw, path)
+                ),
+            )
+        )
 
     @staticmethod
     def manifest_path(run_root: Path) -> Path:
@@ -298,105 +289,11 @@ class TrajectoryEvaluationQueryService:
         """Return the canonical long-form trajectory metric table path for a run."""
         return (run_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
 
-    def recompute_run_evaluation(self, run: DiscoveredRun) -> TrajectoryEvaluationManifest:
-        """Recompute and persist trajectory metrics for one discovered run from its artifact data.
-
-        **This method is mutating**: it invokes evo APE/RPE computation and overwrites
-        ``evaluation/trajectory/manifest.json`` and ``evaluation/trajectory/metrics_long.csv``
-        under the run's artifact root. It is not safe to call concurrently on the same run.
-
-        Reads ``benchmark/inputs.json`` for reference and candidate trajectories, remapping
-        absolute paths written on other machines to the local artifact root. Falls back to
-        ``benchmark/ground_truth.tum`` when no inputs file is present.
-        """
-        from prml_vslam.eval.services import TrajectoryEvaluationService
-
-        sequence_manifest = _load_run_sequence_manifest(run.artifact_root)
-        sequence_slug = sequence_manifest.sequence_id if sequence_manifest else run.artifact_root.name
-        dataset_id = sequence_manifest.dataset_id if sequence_manifest else None
-
-        benchmark_inputs = _load_benchmark_inputs(run.artifact_root)
-        reference: ReferenceTrajectoryRef | None = None
-        candidate_trajectories: list[ReferenceTrajectoryRef] | None = None
-
-        if benchmark_inputs is not None:
-            raw_ref = benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
-            if raw_ref is not None:
-                reference = _remap_reference(raw_ref, run.artifact_root)
-            candidate_trajectories = [
-                _remap_reference(c, run.artifact_root) for c in benchmark_inputs.candidate_trajectories
-            ]
-
-        if reference is None:
-            gt_path = run.artifact_root / "benchmark" / "ground_truth.tum"
-            if not gt_path.exists():
-                raise FileNotFoundError(f"No reference trajectory found for run at {run.artifact_root}")
-            reference = ReferenceTrajectoryRef(source=ReferenceSource.GROUND_TRUTH, path=gt_path)
-
-        selection = SelectionSnapshot(
-            sequence_slug=sequence_slug,
-            reference_path=reference.path,
-            target_frame=reference.target_frame or _infer_target_frame_for_dataset(dataset_id),
-            coordinate_status=reference.coordinate_status.value
-            if reference.coordinate_status
-            else _infer_coord_status_for_dataset(dataset_id),
-            reference_source=reference.source.value,
-            run=run,
-        )
-        return TrajectoryEvaluationService(path_config=self.path_config).compute_evaluation(
-            selection=selection,
-            candidate_trajectories=candidate_trajectories,
-        )
-
     @staticmethod
     def load_error_series_values(path: Path) -> np.ndarray:
         """Load metric error values from an `.npz` error-series artifact."""
         with np.load(path) as payload:
             return np.asarray(payload["values"], dtype=np.float64)
-
-
-def _load_benchmark_inputs(artifact_root: Path) -> PreparedBenchmarkInputs | None:
-    inputs_path = artifact_root / "benchmark" / "inputs.json"
-    if not inputs_path.exists():
-        return None
-    try:
-        return PreparedBenchmarkInputs.model_validate_json(inputs_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"Could not load benchmark inputs from '{inputs_path}': {exc}") from exc
-
-
-def _remap_reference(ref: ReferenceTrajectoryRef, local_artifact_root: Path) -> ReferenceTrajectoryRef:
-    path = _remap_artifact_path(ref.path, local_artifact_root)
-    metadata_path = _remap_artifact_path(ref.metadata_path, local_artifact_root) if ref.metadata_path else None
-    return ref.model_copy(update={"path": path, "metadata_path": metadata_path})
-
-
-def _remap_artifact_path(path: Path, local_artifact_root: Path) -> Path:
-    """Remap an absolute path written on another machine to the local artifact root."""
-    if path.exists():
-        return path
-    for marker in ("benchmark", "slam", "evaluation", "input"):
-        parts = path.parts
-        for i, part in enumerate(parts):
-            if part == marker:
-                candidate = local_artifact_root / Path(*parts[i:])
-                if candidate.exists():
-                    return candidate
-    return path
-
-
-def _infer_target_frame_for_dataset(dataset_id: DatasetId | None) -> str:
-    if dataset_id is DatasetId.ADVIO:
-        return "advio_gt_world"
-    if dataset_id is DatasetId.TUM_RGBD:
-        return "tum_rgbd_world"
-    return "world"
-
-
-def _infer_coord_status_for_dataset(dataset_id: DatasetId | None) -> str:
-    if dataset_id is DatasetId.ADVIO:
-        return "aligned"
-    return "source_native"
 
 
 def _matches_dataset(sequence_manifest: SequenceManifest | None, dataset: DatasetId) -> bool:
@@ -426,10 +323,10 @@ def _resolve_error_series_path(raw: str | None, csv_path: Path) -> Path | None:
     return (csv_path.parent / "error_series" / p.name).resolve()
 
 
-def _optional_float(value: str | None) -> float | None:
-    if value is None or value == "":
-        return None
-    return float(value)
+def _sim3_alignment_skip_count(manifest: TrajectoryEvaluationManifest | None) -> int:
+    if manifest is None:
+        return 0
+    return sum(1 for record in manifest.skipped_metrics if "Sim(3) alignment" in record.reason)
 
 
 def _load_run_sequence_manifest(run_root: Path) -> SequenceManifest | None:

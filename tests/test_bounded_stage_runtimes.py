@@ -40,7 +40,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.utils import RunArtifactPaths
+from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 
 def test_ground_alignment_runtime_returns_stage_result(
@@ -105,6 +105,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     result = TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationStageInput(
             artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts"),
             baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
             method_id=run_config.stages.slam.backend.method_id,
             method_label=run_config.stages.slam.backend.display_name,
@@ -139,6 +140,7 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
     class FakeTrajectoryEvaluationService:
         def __init__(self, path_config) -> None:
             self.path_config = path_config
+            captured["path_config"] = path_config
 
         def compute_evaluation(self, *, selection, candidate_trajectories=None):
             captured["selection"] = selection
@@ -150,9 +152,12 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
         FakeTrajectoryEvaluationService,
     )
 
+    injected_path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts")
+
     TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationStageInput(
             artifact_root=plan.artifact_root,
+            path_config=injected_path_config,
             baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
             method_id=run_config.stages.slam.backend.method_id,
             method_label=run_config.stages.slam.backend.display_name,
@@ -176,6 +181,7 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
     assert selection.target_frame == "benchmark_world"
     assert selection.coordinate_status == "aligned"
     assert captured["candidate_trajectories"] == []
+    assert captured["path_config"] is injected_path_config
 
 
 def test_reconstruction_runtime_returns_reconstruction_artifacts(
