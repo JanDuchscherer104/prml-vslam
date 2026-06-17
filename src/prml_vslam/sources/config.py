@@ -80,7 +80,11 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
         service = TumRgbdDatasetService(path_config)
         return service.build_streaming_source(
             sequence_id=service.resolve_sequence_id(self.sequence_id),
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(
+                frame_stride=self.frame_stride,
+                target_fps=self.target_fps,
+                load_rgb=self.load_rgb,
+            ),
             replay_mode=self.replay_mode,
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
             include_depth=True,
@@ -118,7 +122,11 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
         service = AdvioDatasetService(path_config)
         return service.build_streaming_source(
             sequence_id=service.resolve_sequence_id(self.sequence_id),
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(
+                frame_stride=self.frame_stride,
+                target_fps=self.target_fps,
+                load_rgb=self.load_rgb,
+            ),
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
             normalize_video_orientation=self.normalize_video_orientation,
@@ -164,7 +172,11 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
             return source
         return SampledStreamingSource(
             source,
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(
+                frame_stride=self.frame_stride,
+                target_fps=self.target_fps,
+                load_rgb=self.load_rgb,
+            ),
         )
 
 

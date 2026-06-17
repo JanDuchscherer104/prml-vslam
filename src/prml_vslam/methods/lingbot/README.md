@@ -7,30 +7,28 @@ writes repository-owned SLAM artifacts.
 ## Parameter Parity
 
 The main full-scene config is `.configs/pipelines/lingbot-full.toml`. It is
-tuned to complete all ADVIO-20 frames on an RTX 3080 Ti without source-side
-frame sampling or SLAM frame caps:
+tuned for the full TUM Freiburg3 cabinet sequence on an RTX 3080 Ti without
+source-side frame sampling or SLAM frame caps:
 
 | Setting | Upstream / paper baseline | Repo benchmark choice | Rationale |
 | --- | --- | --- | --- |
-| `mode` | Direct Output Mode via streaming inference; windowed inference for long sequences | `windowed` | Bounds GPU residency for long scenes. |
-| `image_size` | `518` width, about `518x378` in the paper | `84` | Keeps all-frame ADVIO-20 dense prediction tensors within local RAM. |
+| `mode` | Direct Output Mode via streaming inference; windowed inference for long sequences | `windowed` | Completed the full TUM cabinet run without OOM and improved trajectory RMSE over streaming on the local RTX 3080 Ti. |
+| `image_size` | `518` width, about `518x378` in the paper | `392` | Keeps the full TUM cabinet run inside the local 12 GB RTX 3080 Ti memory budget. |
 | `num_scale_frames` | `8`; upstream recommends `2` for limited VRAM | `2` | Uses upstream's first limited-VRAM adjustment; `8` OOMs before completing this run. |
 | `kv_cache_sliding_window` | `64` | `64` | Matches the local pose-reference window size `k=64`. |
 | `keyframe_interval` | `auto`: `1` up to about 320 frames, then `ceil(N/320)` | `auto` | Lets upstream bound retained keyframes for the selected sequence length. |
-| `window_size` / `overlap_keyframes` | windowed inference controls | `128` / `8` | Long-scene windowing profile used for ADVIO-20 completion. |
+| `window_size` / `overlap_keyframes` | windowed inference controls | `128` / `8` | Windowed profile used for the full TUM cabinet sequence. |
+| source `load_rgb` | `true` for ordinary observation readers | `false` | Lets LingBot pass manifest RGB paths to upstream preprocessing without loading duplicate RGB arrays. |
 | `camera_num_iterations` | `4` | `4` | Keeps pose refinement at the accuracy-oriented default. |
 | `use_amp` / dtype | bfloat16/float16 inference through CUDA autocast | `use_amp=true`, `model_dtype=auto` | Matches upstream precision handling while reducing memory pressure. |
 | `use_sdpa` | `false` when FlashInfer is installed; SDPA fallback documented | `false` | Uses FlashInfer for benchmark runs from the `prml-vslam` mamba environment. |
 | `enable_point_head` | upstream benchmark notes depth backprojection is used | `false` | Avoids running an unsupported point-head path for the maintained checkpoint. |
 | `confidence_threshold` | upstream viewer/export default varies by entry point | `0.5` | Filters low-confidence depth before durable point-cloud export. |
 
-The current robustness-sensitive choice is avoiding source sampling. ADVIO-20
-has more than 18k RGB frames locally, and upstream windowed inference still
-stitches dense prediction tensors after all windows complete. The full config
-therefore uses `image_size=84`, `checkpoint_pos_embed="interpolate"`, and
-windowed inference as the all-frame completion profile. The previous TUM cabinet
-quality profile used `image_size=392`; keep that as historical tuning evidence,
-not the default full-scene config.
+The current quality-sensitive choice is avoiding source sampling while keeping
+the largest locally stable LingBot input width. The full TUM cabinet config uses
+`image_size=392`, `checkpoint_pos_embed="interpolate"`, `load_rgb=false`, and
+windowed inference as the current completion profile.
 
 ## Normalized Artifacts
 

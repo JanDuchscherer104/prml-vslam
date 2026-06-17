@@ -85,6 +85,8 @@ DatasetServingConfig: TypeAlias = AdvioServingConfig
 class FrameSelectionConfig(BaseConfig):
     frame_stride: int = Field(default=1, ge=1)
     target_fps: float | None = Field(default=None, gt=0.0)
+    load_rgb: bool = True
+    """Whether offline observation readers should populate RGB payloads."""
 
     @model_validator(mode="after")
     def validate_single_sampling_mode(self) -> FrameSelectionConfig:

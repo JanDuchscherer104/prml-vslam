@@ -29,6 +29,7 @@ from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
+from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 from prml_vslam.utils.serialization import write_json
 
@@ -518,6 +519,9 @@ def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path
 
     results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
 
+    source_payload = results[StageKey.SOURCE].payload
+    assert isinstance(source_payload, SourceStageOutput)
+    assert source_payload.load_rgb is True
     assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
     assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.point_cloud_path
     assert results[StageKey.SLAM].outcome.artifacts["depth_maps_npz"].path == run_paths.depth_maps_path
