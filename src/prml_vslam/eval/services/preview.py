@@ -9,14 +9,15 @@ import numpy as np
 from evo.core import metrics, sync
 
 from prml_vslam.align.trajectory_sim3 import align_estimate_sim3, trajectory_supports_sim3
-from prml_vslam.align.trajectory_sim3.contracts import (
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentMode,
-)
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.contracts import MetricStats
 from prml_vslam.utils.geometry import load_tum_trajectory
 
 _EVO_ASSOCIATION_MAX_DIFF_S = 0.01
+
+
+class AlignmentUnsupportedError(ValueError):
+    """Raised when a requested trajectory alignment cannot be computed."""
 
 
 @dataclass(slots=True)
@@ -28,7 +29,7 @@ class _TrajectoryMetricPreview:
     reference_positions_xyz: np.ndarray
     estimate_positions_xyz: np.ndarray
     stats: MetricStats
-    alignment: TrajectoryAlignmentArtifact | None = None
+    alignment: TrajectoryAlignmentArtifact
 
 
 def compute_trajectory_ape_preview(
@@ -37,7 +38,6 @@ def compute_trajectory_ape_preview(
     estimate_path: Path,
     pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
-    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
     target_frame: str = "world",
     source_frame: str = "slam_world",
     reference_source: str = "reference",
@@ -63,22 +63,18 @@ def compute_trajectory_ape_preview(
             f"No matching trajectory timestamps were found for evo APE (max_diff={max_diff_s:.3f}s)."
         ) from exc
 
-    evaluation_estimate = associated_estimate
-    alignment = None
-    if alignment_mode is TrajectoryAlignmentMode.SIM3_UMEYAMA:
-        if trajectory_supports_sim3(associated_reference, associated_estimate):
-            evaluation_estimate, alignment = align_estimate_sim3(
-                reference=associated_reference,
-                estimate=associated_estimate,
-                max_diff_s=max_diff_s,
-                target_frame=target_frame,
-                source_frame=source_frame,
-                reference_source=reference_source,
-                method_id=method_id,
-                method_label=method_label,
-            )
-    elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
-        raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
+    if not trajectory_supports_sim3(associated_reference, associated_estimate):
+        raise AlignmentUnsupportedError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
+    evaluation_estimate, alignment = align_estimate_sim3(
+        reference=associated_reference,
+        estimate=associated_estimate,
+        max_diff_s=max_diff_s,
+        target_frame=target_frame,
+        source_frame=source_frame,
+        reference_source=reference_source,
+        method_id=method_id,
+        method_label=method_label,
+    )
 
     metric = metrics.APE(pose_relation)
     metric.process_data((associated_reference, evaluation_estimate))
@@ -103,11 +99,16 @@ def compute_trajectory_rpe_preview(
     delta: float = 1.0,
     delta_unit: metrics.Unit = metrics.Unit.meters,
     max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
+    target_frame: str = "world",
+    source_frame: str = "slam_world",
+    reference_source: str = "reference",
+    method_id: str | None = None,
+    method_label: str | None = None,
 ) -> _TrajectoryMetricPreview:
     """Compute in-memory RPE for two normalized TUM trajectory artifacts.
 
-    No alignment is applied — RPE measures relative motion between fixed-distance
-    pose pairs, so the global alignment cancels in the subtraction.
+    Translation RPE for monocular outputs is scale-sensitive, so the helper
+    applies the same Sim(3) alignment used for APE before metric computation.
     """
     reference_trajectory = load_tum_trajectory(reference_path)
     estimate_trajectory = load_tum_trajectory(estimate_path)
@@ -122,9 +123,22 @@ def compute_trajectory_rpe_preview(
             f"No matching trajectory timestamps were found for evo RPE (max_diff={max_diff_s:.3f}s)."
         ) from exc
 
+    if not trajectory_supports_sim3(associated_reference, associated_estimate):
+        raise AlignmentUnsupportedError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
+    evaluation_estimate, alignment = align_estimate_sim3(
+        reference=associated_reference,
+        estimate=associated_estimate,
+        max_diff_s=max_diff_s,
+        target_frame=target_frame,
+        source_frame=source_frame,
+        reference_source=reference_source,
+        method_id=method_id,
+        method_label=method_label,
+    )
+
     metric = metrics.RPE(pose_relation, delta=delta, delta_unit=delta_unit, all_pairs=False)
     try:
-        metric.process_data((associated_reference, associated_estimate))
+        metric.process_data((associated_reference, evaluation_estimate))
     except Exception as exc:
         raise ValueError(f"evo RPE computation failed: {exc}") from exc
 
@@ -136,13 +150,14 @@ def compute_trajectory_rpe_preview(
         error_timestamps_s=np.asarray(associated_reference.timestamps[:n], dtype=np.float64),
         error_values=error_values,
         reference_positions_xyz=np.asarray(associated_reference.positions_xyz[:n], dtype=np.float64),
-        estimate_positions_xyz=np.asarray(associated_estimate.positions_xyz[:n], dtype=np.float64),
+        estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz[:n], dtype=np.float64),
         stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
-        alignment=None,
+        alignment=alignment,
     )
 
 
 __all__ = [
+    "AlignmentUnsupportedError",
     "compute_trajectory_ape_preview",
     "compute_trajectory_rpe_preview",
 ]

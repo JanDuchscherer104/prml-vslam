@@ -15,6 +15,7 @@ def _build_offline_input(context: PipelineExecutionContext) -> TrajectoryAlignme
     slam_backend = context.run_config.stages.slam.backend
     return TrajectoryAlignmentStageInput(
         artifact_root=context.plan.artifact_root,
+        path_config=context.path_config,
         baseline_source=config.baseline_source,
         method_id=None if slam_backend is None else slam_backend.method_id,
         sequence_manifest=context.results.require_sequence_manifest(),

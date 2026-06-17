@@ -713,10 +713,8 @@ def eval_trajectory(
     ] = None,
 ) -> None:
     """Evaluate trajectory against a reference directly from an existing artifact root."""
-    import json as _json
-
-    from prml_vslam.eval.services import TrajectoryEvaluationService
-    from prml_vslam.eval.trajectory_contracts import DiscoveredRun, SelectionSnapshot
+    from prml_vslam.eval.services import TrajectoryEvaluationRepairService
+    from prml_vslam.eval.trajectory_contracts import DiscoveredRun
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)
@@ -726,15 +724,10 @@ def eval_trajectory(
         console.error(f"Estimated trajectory not found: '{estimate_path}'")
         raise typer.Exit(code=1)
 
-    reference_path = resolved_root / "benchmark" / _reference_trajectory_filename(baseline)
-    if not reference_path.exists():
-        console.error(f"Reference trajectory not found: '{reference_path}'")
-        raise typer.Exit(code=1)
-
     if sequence_id is None:
         manifest_path = resolved_root / "input" / "sequence_manifest.json"
         if manifest_path.exists():
-            sequence_id = _json.loads(manifest_path.read_text(encoding="utf-8")).get("sequence_id", "unknown")
+            sequence_id = json.loads(manifest_path.read_text(encoding="utf-8")).get("sequence_id", "unknown")
         else:
             sequence_id = "unknown"
 
@@ -742,19 +735,15 @@ def eval_trajectory(
         (m for part in reversed(resolved_root.parts) for m in MethodId if part == m.value),
         None,
     )
-    selection = SelectionSnapshot(
-        sequence_slug=sequence_id,
-        reference_path=reference_path,
-        run=DiscoveredRun(
-            artifact_root=resolved_root,
-            estimate_path=estimate_path,
-            method=method,
-            label=method.display_name if method is not None else resolved_root.name,
-        ),
+    run = DiscoveredRun(
+        artifact_root=resolved_root,
+        estimate_path=estimate_path,
+        method=method.value if method is not None else None,
+        label=method.display_name if method is not None else resolved_root.name,
     )
     try:
-        service = TrajectoryEvaluationService(path_config)
-        artifact = service.compute_evaluation(selection=selection)
+        service = TrajectoryEvaluationRepairService(path_config)
+        artifact = service.recompute_run_evaluation(run, baseline_source=baseline, sequence_slug=sequence_id)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
