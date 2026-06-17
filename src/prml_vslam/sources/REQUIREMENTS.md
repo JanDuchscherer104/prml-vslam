@@ -30,9 +30,6 @@ This document is the concise source of truth for `prml_vslam.sources`.
 - Source reading, source credits, and transport state remain internal sidecars
   or collaborators; they are not public stages.
 - Only one sampling mode (stride or FPS) may be active at once.
-- Offline RGB payload loading is source-configured. `load_rgb=false` may emit
-  provenance-preserving observation shells while leaving normalized RGB paths in
-  the `SequenceManifest` for path-native backends.
 - Missing datasets or corrupted manifests must fail clearly.
 - Offline `SequenceManifest` dematerialization into RGB `Observation` values is
   source-owned and must not live in method backends.

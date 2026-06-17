@@ -70,7 +70,6 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
         source_output = SourceStageOutput(
             sequence_manifest=sequence_manifest,
             benchmark_inputs=benchmark_inputs,
-            load_rgb=input_payload.load_rgb,
         )
         outcome = StageOutcome(
             stage_key=StageKey.SOURCE,

@@ -83,7 +83,6 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
             frame_selection=FrameSelectionConfig(
                 frame_stride=self.frame_stride,
                 target_fps=self.target_fps,
-                load_rgb=self.load_rgb,
             ),
             replay_mode=self.replay_mode,
             pose_source=TumRgbdPoseSource.GROUND_TRUTH,
@@ -125,7 +124,6 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
             frame_selection=FrameSelectionConfig(
                 frame_stride=self.frame_stride,
                 target_fps=self.target_fps,
-                load_rgb=self.load_rgb,
             ),
             dataset_serving=self.dataset_serving,
             replay_mode=self.replay_mode,
@@ -175,7 +173,6 @@ class Record3DSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequence
             frame_selection=FrameSelectionConfig(
                 frame_stride=self.frame_stride,
                 target_fps=self.target_fps,
-                load_rgb=self.load_rgb,
             ),
         )
 

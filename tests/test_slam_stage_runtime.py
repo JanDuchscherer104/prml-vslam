@@ -22,20 +22,15 @@ from prml_vslam.methods.stage import (
     SlamStreamingStartStageInput,
 )
 from prml_vslam.methods.stage.backend_config import MethodId, VistaSlamBackendConfig
-from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
 from prml_vslam.pipeline.config import RunConfig, build_run_config
-from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
-from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.mode import PipelineMode
-from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
+from prml_vslam.pipeline.contracts.plan import RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.runner import StageResultStore
-from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus, VisualizationIntent
+from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
 from prml_vslam.sources.config import VideoSourceConfig
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
-from prml_vslam.sources.stage.contracts import SourceStageOutput
-from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils import PathConfig
 
 
 class _FakeBackendConfig(VistaSlamBackendConfig):
@@ -212,90 +207,6 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     assert isinstance(result.payload, SlamStageOutput)
     assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
-
-
-def test_slam_runtime_offline_can_skip_rgb_payload_loading(tmp_path: Path) -> None:
-    run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
-    plan = _plan(tmp_path, run_config)
-    backend_config = _FakeBackendConfig(_FakeBackend(plan.artifact_root))
-    runtime = SlamStageRuntime()
-
-    result = runtime.run_offline(
-        SlamOfflineStageInput(
-            backend=backend_config,
-            outputs=run_config.stages.slam.outputs,
-            artifact_root=plan.artifact_root,
-            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
-            baseline_source=ReferenceSource.GROUND_TRUTH,
-            sequence_manifest=_sequence_manifest(tmp_path),
-            benchmark_inputs=None,
-            load_rgb=False,
-        )
-    )
-
-    assert [observation.rgb for observation in backend_config._backend.observations] == [None]
-    assert result.outcome.status is StageStatus.COMPLETED
-
-
-def test_slam_offline_input_uses_reused_source_output_load_rgb_without_live_source_backend(tmp_path: Path) -> None:
-    run_config = RunConfig.from_toml(
-        f"""
-experiment_name = "reuse-slam"
-mode = "offline"
-output_dir = "{tmp_path.as_posix()}"
-
-[stages.source]
-enabled = false
-
-[stages.slam]
-enabled = true
-
-[stages.slam.backend]
-method_id = "vista"
-"""
-    )
-    plan = RunPlan(
-        run_id=run_config.experiment_name,
-        mode=run_config.mode,
-        artifact_root=tmp_path / ".artifacts" / run_config.experiment_name,
-        source=PlannedSource(source_id="reused_artifacts", sequence_id="seq-1"),
-        stages=[RunPlanStage(key=StageKey.SLAM)],
-    )
-    source_output = SourceStageOutput(
-        sequence_manifest=_sequence_manifest(tmp_path),
-        benchmark_inputs=PreparedBenchmarkInputs(),
-        load_rgb=False,
-    )
-    store = StageResultStore()
-    store.put(
-        StageResult(
-            stage_key=StageKey.SOURCE,
-            payload=source_output,
-            outcome=StageOutcome(
-                stage_key=StageKey.SOURCE,
-                status=StageStatus.COMPLETED,
-                config_hash="source",
-                input_fingerprint="source",
-            ),
-            final_runtime_status=StageRuntimeStatus(
-                stage_key=StageKey.SOURCE,
-                lifecycle_state=StageStatus.COMPLETED,
-            ),
-        )
-    )
-    context = PipelineExecutionContext(
-        run_config=run_config,
-        path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
-        run_paths=RunArtifactPaths.build(plan.artifact_root),
-        plan=plan,
-        results=store,
-    )
-
-    input_payload = SLAM_STAGE_SPEC.build_offline_input(context)
-
-    assert input_payload.sequence_manifest == source_output.sequence_manifest
-    assert input_payload.benchmark_inputs == source_output.benchmark_inputs
-    assert input_payload.load_rgb is False
 
 
 def test_slam_runtime_offline_prefers_sequence_backend_without_loading_observations(

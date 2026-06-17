@@ -102,10 +102,6 @@ Source stage completion returns `SourceStageOutput`:
 - `PreparedBenchmarkInputs`: optional source-prepared references such as
   reference trajectories, reference clouds, point-cloud sequences, or prepared
   observation sequences.
-- `load_rgb`: source-owned offline observation policy. `true` keeps the
-  traditional RGB-array payloads; `false` lets path-native methods consume
-  manifest RGB paths while downstream observation shells retain timestamps and
-  provenance.
 
 Live or replay streaming emits shared
 [`Observation`](../interfaces/observation.py) values through
