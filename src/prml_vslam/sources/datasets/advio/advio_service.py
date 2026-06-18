@@ -55,6 +55,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             ),
             benchmark=lambda _value, output_dir, _selection: sequence.to_benchmark_inputs(
                 output_dir=output_dir,
+                frame_selection=_selection,
+                dataset_serving=dataset_serving,
             ),
         )
 
@@ -66,6 +68,8 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
         dataset_serving: AdvioServingConfig,
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalize_video_orientation: bool = True,
+        rgb_max_width_px: int = 392,
+        rgb_dimension_multiple: int = 14,
         normalized_store: NormalizedDatasetStore | None = None,
         normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
@@ -94,7 +98,11 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
                 dataset_serving=dataset_serving,
             ),
             benchmark=lambda _value, output_dir, _selection: self._sequence(sequence_id).to_benchmark_inputs(
-                output_dir=output_dir
+                output_dir=output_dir,
+                frame_selection=_selection,
+                dataset_serving=dataset_serving,
+                rgb_max_width_px=rgb_max_width_px,
+                rgb_dimension_multiple=rgb_dimension_multiple,
             ),
             stream=stream,
             replay_mode=replay_mode,

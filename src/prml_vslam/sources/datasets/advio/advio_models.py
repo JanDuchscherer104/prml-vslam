@@ -136,6 +136,12 @@ class AdvioSequenceConfig(BaseConfig, FactoryConfig["AdvioSequence"]):
     sequence_id: int = Field(ge=1, le=ADVIO_SEQUENCE_COUNT)
     """1-based ADVIO sequence identifier."""
 
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    """Maximum width for normalized display RGB PNG payloads."""
+
+    rgb_dimension_multiple: int = Field(default=14, ge=1)
+    """Raster dimension multiple used by normalized display RGB payloads."""
+
     @property
     def sequence_name(self) -> str:
         """Return the canonical ADVIO folder name used on disk."""

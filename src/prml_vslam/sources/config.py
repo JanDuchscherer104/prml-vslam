@@ -44,6 +44,8 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceS
     sequence_id: str
     replay_mode: ReplayMode = ReplayMode.REALTIME
     reference_cloud: ReferenceCloudConfig = Field(default_factory=ReferenceCloudConfig)
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)
 
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         path_config = get_path_config() if path_config is None else path_config
@@ -72,6 +74,8 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingSequenceSou
     dataset_serving: AdvioServingConfig = Field(default_factory=AdvioServingConfig)
     replay_mode: ReplayMode = ReplayMode.REALTIME
     normalize_video_orientation: bool = True
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)
 
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         path_config = get_path_config() if path_config is None else path_config
@@ -101,6 +105,8 @@ class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[StreamingS
     replay_mode: ReplayMode = ReplayMode.REALTIME
     materialization: Record3DMaterializationConfig = Field(default_factory=Record3DMaterializationConfig)
     reference_cloud: ReferenceCloudConfig = Field(default_factory=lambda: ReferenceCloudConfig(min_confidence=1))
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)
 
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
         path_config = get_path_config() if path_config is None else path_config
@@ -153,13 +159,17 @@ SourceBackendConfig = Annotated[
 
 
 def normalized_profile_for_source_config(
-    *, dataset_id: DatasetId, sequence_id: str, source_id: str, payload: dict[str, Any]
+    *,
+    dataset_id: DatasetId,
+    sequence_id: str,
+    source_id: str,
+    payload: dict[str, Any],
+    include_frame_selection: bool = False,
 ) -> NormalizedDatasetProfile:
-    source_profile = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"frame_stride", "target_fps", "replay_mode", "normalize_video_orientation"}
-    }
+    excluded_keys = {"replay_mode", "normalize_video_orientation"}
+    if not include_frame_selection:
+        excluded_keys.update({"frame_stride", "target_fps"})
+    source_profile = {key: value for key, value in payload.items() if key not in excluded_keys}
     return normalized_dataset_profile(
         dataset_id=dataset_id,
         sequence_id=sequence_id,

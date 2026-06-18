@@ -47,7 +47,9 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
         if self._normalized_store is not None and self._normalized_profile is not None:
-            entry = self._normalized_store.load_entry(self._normalized_profile)
+            entry = self._normalized_store.resolve_entry(
+                self._normalized_profile, frame_selection=self._frame_selection
+            )
             return self._normalized_store.read_sequence_manifest(
                 entry,
                 frame_selection=self._frame_selection,
@@ -57,7 +59,9 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
         if self._normalized_store is not None and self._normalized_profile is not None:
-            entry = self._normalized_store.load_entry(self._normalized_profile)
+            entry = self._normalized_store.resolve_entry(
+                self._normalized_profile, frame_selection=self._frame_selection
+            )
             return self._normalized_store.read_benchmark_inputs(
                 entry,
                 frame_selection=self._frame_selection,
@@ -67,7 +71,9 @@ class DatasetSequenceSource(BenchmarkInputSource, StreamingSequenceSource):
 
     def open_stream(self, *, loop: bool) -> ObservationStream:
         if self._normalized_store is not None and self._normalized_profile is not None:
-            entry = self._normalized_store.load_entry(self._normalized_profile)
+            entry = self._normalized_store.resolve_entry(
+                self._normalized_profile, frame_selection=self._frame_selection
+            )
             return self._normalized_store.open_stream(
                 entry,
                 frame_selection=self._frame_selection,

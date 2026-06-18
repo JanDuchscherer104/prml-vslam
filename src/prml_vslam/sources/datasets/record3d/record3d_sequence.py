@@ -10,7 +10,6 @@ import cv2
 import numpy as np
 
 from prml_vslam.interfaces import (
-    OBSERVATION_SEQUENCE_FORMAT,
     ObservationIndexEntry,
     ObservationProvenance,
     ObservationSequenceIndex,
@@ -27,6 +26,12 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalized_store import load_depth_array
+from prml_vslam.sources.datasets.rgb_preprocessing import (
+    preprocess_rgb_for_normalized_store,
+    resize_depth_to_rgb_preprocessing,
+    scale_intrinsics_for_rgb_preprocessing,
+    write_preprocessed_rgb_png,
+)
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import (
@@ -115,20 +120,22 @@ class Record3DSequence(BaseData):
         output = self.paths.cache_dir / "manifest" if output_dir is None else output_dir
         sample = self.load_offline_sample()
         stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(sample.timestamps_ns)
-        rgb_dir = output / "rgb"
-        rgb_dir.mkdir(parents=True, exist_ok=True)
+        rgb_dir = output / "rgb" if output_dir is None else None
+        if rgb_dir is not None:
+            rgb_dir.mkdir(parents=True, exist_ok=True)
         selected_timestamps: list[int] = []
         for written_index, frame in enumerate(sample.frames[::stride]):
-            rgb = record3d_loading.decode_rgb_frame(sample.archive_path, frame)
-            target_path = rgb_dir / f"{written_index:06d}.png"
-            cv2.imwrite(str(target_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            if rgb_dir is not None:
+                rgb = record3d_loading.decode_rgb_frame(sample.archive_path, frame)
+                target_path = rgb_dir / f"{written_index:06d}.png"
+                cv2.imwrite(str(target_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
             selected_timestamps.append(sample.timestamps_ns[frame.index])
         timestamps_path = record3d_loading.write_timestamps_json(selected_timestamps, output / "timestamps.json")
         intrinsics_path = write_camera_intrinsics_yaml(sample.rgb_intrinsics, output / "intrinsics.yaml")
         return SequenceManifest(
             sequence_id=sample.sequence_id,
             dataset_id=DatasetId.RECORD3D,
-            rgb_dir=rgb_dir.resolve(),
+            rgb_dir=None if rgb_dir is None else rgb_dir.resolve(),
             timestamps_path=timestamps_path,
             intrinsics_path=intrinsics_path,
         )
@@ -197,14 +204,13 @@ class Record3DSequence(BaseData):
         sample = self.load_offline_sample()
         sequence_ref = self._prepare_observation_sequence(
             sample=sample,
-            selected_frames=list(sample.frames),
+            selected_frames=list(sample.frames[::stride]),
             output_dir=self.paths.cache_dir / "preview" / "observations",
         )
         index = ObservationSequenceIndex.model_validate_json(sequence_ref.index_path.read_text(encoding="utf-8"))
         return ImageSequenceObservationSource(
             sequence_dir=sequence_ref.payload_root,
             rows=index.rows,
-            stride=stride,
             loop=loop,
             replay_mode=replay_mode,
             include_depth=include_depth,
@@ -220,6 +226,7 @@ class Record3DSequence(BaseData):
     ) -> ObservationSequenceRef:
         rgb_dir = output_dir / "rgb"
         depth_dir = output_dir / "depth"
+        output_dir.mkdir(parents=True, exist_ok=True)
         rgb_dir.mkdir(parents=True, exist_ok=True)
         depth_dir.mkdir(parents=True, exist_ok=True)
         rows: list[ObservationIndexEntry] = []
@@ -233,9 +240,16 @@ class Record3DSequence(BaseData):
                 sample.metadata,
                 depth_unit_scale=self.config.materialization.depth_unit_scale,
             )
+            preprocessed = preprocess_rgb_for_normalized_store(
+                rgb,
+                max_width_px=self.config.rgb_max_width_px,
+                dimension_multiple=self.config.rgb_dimension_multiple,
+            )
+            depth_m = resize_depth_to_rgb_preprocessing(depth_m, preprocessed)
+            intrinsics = scale_intrinsics_for_rgb_preprocessing(sample.depth_intrinsics, preprocessed)
             rgb_path = rgb_dir / f"{seq:06d}.png"
             depth_path = depth_dir / f"{seq:06d}.png"
-            cv2.imwrite(str(rgb_path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            write_preprocessed_rgb_png(rgb_path, preprocessed.rgb)
             _write_depth_png(depth_path, depth_m)
             rows.append(
                 ObservationIndexEntry(
@@ -245,7 +259,7 @@ class Record3DSequence(BaseData):
                     depth_path=depth_path.relative_to(output_dir),
                     depth_scale_to_m=RECORD3D_DEPTH_SCALE_TO_M,
                     T_world_camera=sample.poses_world_camera[frame.index],
-                    intrinsics=sample.depth_intrinsics,
+                    intrinsics=intrinsics,
                     provenance=ObservationProvenance(
                         source_id=RECORD3D_SOURCE_ID,
                         dataset_id=DatasetId.RECORD3D.value,
@@ -253,8 +267,10 @@ class Record3DSequence(BaseData):
                         sequence_name=sample.sequence_name,
                         pose_source=ReferenceSource.ARKIT.value,
                         world_frame=RECORD3D_WORLD_FRAME,
-                        raster_space="depth",
+                        raster_space="display_downscaled",
                         source_frame_index=frame.index,
+                        original_width=preprocessed.original_width,
+                        original_height=preprocessed.original_height,
                     ),
                 )
             )
@@ -262,21 +278,29 @@ class Record3DSequence(BaseData):
             source_id=RECORD3D_SOURCE_ID,
             sequence_id=sample.sequence_id,
             world_frame=RECORD3D_WORLD_FRAME,
-            raster_space="depth",
+            raster_space="display_downscaled",
             observation_count=len(rows),
             rows=rows,
+        )
+        _write_json(
+            output_dir / "rgb.metadata.json",
+            {
+                "raster_space": "display_downscaled",
+                "source_raster_space": "depth",
+                "rgb_max_width_px": self.config.rgb_max_width_px,
+                "dimension_multiple": self.config.rgb_dimension_multiple,
+            },
         )
         index_path = output_dir / "observations.json"
         index_path.write_text(json.dumps(index.model_dump(mode="json"), indent=2), encoding="utf-8")
         return ObservationSequenceRef(
-            format_version=OBSERVATION_SEQUENCE_FORMAT,
             source_id=RECORD3D_SOURCE_ID,
             sequence_id=sample.sequence_id,
             index_path=index_path.resolve(),
             payload_root=output_dir.resolve(),
             observation_count=len(rows),
             world_frame=RECORD3D_WORLD_FRAME,
-            raster_space="depth",
+            raster_space="display_downscaled",
         )
 
     def _prepare_reference_cloud(

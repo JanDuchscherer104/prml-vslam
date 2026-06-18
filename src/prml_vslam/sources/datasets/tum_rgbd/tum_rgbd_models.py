@@ -65,3 +65,5 @@ class TumRgbdSequenceConfig(BaseConfig):
     dataset_root: Path = Path(".data/tum_rgbd")
     sequence_id: str
     reference_cloud: ReferenceCloudConfig = Field(default_factory=ReferenceCloudConfig)
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)

@@ -9,7 +9,7 @@ import streamlit as st
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.normalized_query import normalized_sequence_options
+from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
 
 from ..live_session import live_poll_interval, render_live_action_slot, render_live_fragment, rerun_after_action
 from ..models import PipelineTelemetryMetricId, PipelineTelemetryViewMode
@@ -56,7 +56,7 @@ def render(context: AppContext) -> None:
             "live previews, trajectory output, and artifacts."
         ),
     )
-    advio_records = normalized_sequence_options(DatasetId.ADVIO, context.path_config)
+    advio_records = query_normalized_dataset(DatasetId.ADVIO, context.path_config).default_records
     snapshot = context.run_service.snapshot()
     is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container():

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 import prml_vslam.sources.replay.video as replay_video_module
+from prml_vslam.interfaces import ObservationSequenceIndex
 from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
@@ -40,8 +41,11 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
+from prml_vslam.utils.geometry import load_tum_trajectory
 
 
 def _write_video(path: Path, *, num_frames: int = 3) -> None:
@@ -574,6 +578,121 @@ def test_advio_source_config_requires_normalized_store_entry(tmp_path: Path) -> 
 
     with pytest.raises(FileNotFoundError, match="prml-vslam dataset normalize --dataset advio"):
         source.prepare_sequence_manifest(tmp_path / "prepared")
+
+
+def test_advio_normalized_entry_replays_display_oriented_observations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    monkeypatch.setattr(replay_video_module, "read_video_rotation_degrees", lambda path: 90)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15")
+
+    entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=source_config,
+    )
+    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    sequence_manifest = json.loads(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    observation_ref = benchmark_inputs["observation_sequences"][0]
+    observation_index = ObservationSequenceIndex.model_validate_json(
+        Path(observation_ref["index_path"]).read_text(encoding="utf-8")
+    )
+
+    stream = source_config.setup_target(path_config=path_config).open_stream(loop=False)
+    stream.connect()
+    packet = stream.wait_for_observation()
+    stream.disconnect()
+
+    assert observation_ref["raster_space"] == "display_downscaled"
+    assert observation_ref["rgb_video_path"] is None
+    assert sequence_manifest.get("video_path") is None
+    assert sequence_manifest["rgb_dir"] == (entry.root / "observations" / "rgb").as_posix()
+    assert observation_index.raster_space == "display_downscaled"
+    assert Path(observation_ref["payload_root"]).relative_to(entry.root).as_posix() == "observations"
+    assert (entry.root / "observations" / "rgb").is_dir()
+    assert not (entry.root / "observations" / "rgb.mp4").exists()
+    assert json.loads((entry.root / "observations" / "rgb.metadata.json").read_text()) == {
+        "dimension_multiple": 14,
+        "raster_space": "display_downscaled",
+        "rgb_max_width_px": 392,
+        "source_raster_space": "display",
+    }
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "ground_truth.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][1]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][2]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["candidate_trajectories"][1]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
+    )
+    for trajectory_ref in [
+        *benchmark_inputs["reference_trajectories"],
+        *benchmark_inputs["candidate_trajectories"],
+    ]:
+        trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
+        trajectory_metadata = json.loads(Path(trajectory_ref["metadata_path"]).read_text())
+        np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+        assert trajectory_metadata["trajectory_origin"] == "first_pose"
+        assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
+    assert observation_index.rows[0].rgb_path == Path("rgb/000000.png")
+    assert observation_index.rows[0].rgb_video_frame_index is None
+    assert (entry.root / "observations" / observation_index.rows[0].rgb_path).is_file()
+    assert observation_index.rows[0].provenance.source_frame_index == 0
+    assert observation_index.rows[0].provenance.raster_space == "display_downscaled"
+    assert observation_index.rows[0].provenance.original_width == 48
+    assert observation_index.rows[0].provenance.original_height == 64
+    assert observation_index.rows[0].intrinsics is not None
+    assert observation_index.rows[0].intrinsics.width_px == 42
+    assert observation_index.rows[0].intrinsics.height_px == 56
+    assert packet.rgb is not None
+    assert packet.rgb.shape == (56, 42, 3)
+    assert packet.intrinsics is not None
+    assert packet.intrinsics.width_px == 42
+    assert packet.intrinsics.height_px == 56
+    assert packet.source_frame_index == 0
+    assert packet.provenance.source_frame_index == 0
+
+
+def test_advio_normalization_target_fps_changes_profile_and_observation_count(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    full_config = AdvioSourceConfig(sequence_id="advio-15")
+    sampled_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
+
+    full_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=full_config,
+    )
+    sampled_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=sampled_config,
+    )
+    sampled_inputs = json.loads(sampled_entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    sampled_index = ObservationSequenceIndex.model_validate_json(
+        Path(sampled_inputs["observation_sequences"][0]["index_path"]).read_text(encoding="utf-8")
+    )
+
+    assert sampled_entry.profile_key != full_entry.profile_key
+    assert sampled_index.observation_count == 2
+    assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:

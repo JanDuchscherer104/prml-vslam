@@ -6,29 +6,42 @@ import json
 import os
 import shutil
 import time
+import warnings
 from collections.abc import Callable, Iterable
-from csv import DictReader, DictWriter
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import cv2
 import numpy as np
+import pandas as pd  # type: ignore[import-untyped]
 from pydantic import AliasChoices, BaseModel, Field
 
-from prml_vslam.interfaces import ObservationSequenceIndex, ObservationSequenceRef, write_camera_intrinsics_yaml
+from prml_vslam.interfaces import (
+    FrameTransform,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
+    write_camera_intrinsics_yaml,
+)
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
+from prml_vslam.sources.replay import (
+    ImageSequenceObservationSource,
+    ObservationStream,
+    ReplayMode,
+    VideoSequenceObservationSource,
+)
 from prml_vslam.utils import BaseData, JsonObject, JsonValue, PathConfig
-from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.utils.geometry import load_tum_trajectory, trajectory_relative_to_first_pose, write_tum_trajectory
 from prml_vslam.utils.serialization import stable_hash, write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
@@ -49,7 +62,7 @@ STATS_LONG_HEADER = (
     "unit",
 )
 METADATA_LONG_HEADER = ("dataset_id", "sequence_id", "profile_key", "source_id", "scope", "key", "value")
-STORE_SCHEMA_VERSION = 4
+STORE_SCHEMA_VERSION = 9
 
 
 class NormalizedDatasetProfile(BaseData):
@@ -104,7 +117,7 @@ class NormalizedDatasetEntry(BaseData):
 
 
 class NormalizedDatasetStore:
-    """Filesystem store for reusable full-frame normalized dataset payloads."""
+    """Filesystem store for reusable normalized dataset replay payloads."""
 
     def __init__(self, *, store_root: Path, dataset_id: DatasetId) -> None:
         self.dataset_id = dataset_id
@@ -128,6 +141,71 @@ class NormalizedDatasetStore:
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
         return entry
+
+    def resolve_entry(
+        self,
+        profile: NormalizedDatasetProfile,
+        *,
+        frame_selection: FrameSelectionConfig | None = None,
+    ) -> NormalizedDatasetEntry:
+        """Load the exact entry or the only compatible current-schema entry."""
+        try:
+            entry = self.load_entry(profile)
+            _validate_read_frame_selection(entry, frame_selection)
+            return entry
+        except FileNotFoundError as exc:
+            candidates = [
+                entry for entry in self._scan_entries(strict=False) if _compatible_entry_identity(entry, profile)
+            ]
+            compatible = [
+                (entry, mismatch)
+                for entry in candidates
+                if _compatible_entry_profile(
+                    requested=profile,
+                    selected=(entry_profile := NormalizedDatasetProfile.model_validate(entry.profile)),
+                    mismatch=(
+                        mismatch := _profile_mismatch_report(
+                            requested=profile.source_profile,
+                            selected=entry_profile.source_profile,
+                        )
+                    ),
+                )
+            ]
+            if len(compatible) == 1:
+                entry, mismatch = compatible[0]
+                _validate_read_frame_selection(entry, frame_selection)
+                warnings.warn(
+                    "Using compatible normalized dataset entry despite requested profile mismatch: "
+                    f"requested={profile.profile_key}, selected={entry.profile_key}, "
+                    f"missing_from_request={mismatch['missing_from_request']}, "
+                    f"missing_from_entry={mismatch['missing_from_entry']}, "
+                    f"mismatched_fields={mismatch['mismatched_fields']}.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                return entry
+            if not candidates:
+                raise exc
+            if not compatible:
+                reports = [
+                    _profile_mismatch_report(
+                        requested=profile.source_profile,
+                        selected=NormalizedDatasetProfile.model_validate(entry.profile).source_profile,
+                    )
+                    for entry in candidates
+                ]
+                raise FileNotFoundError(
+                    "Missing exact normalized dataset entry and compatible profiles differ in byte-affecting fields for "
+                    f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
+                    f"source_id={profile.source_id}: {reports}. "
+                    "Rebuild the requested normalized profile."
+                ) from exc
+            raise FileNotFoundError(
+                "Missing exact normalized dataset entry and found multiple compatible profiles for "
+                f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
+                f"source_id={profile.source_id}: {[entry.profile_key for entry, _mismatch in compatible]}. "
+                "Re-run with an exact profile or remove stale duplicate profiles."
+            ) from exc
 
     def entry_exists(self, profile: NormalizedDatasetProfile) -> bool:
         """Return whether one complete normalized entry exists."""
@@ -153,7 +231,7 @@ class NormalizedDatasetStore:
         sequence_manifest: SequenceManifest,
         benchmark_inputs: PreparedBenchmarkInputs,
     ) -> NormalizedDatasetEntry:
-        """Persist one full-frame normalized entry."""
+        """Persist one normalized entry."""
         return self._create_and_publish_entry(
             profile,
             lambda temp_root: self._create_entry_at_root(
@@ -176,6 +254,7 @@ class NormalizedDatasetStore:
         benchmark_inputs = self._normalize_benchmark_inputs(benchmark_inputs, root=root)
         sequence_manifest = self._normalize_sequence_manifest(
             sequence_manifest,
+            profile=profile,
             benchmark_inputs=benchmark_inputs,
             input_root=root / "input",
         )
@@ -210,7 +289,7 @@ class NormalizedDatasetStore:
         profile: NormalizedDatasetProfile,
         source: NormalizableDatasetSource,
     ) -> NormalizedDatasetEntry:
-        """Prepare and persist one full-frame entry from a dataset source."""
+        """Prepare and persist one normalized entry from a dataset source."""
         return self._create_and_publish_entry(
             profile,
             lambda temp_root: self._create_entry_at_root(
@@ -252,11 +331,15 @@ class NormalizedDatasetStore:
         if manifest.timestamps_path is None:
             return manifest
         timestamps_ns = load_timestamps_ns(manifest.timestamps_path)
-        selected_indices = _selected_indices(timestamps_ns, frame_selection)
+        selected_indices, sampling_payload = _selected_indices_and_sampling_payload(timestamps_ns, frame_selection)
         output_dir.mkdir(parents=True, exist_ok=True)
         selected_timestamps_path = output_dir / "timestamps.json"
         selected_indices_path = output_dir / "source_frame_indices.json"
-        write_json(selected_timestamps_path, {"timestamps_ns": [timestamps_ns[index] for index in selected_indices]})
+        timestamp_payload: JsonObject = {
+            "timestamps_ns": [timestamps_ns[index] for index in selected_indices],
+            **sampling_payload,
+        }
+        write_json(selected_timestamps_path, timestamp_payload)
         write_json(selected_indices_path, {"source_frame_indices": selected_indices})
         return manifest.model_copy(
             update={
@@ -302,6 +385,16 @@ class NormalizedDatasetStore:
         if sequence_ref is None:
             raise RuntimeError("The normalized dataset entry does not include a replayable observation sequence.")
         index = load_observation_sequence_index(sequence_ref.index_path)
+        if sequence_ref.rgb_video_path is not None:
+            return VideoSequenceObservationSource(
+                video_path=sequence_ref.rgb_video_path,
+                payload_root=sequence_ref.payload_root,
+                rows=index.rows,
+                loop=loop,
+                replay_mode=replay_mode,
+                include_depth=include_depth,
+                depth_loader=load_depth_array,
+            )
         return ImageSequenceObservationSource(
             sequence_dir=sequence_ref.payload_root,
             rows=index.rows,
@@ -413,11 +506,28 @@ class NormalizedDatasetStore:
         self,
         manifest: SequenceManifest,
         *,
+        profile: NormalizedDatasetProfile,
         benchmark_inputs: PreparedBenchmarkInputs,
         input_root: Path,
     ) -> SequenceManifest:
         updates: dict[str, Path | None] = {"source_frame_indices_path": None}
-        if manifest.video_path is not None:
+        observation_sequence = benchmark_inputs.default_observation_sequence()
+        if manifest.video_path is not None and observation_sequence is not None:
+            index = ObservationSequenceIndex.model_validate_json(
+                observation_sequence.index_path.read_text(encoding="utf-8")
+            )
+            timestamps_path = input_root / "timestamps.json"
+            write_json(
+                timestamps_path,
+                {
+                    "timestamps_ns": [row.timestamp_ns for row in index.rows],
+                    **_stored_sampling_payload(profile.source_profile, index.rows),
+                },
+            )
+            updates["video_path"] = None
+            updates["rgb_dir"] = observation_sequence.payload_root / "rgb"
+            updates["timestamps_path"] = timestamps_path
+        elif manifest.video_path is not None:
             extracted = extract_video_frames(video_path=manifest.video_path, output_dir=input_root / "rgb")
             updates["video_path"] = None
             updates["rgb_dir"] = extracted.rgb_dir
@@ -433,18 +543,29 @@ class NormalizedDatasetStore:
                     f"{len(timestamps_ns)} timestamps in '{manifest.timestamps_path}' for "
                     f"{len(extracted.timestamps_ns)} extracted frame(s) from '{manifest.video_path}'."
                 )
-            write_json(timestamps_path, {"timestamps_ns": timestamps_ns})
+            write_json(
+                timestamps_path,
+                {
+                    "timestamps_ns": timestamps_ns,
+                    **_source_profile_sampling_payload(profile.source_profile, timestamps_ns),
+                },
+            )
             updates["timestamps_path"] = timestamps_path
         elif manifest.rgb_dir is not None:
             updates["rgb_dir"] = _copy_path(manifest.rgb_dir, input_root / "rgb")
         if manifest.timestamps_path is not None and "timestamps_path" not in updates:
-            updates["timestamps_path"] = _copy_path(
-                manifest.timestamps_path, input_root / manifest.timestamps_path.name
+            timestamps_path = input_root / "timestamps.json"
+            timestamps_ns = load_timestamps_ns(manifest.timestamps_path)
+            write_json(
+                timestamps_path,
+                {
+                    "timestamps_ns": timestamps_ns,
+                    **_source_profile_sampling_payload(profile.source_profile, timestamps_ns),
+                },
             )
+            updates["timestamps_path"] = timestamps_path
         if manifest.intrinsics_path is not None:
-            updates["intrinsics_path"] = _copy_path(
-                manifest.intrinsics_path, input_root / manifest.intrinsics_path.name
-            )
+            updates["intrinsics_path"] = _copy_path(manifest.intrinsics_path, input_root / "intrinsics.yaml")
         if manifest.rotation_metadata_path is not None:
             updates["rotation_metadata_path"] = _copy_path(
                 manifest.rotation_metadata_path, input_root / manifest.rotation_metadata_path.name
@@ -462,6 +583,21 @@ class NormalizedDatasetStore:
         *,
         root: Path,
     ) -> PreparedBenchmarkInputs:
+        trajectory_copies: dict[Path, Path] = {}
+        reference_trajectories = _normalize_reference_trajectories(
+            benchmark_inputs.reference_trajectories,
+            target_root=root / "benchmark" / "trajectories",
+            copies=trajectory_copies,
+        )
+        candidate_trajectories = _normalize_reference_trajectories(
+            benchmark_inputs.candidate_trajectories,
+            target_root=root / "benchmark" / "trajectories",
+            copies=trajectory_copies,
+        )
+        reference_clouds = _normalize_reference_clouds(
+            benchmark_inputs.reference_clouds,
+            target_root=root / "benchmark" / "reference_clouds",
+        )
         observation_sequences = []
         for index, ref in enumerate(benchmark_inputs.observation_sequences):
             target_root = _normalized_observation_sequence_root(
@@ -476,7 +612,19 @@ class NormalizedDatasetStore:
                 entry_root=root,
             )
             observation_sequences.append(normalized_ref)
-        return benchmark_inputs.model_copy(update={"observation_sequences": observation_sequences})
+        _remove_rebased_benchmark_sources(
+            source_inputs=benchmark_inputs,
+            kept_paths=_benchmark_artifact_paths([*reference_trajectories, *candidate_trajectories, *reference_clouds]),
+            entry_root=root,
+        )
+        return benchmark_inputs.model_copy(
+            update={
+                "reference_trajectories": reference_trajectories,
+                "candidate_trajectories": candidate_trajectories,
+                "reference_clouds": reference_clouds,
+                "observation_sequences": observation_sequences,
+            }
+        )
 
 
 def normalized_dataset_profile(
@@ -487,8 +635,9 @@ def normalized_dataset_profile(
     payload: JsonObject,
 ) -> NormalizedDatasetProfile:
     """Build a profile from source settings that change stored bytes."""
-    profile: dict[str, JsonValue] = dict(payload)
-    profile["sequence_id"] = sequence_id
+    profile: dict[str, JsonValue] = {
+        key: value for key, value in payload.items() if key not in {"dataset_id", "sequence_id", "source_id"}
+    }
     return NormalizedDatasetProfile(
         dataset_id=dataset_id,
         sequence_id=sequence_id,
@@ -516,43 +665,46 @@ def normalized_entry_analysis_summary(entry: NormalizedDatasetEntry) -> JsonObje
     """Return compact row-count metadata for one entry's analysis tables."""
     return {
         "stats_long_path": None if entry.stats_long_path is None else entry.stats_long_path.as_posix(),
-        "stats_long_row_count": _csv_row_count(entry.stats_long_path, STATS_LONG_HEADER),
+        "stats_long_row_count": len(_read_analysis_table(entry.stats_long_path, STATS_LONG_HEADER).index),
         "metadata_long_path": None if entry.metadata_long_path is None else entry.metadata_long_path.as_posix(),
-        "metadata_long_row_count": _csv_row_count(entry.metadata_long_path, METADATA_LONG_HEADER),
+        "metadata_long_row_count": len(_read_analysis_table(entry.metadata_long_path, METADATA_LONG_HEADER).index),
     }
+
+
+def load_normalized_entry_stats_table(entry: NormalizedDatasetEntry) -> pd.DataFrame:
+    """Load persisted long-form statistics as a dataframe."""
+    return _read_analysis_table(entry.stats_long_path, STATS_LONG_HEADER)
 
 
 def load_normalized_entry_stats(entry: NormalizedDatasetEntry) -> list[JsonObject]:
     """Load persisted long-form statistics rows for one normalized entry."""
-    return _read_analysis_csv(entry.stats_long_path, STATS_LONG_HEADER)
+    return load_normalized_entry_stats_table(entry).to_dict(orient="records")
+
+
+def load_normalized_entry_metadata_table(entry: NormalizedDatasetEntry) -> pd.DataFrame:
+    """Load persisted long-form metadata as a dataframe."""
+    return _read_analysis_table(entry.metadata_long_path, METADATA_LONG_HEADER)
 
 
 def load_normalized_entry_metadata(entry: NormalizedDatasetEntry) -> list[JsonObject]:
     """Load persisted long-form metadata rows for one normalized entry."""
-    return _read_analysis_csv(entry.metadata_long_path, METADATA_LONG_HEADER)
+    return load_normalized_entry_metadata_table(entry).to_dict(orient="records")
 
 
 def _validate_entry_analysis_tables(entry: NormalizedDatasetEntry) -> None:
     if entry.stats_long_path is not None:
-        _read_analysis_csv(entry.stats_long_path, STATS_LONG_HEADER)
+        _read_analysis_table(entry.stats_long_path, STATS_LONG_HEADER)
     if entry.metadata_long_path is not None:
-        _read_analysis_csv(entry.metadata_long_path, METADATA_LONG_HEADER)
+        _read_analysis_table(entry.metadata_long_path, METADATA_LONG_HEADER)
 
 
-def _csv_row_count(path: Path | None, header: tuple[str, ...]) -> int:
+def _read_analysis_table(path: Path | None, header: tuple[str, ...]) -> pd.DataFrame:
     if path is None:
-        return 0
-    return len(_read_analysis_csv(path, header))
-
-
-def _read_analysis_csv(path: Path | None, header: tuple[str, ...]) -> list[JsonObject]:
-    if path is None:
-        return []
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = DictReader(handle)
-        if tuple(reader.fieldnames or ()) != header:
-            raise RuntimeError(f"Normalized analysis table '{path}' has invalid CSV header {reader.fieldnames}.")
-        return [dict(row) for row in reader]
+        return pd.DataFrame(columns=header)
+    table = pd.read_csv(path, dtype=str, keep_default_na=False)
+    if tuple(table.columns) != header:
+        raise RuntimeError(f"Normalized analysis table '{path}' has invalid CSV header {list(table.columns)}.")
+    return table
 
 
 def _write_entry_analysis_tables(
@@ -564,17 +716,18 @@ def _write_entry_analysis_tables(
 ) -> tuple[Path, Path]:
     stats_path = root / STATS_LONG_FILENAME
     metadata_path = root / METADATA_LONG_FILENAME
-    _write_csv(stats_path, STATS_LONG_HEADER, _entry_stats_rows(profile, sequence_manifest, benchmark_inputs))
-    _write_csv(metadata_path, METADATA_LONG_HEADER, _entry_metadata_rows(profile, sequence_manifest, benchmark_inputs))
+    _write_analysis_table(
+        stats_path, STATS_LONG_HEADER, _entry_stats_rows(profile, sequence_manifest, benchmark_inputs)
+    )
+    _write_analysis_table(
+        metadata_path, METADATA_LONG_HEADER, _entry_metadata_rows(profile, sequence_manifest, benchmark_inputs)
+    )
     return stats_path.resolve(), metadata_path.resolve()
 
 
-def _write_csv(path: Path, header: tuple[str, ...], rows: list[JsonObject]) -> None:
+def _write_analysis_table(path: Path, header: tuple[str, ...], rows: list[JsonObject]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = DictWriter(handle, fieldnames=header)
-        writer.writeheader()
-        writer.writerows(rows)
+    pd.DataFrame(rows, columns=header).to_csv(path, index=False)
 
 
 def _entry_stats_rows(
@@ -613,12 +766,10 @@ def _entry_metadata_rows(
     profile: NormalizedDatasetProfile,
     sequence_manifest: SequenceManifest,
     benchmark_inputs: PreparedBenchmarkInputs,
+    timestamp_metadata: JsonObject | None = None,
 ) -> list[JsonObject]:
     rows = [
         _metadata_row(profile, scope="entry", key="schema_version", value=str(STORE_SCHEMA_VERSION)),
-        _metadata_row(profile, scope="entry", key="dataset_id", value=profile.dataset_id.value),
-        _metadata_row(profile, scope="entry", key="sequence_id", value=profile.sequence_id),
-        _metadata_row(profile, scope="entry", key="source_id", value=profile.source_id),
     ]
     for key, value in sorted(profile.source_profile.items()):
         rows.append(_metadata_row(profile, scope="profile", key=key, value=_metadata_value(value)))
@@ -628,13 +779,33 @@ def _entry_metadata_rows(
                 profile, scope="sequence", key="timestamps_path", value=sequence_manifest.timestamps_path.as_posix()
             )
         )
+        metadata = (
+            _read_timestamp_metadata(sequence_manifest.timestamps_path)
+            if timestamp_metadata is None
+            else timestamp_metadata
+        )
+        for key, value in metadata.items():
+            rows.append(_metadata_row(profile, scope="sequence", key=key, value=_metadata_value(value)))
     if sequence_manifest.rgb_dir is not None:
         rows.append(_metadata_row(profile, scope="sequence", key="rgb_dir", value=sequence_manifest.rgb_dir.as_posix()))
+    if sequence_manifest.video_path is not None:
+        rows.append(
+            _metadata_row(profile, scope="sequence", key="video_path", value=sequence_manifest.video_path.as_posix())
+        )
     for ref in benchmark_inputs.observation_sequences:
         rows.append(_metadata_row(profile, scope="observation_sequence", key="source_id", value=ref.source_id))
         rows.append(
             _metadata_row(profile, scope="observation_sequence", key="payload_root", value=ref.payload_root.as_posix())
         )
+        if ref.rgb_video_path is not None:
+            rows.append(
+                _metadata_row(
+                    profile,
+                    scope="observation_sequence",
+                    key="rgb_video_path",
+                    value=ref.rgb_video_path.as_posix(),
+                )
+            )
     return rows
 
 
@@ -658,6 +829,27 @@ def _manifest_frame_count(manifest: SequenceManifest, timestamps_ns: list[int]) 
     return sum(1 for path in manifest.rgb_dir.iterdir() if path.is_file())
 
 
+def _read_timestamp_metadata(path: Path) -> JsonObject:
+    if path.suffix != ".json":
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: value
+        for key, value in payload.items()
+        if key
+        in {
+            "requested_frame_stride",
+            "requested_target_fps",
+            "resolved_frame_stride",
+            "resolved_target_fps",
+            "frame_stride",
+            "target_fps",
+        }
+    }
+
+
 def _observation_sequence_stats_rows(
     profile: NormalizedDatasetProfile, ref: ObservationSequenceRef
 ) -> list[JsonObject]:
@@ -671,7 +863,12 @@ def _observation_sequence_stats_rows(
         subject=ref.source_id,
         values={
             "observation_frame_count": (frame_count, "count"),
-            "rgb_frame_count": (sum(1 for row in index.rows if row.rgb_path is not None), "count"),
+            "rgb_frame_count": (
+                frame_count
+                if ref.rgb_video_path is not None
+                else sum(1 for row in index.rows if row.rgb_path is not None),
+                "count",
+            ),
             "depth_frame_count": (depth_count, "count"),
             "depth_coverage_ratio": (0.0 if frame_count == 0 else depth_count / frame_count, "ratio"),
             "observation_duration_s": (duration_s, "s"),
@@ -762,6 +959,91 @@ def _mean_fps(frame_count: int, duration_s: float) -> float:
     return 0.0 if duration_s <= 0.0 else float(max(frame_count - 1, 0) / duration_s)
 
 
+def _selected_indices_and_sampling_payload(
+    timestamps_ns: list[int],
+    frame_selection: FrameSelectionConfig,
+) -> tuple[list[int], JsonObject]:
+    _validate_requested_target_fps(timestamps_ns, frame_selection)
+    stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+    selected_indices = list(range(0, len(timestamps_ns), stride))
+    selected_timestamps_ns = [timestamps_ns[index] for index in selected_indices]
+    return selected_indices, _sampling_payload(
+        requested_frame_stride=frame_selection.frame_stride,
+        requested_target_fps=frame_selection.target_fps,
+        resolved_frame_stride=stride,
+        resolved_target_fps=_mean_fps(len(selected_timestamps_ns), _duration_s_from_ns(selected_timestamps_ns)),
+    )
+
+
+def _stored_sampling_payload(source_profile: dict[str, Any], rows: list[Any]) -> JsonObject:
+    timestamps_ns = [int(row.timestamp_ns) for row in rows]
+    return _sampling_payload(
+        requested_frame_stride=int(source_profile.get("frame_stride", 1)),
+        requested_target_fps=_optional_float(source_profile.get("target_fps")),
+        resolved_frame_stride=_resolved_source_frame_stride(rows, source_profile),
+        resolved_target_fps=_mean_fps(len(timestamps_ns), _duration_s_from_ns(timestamps_ns)),
+    )
+
+
+def _source_profile_sampling_payload(source_profile: dict[str, Any], timestamps_ns: list[int]) -> JsonObject:
+    frame_selection = FrameSelectionConfig(
+        frame_stride=int(source_profile.get("frame_stride", 1)),
+        target_fps=_optional_float(source_profile.get("target_fps")),
+    )
+    stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+    selected_timestamps_ns = timestamps_ns[::stride]
+    return _sampling_payload(
+        requested_frame_stride=frame_selection.frame_stride,
+        requested_target_fps=frame_selection.target_fps,
+        resolved_frame_stride=stride,
+        resolved_target_fps=_mean_fps(len(selected_timestamps_ns), _duration_s_from_ns(selected_timestamps_ns)),
+    )
+
+
+def _sampling_payload(
+    *,
+    requested_frame_stride: int,
+    requested_target_fps: float | None,
+    resolved_frame_stride: int,
+    resolved_target_fps: float,
+) -> JsonObject:
+    return {
+        "requested_frame_stride": requested_frame_stride,
+        "requested_target_fps": requested_target_fps,
+        "resolved_frame_stride": resolved_frame_stride,
+        "resolved_target_fps": resolved_target_fps,
+        "frame_stride": resolved_frame_stride,
+        "target_fps": resolved_target_fps,
+    }
+
+
+def _resolved_source_frame_stride(rows: list[Any], source_profile: dict[str, Any]) -> int:
+    indices = [int(row.provenance.source_frame_index) for row in rows if row.provenance.source_frame_index is not None]
+    if len(indices) < 2:
+        return int(source_profile.get("frame_stride", 1))
+    deltas = [right - left for left, right in zip(indices, indices[1:], strict=False)]
+    positive = [delta for delta in deltas if delta > 0]
+    return int(round(float(np.median(positive)))) if positive else int(source_profile.get("frame_stride", 1))
+
+
+def _validate_requested_target_fps(
+    timestamps_ns: list[int],
+    frame_selection: FrameSelectionConfig | None,
+) -> None:
+    if frame_selection is None or frame_selection.target_fps is None:
+        return
+    stored_fps = _mean_fps(len(timestamps_ns), _duration_s_from_ns(timestamps_ns))
+    if stored_fps > 0.0 and frame_selection.target_fps > stored_fps * 1.01:
+        raise ValueError(
+            "Requested target_fps would require upsampling normalized observations: "
+            f"requested={frame_selection.target_fps:.6g}, stored={stored_fps:.6g}."
+        )
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
 def _stats_rows(
     profile: NormalizedDatasetProfile,
     *,
@@ -805,6 +1087,87 @@ def _csv_value(value: int | float | str) -> str:
 
 def _is_stale_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
     return entry.schema_version != STORE_SCHEMA_VERSION or profile.schema_version != STORE_SCHEMA_VERSION
+
+
+def _compatible_entry_identity(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
+    if entry.dataset_id is not profile.dataset_id:
+        return False
+    if entry.sequence_id != profile.sequence_id or entry.source_id != profile.source_id:
+        return False
+    try:
+        entry_profile = NormalizedDatasetProfile.model_validate(entry.profile)
+    except Exception:
+        return False
+    return entry.schema_version == STORE_SCHEMA_VERSION and entry_profile.schema_version == STORE_SCHEMA_VERSION
+
+
+def _compatible_entry_profile(
+    *,
+    requested: NormalizedDatasetProfile,
+    selected: NormalizedDatasetProfile,
+    mismatch: dict[str, Any],
+) -> bool:
+    if requested.dataset_id is not selected.dataset_id:
+        return False
+    if requested.sequence_id != selected.sequence_id or requested.source_id != selected.source_id:
+        return False
+    sampling_fields = {"frame_stride", "target_fps"}
+    missing_from_request = set(_json_string_list(mismatch["missing_from_request"]))
+    missing_from_entry = set(_json_string_list(mismatch["missing_from_entry"]))
+    mismatched_fields = set(_json_object(mismatch["mismatched_fields"]))
+    return missing_from_request <= sampling_fields and not missing_from_entry and mismatched_fields <= sampling_fields
+
+
+def _validate_read_frame_selection(
+    entry: NormalizedDatasetEntry,
+    frame_selection: FrameSelectionConfig | None,
+) -> None:
+    if frame_selection is None:
+        return
+    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    if manifest.timestamps_path is not None:
+        _validate_requested_target_fps(load_timestamps_ns(manifest.timestamps_path), frame_selection)
+
+
+def _profile_mismatch_report(*, requested: dict[str, Any], selected: dict[str, Any]) -> dict[str, Any]:
+    requested_flat = _flatten_profile(requested)
+    selected_flat = _flatten_profile(selected)
+    requested_keys = set(requested_flat)
+    selected_keys = set(selected_flat)
+    common_keys = requested_keys & selected_keys
+    mismatched = {
+        key: {"requested": requested_flat[key], "selected": selected_flat[key]}
+        for key in sorted(common_keys)
+        if requested_flat[key] != selected_flat[key]
+    }
+    return {
+        "missing_from_request": sorted(selected_keys - requested_keys),
+        "missing_from_entry": sorted(requested_keys - selected_keys),
+        "mismatched_fields": mismatched,
+    }
+
+
+def _flatten_profile(payload: dict[str, Any], *, prefix: str = "") -> dict[str, JsonValue]:
+    flattened: dict[str, JsonValue] = {}
+    for key, value in payload.items():
+        dotted = key if not prefix else f"{prefix}.{key}"
+        if isinstance(value, dict):
+            flattened.update(_flatten_profile(value, prefix=dotted))
+        else:
+            flattened[dotted] = value
+    return flattened
+
+
+def _json_string_list(value: Any) -> list[str]:
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    raise TypeError(f"Expected list[str], got {value!r}.")
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    raise TypeError(f"Expected JSON object, got {value!r}.")
 
 
 def _stale_schema_issue(
@@ -860,7 +1223,7 @@ def _validate_manifest_paths(root: Path, manifest: SequenceManifest) -> None:
 
 
 def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchmarkInputs) -> None:
-    for trajectory in benchmark_inputs.reference_trajectories:
+    for trajectory in [*benchmark_inputs.reference_trajectories, *benchmark_inputs.candidate_trajectories]:
         _ensure_existing_under(root, trajectory.path)
         _ensure_optional_existing_under(root, trajectory.metadata_path)
     for cloud in benchmark_inputs.reference_clouds:
@@ -869,7 +1232,10 @@ def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchm
     for ref in benchmark_inputs.observation_sequences:
         _ensure_existing_under(root, ref.index_path)
         _ensure_existing_under(root, ref.payload_root)
+        _ensure_optional_existing_under(root, ref.rgb_video_path)
         index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
+        if ref.rgb_video_path is None and any(row.rgb_path is None for row in index.rows):
+            raise RuntimeError("Observation rows without rgb_path require ObservationSequenceRef.rgb_video_path.")
         for row in index.rows:
             _ensure_optional_existing_under(
                 ref.payload_root, _resolve_observation_payload(ref.payload_root, row.rgb_path)
@@ -967,21 +1333,42 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
     temp_benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
         benchmark_inputs_path.read_text(encoding="utf-8")
     )
-    sequence_manifest = _rebase_model_paths(temp_sequence_manifest, old_root=old_root, new_root=new_root)
-    benchmark_inputs = _rebase_model_paths(temp_benchmark_inputs, old_root=old_root, new_root=new_root)
-    entry = _rebase_model_paths(
-        NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
-        old_root=old_root,
-        new_root=new_root,
+    timestamp_metadata = (
+        {}
+        if temp_sequence_manifest.timestamps_path is None
+        else _read_timestamp_metadata(temp_sequence_manifest.timestamps_path)
+    )
+    sequence_manifest = cast(
+        SequenceManifest,
+        _rebase_model_paths(temp_sequence_manifest, old_root=old_root, new_root=new_root),
+    )
+    benchmark_inputs = cast(
+        PreparedBenchmarkInputs,
+        _rebase_model_paths(temp_benchmark_inputs, old_root=old_root, new_root=new_root),
+    )
+    entry = cast(
+        NormalizedDatasetEntry,
+        _rebase_model_paths(
+            NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+            old_root=old_root,
+            new_root=new_root,
+        ),
     )
     profile = NormalizedDatasetProfile.model_validate(entry.profile)
     stats_long_path = root / STATS_LONG_FILENAME
     metadata_long_path = root / METADATA_LONG_FILENAME
-    _write_csv(
+    _write_analysis_table(
         stats_long_path, STATS_LONG_HEADER, _entry_stats_rows(profile, temp_sequence_manifest, temp_benchmark_inputs)
     )
-    _write_csv(
-        metadata_long_path, METADATA_LONG_HEADER, _entry_metadata_rows(profile, sequence_manifest, benchmark_inputs)
+    _write_analysis_table(
+        metadata_long_path,
+        METADATA_LONG_HEADER,
+        _entry_metadata_rows(
+            profile,
+            sequence_manifest,
+            benchmark_inputs,
+            timestamp_metadata=timestamp_metadata,
+        ),
     )
     entry = entry.model_copy(
         update={
@@ -1047,7 +1434,177 @@ def _normalize_observation_sequence_ref(ref: ObservationSequenceRef, *, target_r
     index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
     index_path = payload_root / ref.index_path.name
     write_json(index_path, index)
-    return ref.model_copy(update={"index_path": index_path.resolve(), "payload_root": payload_root})
+    return ref.model_copy(
+        update={
+            "index_path": index_path.resolve(),
+            "payload_root": payload_root,
+            "rgb_video_path": _rebase_observation_payload_path(
+                ref.rgb_video_path, old_root=ref.payload_root, new_root=payload_root
+            ),
+        }
+    )
+
+
+def _normalize_reference_trajectories(
+    trajectories: list[ReferenceTrajectoryRef],
+    *,
+    target_root: Path,
+    copies: dict[Path, Path],
+) -> list[ReferenceTrajectoryRef]:
+    source_counts: dict[str, int] = {}
+    for trajectory in trajectories:
+        source_counts[trajectory.source.value] = source_counts.get(trajectory.source.value, 0) + 1
+    return [
+        _normalize_reference_trajectory(
+            trajectory,
+            target_root=target_root,
+            slug=_trajectory_slug(trajectory, duplicate_source=source_counts[trajectory.source.value] > 1),
+            copies=copies,
+        )
+        for trajectory in trajectories
+    ]
+
+
+def _normalize_reference_trajectory(
+    trajectory: ReferenceTrajectoryRef,
+    *,
+    target_root: Path,
+    slug: str,
+    copies: dict[Path, Path],
+) -> ReferenceTrajectoryRef:
+    target_path = target_root / f"{slug}.tum"
+    normalized_path = _normalize_trajectory_once(
+        trajectory.path,
+        target_path,
+        copies,
+        target_frame=trajectory.target_frame or "world",
+    )
+    metadata_path = target_root / f"{slug}.metadata.json"
+    metadata_payload = {
+        "source": trajectory.source.value,
+        "target_frame": trajectory.target_frame,
+        "native_frame": trajectory.native_frame,
+        "coordinate_status": None if trajectory.coordinate_status is None else trajectory.coordinate_status.value,
+        "trajectory_origin": "first_pose",
+        "pose_normalization": "relative_to_first_pose",
+    }
+    if trajectory.metadata_path is not None:
+        source_metadata = json.loads(trajectory.metadata_path.read_text(encoding="utf-8"))
+        if isinstance(source_metadata, dict):
+            metadata_payload = source_metadata | metadata_payload
+    write_json(metadata_path, metadata_payload)
+    return trajectory.model_copy(update={"path": normalized_path, "metadata_path": metadata_path})
+
+
+def _normalize_trajectory_once(
+    source: Path,
+    target: Path,
+    copies: dict[Path, Path],
+    *,
+    target_frame: str,
+) -> Path:
+    resolved_source = source.resolve()
+    if resolved_source not in copies:
+        trajectory = trajectory_relative_to_first_pose(load_tum_trajectory(source, canonicalize_timestamps=True))
+        poses = [
+            FrameTransform.from_matrix(
+                np.asarray(pose, dtype=np.float64),
+                target_frame=target_frame,
+                source_frame="camera",
+            )
+            for pose in trajectory.poses_se3
+        ]
+        copies[resolved_source] = write_tum_trajectory(
+            target,
+            poses,
+            [float(timestamp_s) for timestamp_s in trajectory.timestamps],
+        )
+    return copies[resolved_source]
+
+
+def _trajectory_slug(trajectory: ReferenceTrajectoryRef, *, duplicate_source: bool) -> str:
+    slug = trajectory.source.value
+    if (
+        duplicate_source
+        and trajectory.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
+        and trajectory.path.stem.endswith("_aligned_to_gt")
+    ):
+        return f"{slug}_aligned_to_gt"
+    return slug
+
+
+def _normalize_reference_clouds(
+    clouds: list[ReferenceCloudRef],
+    *,
+    target_root: Path,
+) -> list[ReferenceCloudRef]:
+    copies: dict[Path, Path] = {}
+    normalized = []
+    for cloud in clouds:
+        slug = cloud.source.value
+        normalized.append(
+            cloud.model_copy(
+                update={
+                    "path": _copy_once(cloud.path, target_root / f"{slug}.ply", copies),
+                    "metadata_path": _copy_once(cloud.metadata_path, target_root / f"{slug}.metadata.json", copies),
+                }
+            )
+        )
+    return normalized
+
+
+def _remove_rebased_benchmark_sources(
+    *,
+    source_inputs: PreparedBenchmarkInputs,
+    kept_paths: set[Path],
+    entry_root: Path,
+) -> None:
+    for ref in (
+        source_inputs.reference_trajectories + source_inputs.candidate_trajectories + source_inputs.reference_clouds
+    ):
+        for path in (ref.path, ref.metadata_path):
+            _remove_rebased_benchmark_path(path, kept_paths=kept_paths, entry_root=entry_root)
+
+
+def _benchmark_artifact_paths(refs: list[ReferenceTrajectoryRef | ReferenceCloudRef]) -> set[Path]:
+    return {path.resolve() for ref in refs for path in (ref.path, ref.metadata_path) if path is not None}
+
+
+def _remove_rebased_benchmark_path(path: Path | None, *, kept_paths: set[Path], entry_root: Path) -> None:
+    if path is None:
+        return
+    source = path.resolve()
+    try:
+        source.relative_to(entry_root.resolve())
+    except ValueError:
+        return
+    if source in kept_paths or not source.is_file():
+        return
+    source.unlink()
+    parent = source.parent
+    while parent != entry_root and parent.exists():
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+
+
+def _copy_once(source: Path, target: Path, copies: dict[Path, Path]) -> Path:
+    resolved_source = source.resolve()
+    if resolved_source not in copies:
+        copies[resolved_source] = _copy_path(source, target)
+    return copies[resolved_source]
+
+
+def _rebase_observation_payload_path(path: Path | None, *, old_root: Path, new_root: Path) -> Path | None:
+    if path is None:
+        return None
+    resolved = path if path.is_absolute() else old_root / path
+    try:
+        return (new_root / resolved.resolve().relative_to(old_root.resolve())).resolve()
+    except ValueError:
+        return _copy_path(resolved, new_root / path.name)
 
 
 def _normalize_advio_assets(assets: AdvioManifestAssets, *, input_root: Path) -> AdvioManifestAssets:
@@ -1076,9 +1633,10 @@ def _copy_optional_path(source: Path | None, target: Path) -> Path | None:
 
 
 def _normalized_observation_sequence_root(*, root: Path, sequence_count: int, index: int) -> Path:
-    if sequence_count == 1:
-        return root / "observations"
-    return root / "observations" / str(index)
+    del index
+    if sequence_count != 1:
+        raise RuntimeError("Normalized entries must contain exactly one observation sequence.")
+    return root / "observations"
 
 
 def _remove_staged_observation_sequence(*, source_root: Path, normalized_root: Path, entry_root: Path) -> None:
@@ -1119,7 +1677,7 @@ def _select_observation_sequence(
 ) -> ObservationSequenceRef:
     index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
     timestamps_ns = [row.timestamp_ns for row in index.rows]
-    selected_indices = _selected_indices(timestamps_ns, frame_selection)
+    selected_indices, _sampling_payload = _selected_indices_and_sampling_payload(timestamps_ns, frame_selection)
     selected_rows = [
         index.rows[source_index].model_copy(update={"seq": seq}) for seq, source_index in enumerate(selected_indices)
     ]
@@ -1128,11 +1686,6 @@ def _select_observation_sequence(
     index_path = output_dir / f"{ref.source_id}_{ref.sequence_id}_observations.json"
     write_json(index_path, selected)
     return ref.model_copy(update={"index_path": index_path.resolve(), "observation_count": len(selected_rows)})
-
-
-def _selected_indices(timestamps_ns: list[int], frame_selection: FrameSelectionConfig) -> list[int]:
-    stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
-    return list(range(0, len(timestamps_ns), stride))
 
 
 class NormalizableDatasetSource(OfflineSequenceSource, BenchmarkInputSource, Protocol):

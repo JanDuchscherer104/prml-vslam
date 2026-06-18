@@ -16,7 +16,7 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudSource
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
@@ -81,33 +81,38 @@ def _source_reference_cloud_available(
     path_config: PathConfig,
 ) -> bool:
     if isinstance(source_backend, AdvioSourceConfig):
+        dataset_id = DatasetId.ADVIO
+    elif isinstance(source_backend, Record3DDatasetSourceConfig):
+        dataset_id = DatasetId.RECORD3D
+    elif isinstance(source_backend, TumRgbdSourceConfig):
+        dataset_id = DatasetId.TUM_RGBD
+    else:
         return False
-    if isinstance(source_backend, Record3DDatasetSourceConfig):
-        return preferred_source in {None, ReferenceCloudSource.RECORD3D_LIDAR}
-    if isinstance(source_backend, TumRgbdSourceConfig):
-        return preferred_source in {None, ReferenceCloudSource.TUM_RGBD} and _tum_rgbd_reference_cloud_inputs_available(
-            sequence_id=source_backend.sequence_id,
-            path_config=path_config,
-        )
-    return False
-
-
-def _tum_rgbd_reference_cloud_inputs_available(*, sequence_id: str, path_config: PathConfig) -> bool:
-    source_backend = TumRgbdSourceConfig(sequence_id=sequence_id)
-    service = dataset_service(DatasetId.TUM_RGBD, path_config)
-    profile = normalized_profile_for_dataset(
-        dataset_id=DatasetId.TUM_RGBD,
-        service=service,
-        source_config=source_backend,
-    )
     try:
-        entry = normalized_store_for_service(DatasetId.TUM_RGBD, path_config).load_entry(profile)
+        service = dataset_service(dataset_id, path_config)
+        profile = normalized_profile_for_dataset(
+            dataset_id=dataset_id,
+            service=service,
+            source_config=source_backend,
+        )
+        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+            profile,
+            frame_selection=FrameSelectionConfig(
+                frame_stride=source_backend.frame_stride,
+                target_fps=source_backend.target_fps,
+            ),
+        )
         benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
             entry.benchmark_inputs_path.read_text(encoding="utf-8")
         )
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return False
-    return any(ref.path.exists() and ref.metadata_path.exists() for ref in benchmark_inputs.reference_clouds)
+    return any(
+        ref.path.exists()
+        and ref.metadata_path.exists()
+        and (preferred_source is None or ref.source is preferred_source)
+        for ref in benchmark_inputs.reference_clouds
+    )
 
 
 __all__ = ["CloudAlignmentStageConfig"]

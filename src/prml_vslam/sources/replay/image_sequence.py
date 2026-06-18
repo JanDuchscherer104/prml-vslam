@@ -14,8 +14,6 @@ from prml_vslam.interfaces import Observation, ObservationIndexEntry
 
 from .clock import ReplayClock, ReplayMode
 
-DepthLoader = Callable[[Path], NDArray[np.float32]]
-
 
 class ImageSequenceObservationSource:
     """Replay pre-indexed timestamped image frames as a live observation stream.
@@ -36,7 +34,7 @@ class ImageSequenceObservationSource:
         loop: bool = False,
         replay_mode: ReplayMode = ReplayMode.FAST_AS_POSSIBLE,
         include_depth: bool = True,
-        depth_loader: DepthLoader | None = None,
+        depth_loader: Callable[[Path], NDArray[np.float32]] | None = None,
     ) -> None:
         """Initialize the sequence playback state.
 
@@ -125,21 +123,22 @@ class ImageSequenceObservationSource:
             depth_m = self._load_depth(row)
             if row.rgb_path is None:
                 raise ValueError(f"Image sequence row seq={row.seq} is missing an RGB payload.")
+            observation_source_frame_index = (
+                row.provenance.source_frame_index
+                if row.provenance.source_frame_index is not None
+                else source_frame_index
+            )
             observation = Observation(
                 seq=self._emitted_seq,
                 timestamp_ns=row.timestamp_ns,
-                source_frame_index=(
-                    row.provenance.source_frame_index
-                    if row.provenance.source_frame_index is not None
-                    else source_frame_index
-                ),
+                source_frame_index=observation_source_frame_index,
                 loop_index=self._loop_index,
                 arrival_timestamp_s=time.time(),
                 rgb=_load_rgb_image(_resolve_payload(row.rgb_path, self.sequence_dir)),
                 depth_m=depth_m,
                 intrinsics=row.intrinsics,
                 T_world_camera=row.T_world_camera,
-                provenance=row.provenance,
+                provenance=row.provenance.model_copy(update={"source_frame_index": observation_source_frame_index}),
             )
             self._emitted_seq += 1
             return observation

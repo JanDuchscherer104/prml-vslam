@@ -30,8 +30,8 @@ This document is the concise source of truth for `prml_vslam.sources`.
 
 - `SequenceManifest` remains the normalized offline boundary.
 - Normalized dataset entries must use a canonical observation layout: a single
-  observation sequence lives at `<entry>/observations/`; `<entry>/observations/0/`
-  is valid only when the entry contains multiple observation sequences.
+  observation sequence lives at `<entry>/observations/`. Multi-sequence
+  normalized observation layouts are not supported.
 - Source preparation must stay source-faithful and method-agnostic.
 - `dataset_serving` remains ADVIO-owned because it selects ADVIO pose provider
   and frame semantics; it is not promoted to the common source backend base.

@@ -19,13 +19,24 @@ from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, Record3DTransportId, SequenceManifest
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    Record3DTransportId,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
+    SequenceManifest,
+)
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalization import normalized_profile_for_dataset
+from prml_vslam.sources.datasets.normalized_store import normalized_store_for_path_config
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig, RunArtifactPaths
@@ -232,6 +243,61 @@ def test_tum_rgbd_cloud_alignment_plan_requires_normalized_reference_cloud_witho
     )
 
 
+def test_tum_rgbd_cloud_alignment_uses_exact_normalized_reference_cloud_entry(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=tmp_path / ".data")
+    source_backend = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
+    service = TumRgbdDatasetService(path_config)
+    profile = normalized_profile_for_dataset(
+        dataset_id=DatasetId.TUM_RGBD,
+        service=service,
+        source_config=source_backend,
+    )
+    cloud_path = tmp_path / "source-cloud.ply"
+    metadata_path = tmp_path / "source-cloud.metadata.json"
+    cloud_path.write_text(
+        "ply\nformat ascii 1.0\nelement vertex 0\nproperty float x\nproperty float y\nproperty float z\nend_header\n",
+        encoding="utf-8",
+    )
+    write_json(metadata_path, {"source": "tum_rgbd"})
+    entry = normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config).create_entry(
+        profile=profile,
+        sequence_manifest=SequenceManifest(sequence_id="freiburg1_desk", dataset_id=DatasetId.TUM_RGBD),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_clouds=[
+                ReferenceCloudRef(
+                    source=ReferenceCloudSource.TUM_RGBD,
+                    path=cloud_path,
+                    metadata_path=metadata_path,
+                    target_frame="tum_rgbd_world",
+                    native_frame="tum_rgbd_world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ]
+        ),
+    )
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment-present-normalized-reference-cloud",
+        output_dir=path_config.artifacts_dir,
+        source_backend=source_backend,
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert stage.available is True
+
+    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs.reference_clouds[0].metadata_path.unlink()
+    unavailable_plan = config.compile_plan(path_config)
+    unavailable_stage = next(stage for stage in unavailable_plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert unavailable_stage.available is False
+
+
 def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> None:
     config = build_run_config(
         experiment_name="placement-policy",
@@ -266,17 +332,20 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
 
     run_config_plan = run_config.compile_plan(path_config)
 
-    assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
-    assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
+    assert isinstance(run_config.stages.source.backend, Record3DDatasetSourceConfig)
+    assert run_config.stages.source.backend.sequence_id == "2026-06-03--18-29-08"
     assert run_config.stages.source.backend.frame_stride == 1
+    assert run_config.stages.source.backend.target_fps == 15.0
     assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
-    assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
-    assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
+    assert run_config_plan.source.source_id == "record3d_dataset"
+    assert run_config_plan.source.sequence_id == "2026-06-03--18-29-08"
     assert run_config_plan.source.replay_mode == "fast_as_possible"
-    assert run_config_plan.source.metadata["dataset_id"] == DatasetId.TUM_RGBD.value
+    assert run_config_plan.source.metadata["dataset_id"] == DatasetId.RECORD3D.value
     assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is True
+    assert run_config.stages.reconstruction.enabled is False
     assert run_config.stages.reconstruction.backend.extract_mesh is True
+    assert run_config.stages.align_cloud.enabled is False
+    assert run_config.stages.evaluate_cloud.enabled is False
     assert run_config.stages.evaluate_trajectory.enabled is True
     assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
     assert run_config.visualization.mesh_decimation_keep_ratio == 0.25

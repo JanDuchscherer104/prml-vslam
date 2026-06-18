@@ -77,6 +77,8 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
         replay_mode: ReplayMode = ReplayMode.REALTIME,
         materialization: Record3DMaterializationConfig | None = None,
         reference_cloud: ReferenceCloudConfig | None = None,
+        rgb_max_width_px: int = 392,
+        rgb_dimension_multiple: int = 14,
         normalized_store: NormalizedDatasetStore | None = None,
         normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
@@ -87,6 +89,8 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
             sequence_kwargs={
                 "materialization": materialization or Record3DMaterializationConfig(),
                 "reference_cloud": reference_cloud or ReferenceCloudConfig(min_confidence=1),
+                "rgb_max_width_px": rgb_max_width_px,
+                "rgb_dimension_multiple": rgb_dimension_multiple,
             },
             normalized_store=normalized_store,
             normalized_profile=normalized_profile,

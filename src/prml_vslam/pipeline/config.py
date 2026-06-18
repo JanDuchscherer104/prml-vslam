@@ -44,7 +44,7 @@ from prml_vslam.sources.config import (
     VideoSourceConfig,
 )
 from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
@@ -377,7 +377,13 @@ def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: 
                 return None
         service = dataset_service(dataset_id, path_config)
         profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
-        entry = normalized_store_for_service(dataset_id, path_config).load_entry(profile)
+        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+            profile,
+            frame_selection=FrameSelectionConfig(
+                frame_stride=source_backend.frame_stride,
+                target_fps=source_backend.target_fps,
+            ),
+        )
         manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
         if manifest.timestamps_path is None:
             return None

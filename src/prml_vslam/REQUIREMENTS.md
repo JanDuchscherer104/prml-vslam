@@ -50,13 +50,13 @@ Use this file for package-root ownership rules and cross-package contract constr
     and DTOs such as `PreparedBenchmarkInputs`
   - owns reusable normalized dataset stores under
     `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`; store entries
-    persist full-frame source payloads once plus source-owned long-form
-    Core/Motion statistics and metadata tables, while run-local sampling policy
-    such as `frame_stride` and `target_fps` is applied by readers through
-    lightweight selected-index sidecars
+    persist source-selected replay payloads once plus source-owned long-form
+    Core/Motion statistics and metadata tables; normalize-time `frame_stride`,
+    `target_fps`, RGB preprocessing, and reference-cloud sampling are
+    byte-affecting source profile settings, while runtime-only downsampling is
+    applied by readers through lightweight selected-index sidecars
   - keeps normalized entry layout canonical: the common single RGB-D observation
-    sequence lives at `<entry>/observations/`, indexed observation subdirectories
-    are used only for multiple sequences, and Record3D depth stays benchmark
+    sequence lives at `<entry>/observations/`, and Record3D depth stays benchmark
     observation material without duplicating matching RGB payloads
   - preserves full-scene dataset fetches and dataset-specific auxiliary/reference
     assets, including ADVIO provider trajectories and TUM RGB-D reference-cloud

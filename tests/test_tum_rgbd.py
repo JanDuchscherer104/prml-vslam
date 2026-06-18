@@ -134,11 +134,32 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert reference_cloud_metadata["source"] == "tum_rgbd"
     assert reference_cloud_metadata["depth_scale_to_m"] == 1.0 / 5000.0
     assert reference_cloud_metadata["payload_pose_semantics"] == "registered_depth_unprojected_by_ground_truth_pose"
-    assert reference_cloud_metadata["method_sample_count"] == 3
-    assert reference_cloud_metadata["reference_cloud_sampled_frame_indices"] == [0, 1, 2]
-    assert reference_cloud_metadata["point_count"] == len(reference_cloud_points)
+    assert reference_cloud_metadata["source_frame_indices"] == [0, 1, 2]
+    assert reference_cloud_metadata["point_count_after_sampling"] == len(reference_cloud_points)
     assert len(reference_cloud_points) > 0
     assert benchmark_inputs.observation_sequences[0].observation_count == 3
+    observations = list(FileObservationSequenceLoader(benchmark_inputs.observation_sequences[0]).iter_observations())
+    observation_index = json.loads(benchmark_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
+    rgb_metadata = json.loads(
+        (benchmark_inputs.observation_sequences[0].payload_root / "rgb.metadata.json").read_text(encoding="utf-8")
+    )
+    assert benchmark_inputs.observation_sequences[0].raster_space == "display_downscaled"
+    assert rgb_metadata == {
+        "dimension_multiple": 14,
+        "raster_space": "display_downscaled",
+        "rgb_max_width_px": 392,
+        "source_raster_space": "source",
+    }
+    assert observations[0].rgb is not None
+    assert observations[0].depth_m is not None
+    assert observations[0].rgb.shape == (42, 56, 3)
+    assert observations[0].depth_m.shape == (42, 56)
+    assert observations[0].intrinsics is not None
+    assert observations[0].intrinsics.width_px == 56
+    assert observations[0].intrinsics.height_px == 42
+    assert observation_index["rows"][0]["provenance"]["raster_space"] == "display_downscaled"
+    assert observation_index["rows"][0]["provenance"]["original_width"] == 64
+    assert observation_index["rows"][0]["provenance"]["original_height"] == 48
     assert load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path).positions_xyz.shape == (3, 3)
     assert list_sequence_slugs(DatasetId.TUM_RGBD, tmp_path) == ["freiburg1_desk"]
     assert (
@@ -164,8 +185,7 @@ def test_tum_rgbd_reference_cloud_uses_exact_method_sample_selection(tmp_path: P
         benchmark_inputs.reference_clouds[0].metadata_path == tmp_path / "reference" / "reference_cloud.metadata.json"
     )
     assert [row["provenance"]["source_frame_index"] for row in observation_index["rows"]] == [0, 2, 4]
-    assert metadata["reference_cloud_sampled_frame_indices"] == [0, 2, 4]
-    assert metadata["method_sample_count"] == 3
+    assert metadata["source_frame_indices"] == [0, 2, 4]
     assert metadata["source_observation_index_path"] == str(benchmark_inputs.observation_sequences[0].index_path)
     assert not (tmp_path / "benchmark" / "selected_associations.tum_rgbd.json").exists()
 
@@ -186,22 +206,28 @@ def test_tum_rgbd_reference_cloud_masks_invalid_depth_without_reference_only_fra
 
     assert points.shape == (95, 3)
     assert not np.any(np.all(np.isclose(points, 0.0), axis=1))
-    assert metadata["method_sample_count"] == 24
-    assert metadata["frame_count"] == 24
-    assert metadata["sampled_frame_count"] == 24
-    assert metadata["contributing_source_frame_indices"] == list(range(24))
     assert metadata["source_frame_indices"] == list(range(24))
-    assert metadata["reference_cloud_sampled_frame_indices"] == list(range(24))
     assert metadata["depth_stride_px"] == 8
-    assert metadata["depth_pixel_stride_px"] == 8
     assert metadata["max_points"] == 100_000
-    assert metadata["max_reference_points"] == 100_000
-    assert metadata["seed"] == 17
+    assert metadata["random_seed"] == 17
     assert metadata["device"] == "CPU:0"
     assert metadata["target_frame"] == "tum_rgbd_world"
     assert metadata["source_observation_index_path"].endswith("observations.json")
-    assert "reference_cloud_frame_stride" not in metadata
-    assert "reference_cloud_max_frames" not in metadata
+    for stale_key in (
+        "contributing_source_frame_indices",
+        "depth_pixel_stride_px",
+        "frame_count",
+        "max_reference_points",
+        "method_sample_count",
+        "point_count",
+        "point_sampling_seed",
+        "reference_cloud_frame_stride",
+        "reference_cloud_max_frames",
+        "reference_cloud_sampled_frame_indices",
+        "sampled_frame_count",
+        "seed",
+    ):
+        assert stale_key not in metadata
 
 
 def test_tum_rgbd_reference_cloud_ply_includes_sampled_rgb_colors(tmp_path: Path) -> None:
@@ -230,17 +256,13 @@ def test_tum_rgbd_reference_cloud_subsamples_points_after_full_selection(tmp_pat
     second_points = load_point_cloud_ply(second_inputs.reference_clouds[0].path)
     second_metadata = json.loads(second_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
 
-    assert first_metadata["point_count_before_sampling"] == 122_880
-    assert first_metadata["point_count_after_sampling"] == 100_000
-    assert first_metadata["point_count"] == 100_000
+    assert first_metadata["point_count_before_sampling"] == 72_030
+    assert first_metadata["point_count_after_sampling"] == 72_030
     assert first_metadata["max_points"] == 100_000
-    assert first_metadata["sampled_frame_count"] == 30
-    assert first_metadata["frame_count"] == 30
-    assert first_metadata["reference_cloud_sampled_frame_indices"] == list(range(30))
-    assert first_metadata["point_sampling_policy"] == "random_without_replacement"
-    assert first_metadata["seed"] == 17
-    assert first_metadata["point_sampling_seed"] == 17
-    assert second_metadata["point_count"] == first_metadata["point_count"]
+    assert first_metadata["source_frame_indices"] == list(range(30))
+    assert first_metadata["point_sampling_policy"] == "none"
+    assert first_metadata["random_seed"] == 17
+    assert second_metadata["point_count_after_sampling"] == first_metadata["point_count_after_sampling"]
     np.testing.assert_allclose(second_points, first_points)
 
 
@@ -261,7 +283,7 @@ def test_tum_rgbd_reference_cloud_config_controls_sampling_and_metadata(tmp_path
     assert points.shape == (5, 3)
     assert metadata["depth_stride_px"] == 4
     assert metadata["max_points"] == 5
-    assert metadata["seed"] == 11
+    assert metadata["random_seed"] == 11
     assert metadata["min_confidence"] is None
     assert metadata["point_count_before_sampling"] == 48
     assert metadata["point_sampling_policy"] == "random_without_replacement"
@@ -278,6 +300,9 @@ def test_tum_rgbd_source_config_accepts_reference_cloud_block() -> None:
         depth_stride_px = 4
         max_points = 64
         random_seed = 5
+
+        rgb_max_width_px = 392
+        rgb_dimension_multiple = 14
         """
     )
     reloaded = SourceStageConfig.from_toml(source.to_toml())
@@ -287,8 +312,12 @@ def test_tum_rgbd_source_config_accepts_reference_cloud_block() -> None:
     assert source.backend.reference_cloud.max_points == 64
     assert source.backend.reference_cloud.random_seed == 5
     assert source.backend.reference_cloud.min_confidence is None
+    assert source.backend.rgb_max_width_px == 392
+    assert source.backend.rgb_dimension_multiple == 14
     assert isinstance(reloaded.backend, TumRgbdSourceConfig)
     assert reloaded.backend.reference_cloud == source.backend.reference_cloud
+    assert reloaded.backend.rgb_max_width_px == 392
+    assert reloaded.backend.rgb_dimension_multiple == 14
 
 
 def test_ground_truth_tum_normalization_is_independent_of_sample_selection(tmp_path: Path) -> None:
@@ -330,10 +359,10 @@ def test_tum_rgbd_association_window_matches_vista_slam_default(tmp_path: Path) 
     assert sample.associations[0].depth_timestamp_s == pytest.approx(0.05)
     assert sample.associations[0].pose_timestamp_s == pytest.approx(0.05)
     assert benchmark_inputs.observation_sequences[0].observation_count == 3
-    assert metadata["method_sample_count"] == 3
+    assert metadata["source_frame_indices"] == [0, 1, 2]
 
 
-def test_tum_rgbd_sequence_manifest_materializes_sampled_rgb_dir(tmp_path: Path) -> None:
+def test_tum_rgbd_sequence_manifest_materializes_sampled_timestamps_without_rgb_dir(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path)
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
 
@@ -341,12 +370,9 @@ def test_tum_rgbd_sequence_manifest_materializes_sampled_rgb_dir(tmp_path: Path)
         output_dir=tmp_path / "manifest", frame_selection=FrameSelectionConfig(frame_stride=2)
     )
 
-    assert manifest.rgb_dir == tmp_path / "manifest" / "rgb"
-    assert sorted(path.name for path in manifest.rgb_dir.glob("*.png")) == ["000000.png", "000001.png"]
-    assert manifest.timestamps_path.read_text(encoding="utf-8").splitlines() == [
-        "0.000000000 rgb/000000.png",
-        "0.200000000 rgb/000001.png",
-    ]
+    assert manifest.rgb_dir is None
+    assert not (tmp_path / "manifest" / "rgb").exists()
+    assert json.loads(manifest.timestamps_path.read_text(encoding="utf-8")) == {"timestamps_ns": [0, 200_000_000]}
 
 
 def test_dataset_sequence_source_reference_cloud_uses_manifest_frame_selection(tmp_path: Path) -> None:
@@ -366,7 +392,7 @@ def test_dataset_sequence_source_reference_cloud_uses_manifest_frame_selection(t
     metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
 
     assert [row["provenance"]["source_frame_index"] for row in observation_index["rows"]] == [0, 2, 4]
-    assert metadata["reference_cloud_sampled_frame_indices"] == [0, 2, 4]
+    assert metadata["source_frame_indices"] == [0, 2, 4]
     assert not (output_dir / "selected_associations.tum_rgbd.json").exists()
 
 
@@ -470,10 +496,34 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
 
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
+    assert observation_ref["rgb_video_path"] is None
+    assert not (entry.root / "observations" / "rgb.mp4").exists()
     assert (entry.root / "observations" / "rgb").is_dir()
     assert (entry.root / "observations" / "depth").is_dir()
     assert not (entry.root / "observations" / "0").exists()
+    assert not (entry.root / "reference").exists()
     assert not (entry.root / "benchmark" / "observations").exists()
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "ground_truth.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["metadata_path"]
+        == (entry.root / "benchmark" / "trajectories" / "ground_truth.metadata.json").as_posix()
+    )
+    trajectory = load_tum_trajectory(Path(benchmark_inputs["reference_trajectories"][0]["path"]))
+    trajectory_metadata = json.loads(Path(benchmark_inputs["reference_trajectories"][0]["metadata_path"]).read_text())
+    np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+    assert trajectory_metadata["trajectory_origin"] == "first_pose"
+    assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
+    assert (
+        benchmark_inputs["reference_clouds"][0]["path"]
+        == (entry.root / "benchmark" / "reference_clouds" / "tum_rgbd.ply").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_clouds"][0]["metadata_path"]
+        == (entry.root / "benchmark" / "reference_clouds" / "tum_rgbd.metadata.json").as_posix()
+    )
     assert len(observations) == 3
     assert observations[0].rgb is not None
     assert observations[0].depth_m is not None
@@ -493,12 +543,12 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     assert sequence_ref.observation_count == 3
     assert len(observations) == 3
     assert observations[0].rgb is not None
-    assert observations[0].rgb.shape == (480, 640, 3)
+    assert observations[0].rgb.shape == (294, 392, 3)
     assert observations[0].depth_m is not None
-    assert observations[0].depth_m.shape == (480, 640)
+    assert observations[0].depth_m.shape == (294, 392)
     assert observations[0].intrinsics is not None
-    assert observations[0].intrinsics.width_px == 640
-    assert observations[0].intrinsics.height_px == 480
+    assert observations[0].intrinsics.width_px == 392
+    assert observations[0].intrinsics.height_px == 294
     assert observations[2].T_world_camera.tx == 2.0
     assert observations[2].T_world_camera.target_frame == "tum_rgbd_world"
     assert observations[2].T_world_camera.source_frame == CAMERA_RDF_FRAME

@@ -27,6 +27,7 @@ from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.sources import FileObservationSequenceLoader
 from prml_vslam.sources.config import (
+    AdvioSourceConfig,
     Record3DDatasetSourceConfig,
     TumRgbdSourceConfig,
     normalized_profile_for_source_config,
@@ -38,7 +39,12 @@ from prml_vslam.sources.contracts import (
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalization import normalize_dataset_entries, source_config_for_normalization
+from prml_vslam.sources.datasets.normalization import (
+    normalize_dataset_entries,
+    normalize_dataset_entry,
+    source_config_for_normalization,
+)
+from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
@@ -63,7 +69,7 @@ from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_re
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
+from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +86,7 @@ def _write_record3d_archive(
     *,
     sequence_id: str = "synthetic",
     frame_indices: tuple[int, ...] = (0, 1, 2),
+    zero_origin_depth: bool = True,
 ) -> Path:
     dataset_root.mkdir(parents=True, exist_ok=True)
     archive_path = dataset_root / f"{sequence_id}.r3d"
@@ -104,7 +111,8 @@ def _write_record3d_archive(
             ok, jpg = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
             assert ok
             depth = np.full((4, 4), 1.0 + seq, dtype=np.float32)
-            depth[0, 0] = 0.0
+            if zero_origin_depth:
+                depth[0, 0] = 0.0
             confidence = np.full((4, 4), 2, dtype=np.uint8)
             confidence[0, 1] = 0
             archive.writestr(f"rgbd/{index}.jpg", jpg.tobytes())
@@ -340,7 +348,10 @@ def test_record3d_sequence_loads_rgbd_observations_and_reference_cloud(tmp_path:
     assert sample.depth_intrinsics.width_px == 4
     assert sample.timestamps_ns == [0, 100_000_000, 200_000_000]
     assert manifest.dataset_id is DatasetId.RECORD3D
-    assert sorted(path.name for path in manifest.rgb_dir.glob("*.png")) == ["000000.png", "000001.png", "000002.png"]
+    assert manifest.rgb_dir is None
+    assert json.loads(manifest.timestamps_path.read_text(encoding="utf-8")) == {
+        "timestamps_ns": [0, 100_000_000, 200_000_000]
+    }
     assert benchmark_inputs.reference_trajectories[0].source is ReferenceSource.ARKIT
     assert benchmark_inputs.reference_trajectories[0].target_frame == "record3d_world"
     assert benchmark_inputs.reference_clouds[0].source is ReferenceCloudSource.RECORD3D_LIDAR
@@ -405,13 +416,54 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert not (tmp_path / ".data" / "record3d" / ".normalized").exists()
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
+    assert observation_ref["rgb_video_path"] is None
+    assert not (entry.root / "observations" / "rgb.mp4").exists()
     assert (entry.root / "observations" / "rgb").is_dir()
     assert (entry.root / "observations" / "depth").is_dir()
+    assert json.loads((entry.root / "observations" / "rgb.metadata.json").read_text(encoding="utf-8")) == {
+        "dimension_multiple": 14,
+        "raster_space": "display_downscaled",
+        "rgb_max_width_px": 392,
+        "source_raster_space": "depth",
+    }
     assert not (entry.root / "observations" / "0").exists()
+    assert not (entry.root / "benchmark" / "reference").exists()
     assert not (entry.root / "benchmark" / "observations").exists()
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arkit.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["metadata_path"]
+        == (entry.root / "benchmark" / "trajectories" / "arkit.metadata.json").as_posix()
+    )
+    trajectory = load_tum_trajectory(Path(benchmark_inputs["reference_trajectories"][0]["path"]))
+    trajectory_metadata = json.loads(Path(benchmark_inputs["reference_trajectories"][0]["metadata_path"]).read_text())
+    np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+    assert trajectory_metadata["trajectory_origin"] == "first_pose"
+    assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
+    assert (
+        benchmark_inputs["reference_clouds"][0]["path"]
+        == (entry.root / "benchmark" / "reference_clouds" / "record3d_lidar.ply").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_clouds"][0]["metadata_path"]
+        == (entry.root / "benchmark" / "reference_clouds" / "record3d_lidar.metadata.json").as_posix()
+    )
     assert len(observations) == 3
     assert observations[0].rgb is not None
     assert observations[0].depth_m is not None
+    assert stored_inputs.observation_sequences[0].raster_space == "display_downscaled"
+    assert observations[0].rgb.shape[:2] == observations[0].depth_m.shape
+    assert observations[0].intrinsics is not None
+    assert observations[0].intrinsics.width_px == observations[0].rgb.shape[1]
+    assert observations[0].intrinsics.height_px == observations[0].rgb.shape[0]
+    assert observation_index["rows"][0]["rgb_path"] == "rgb/000000.png"
+    assert observation_index["rows"][0]["rgb_video_frame_index"] is None
+    assert observation_index["rows"][0]["provenance"]["raster_space"] == "display_downscaled"
+    assert observation_index["rows"][0]["provenance"]["original_width"] == 4
+    assert observation_index["rows"][0]["provenance"]["original_height"] == 4
+    assert (stored_inputs.observation_sequences[0].payload_root / observation_index["rows"][0]["rgb_path"]).is_file()
     assert first_depth_path.suffix == ".png"
     assert observation_index["rows"][0]["depth_scale_to_m"] == pytest.approx(0.001)
     assert (load_depth_array(first_depth_path) * observation_index["rows"][0]["depth_scale_to_m"])[
@@ -424,7 +476,9 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
     assert stats[("reference_trajectory", "arkit/aligned", "ego_motion_class")] == "low_curvature"
-    assert records[0]["schema_version"] == 4
+    assert records[0]["schema_version"] == 9
+    assert "sequence_id" not in records[0]["profile"]["source_profile"]
+    assert "source_id" not in records[0]["profile"]["source_profile"]
 
 
 def test_normalized_entry_accepts_legacy_analysis_csv_path_fields(tmp_path: Path) -> None:
@@ -468,6 +522,101 @@ def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) 
     assert len(issues) == 1
     assert issues[0].status == "stale_schema"
     assert issues[0].sequence_id == "synthetic"
+
+
+def test_normalized_store_resolves_sampling_only_profile_mismatch_with_warning(tmp_path: Path) -> None:
+    _write_record3d_archive(tmp_path / ".data" / "record3d")
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = Record3DDatasetService(path_config)
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        target_fps=5.0,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+    stored_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+    raw_source = service._build_raw_streaming_source(
+        sequence_id="synthetic",
+        frame_selection=FrameSelectionConfig(target_fps=5.0),
+        replay_mode=source_config.replay_mode,
+        materialization=source_config.materialization,
+        reference_cloud=source_config.reference_cloud,
+    )
+    stored_entry = store.create_entry_from_source(profile=stored_profile, source=raw_source)
+    requested_profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id=stored_profile.sequence_id,
+        source_id=stored_profile.source_id,
+        source_profile={
+            key: value
+            for key, value in stored_profile.source_profile.items()
+            if key not in {"frame_stride", "target_fps"}
+        },
+    )
+
+    with pytest.raises(FileNotFoundError):
+        store.load_entry(requested_profile)
+    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
+        entry = store.resolve_entry(requested_profile, frame_selection=FrameSelectionConfig(target_fps=5.0))
+
+    assert entry.root == stored_entry.root
+
+
+def test_normalized_store_rejects_byte_affecting_profile_mismatch(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    requested_profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id=fixture.profile.sequence_id,
+        source_id=fixture.profile.source_id,
+        source_profile={"reference_cloud": {"max_points": 999}},
+    )
+
+    with pytest.raises(FileNotFoundError, match="byte-affecting fields"):
+        fixture.store.resolve_entry(requested_profile)
+
+
+def test_normalized_store_rejects_ambiguous_compatible_entries(tmp_path: Path) -> None:
+    _write_record3d_archive(tmp_path / ".data" / "record3d")
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = Record3DDatasetService(path_config)
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
+    first_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        target_fps=5.0,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+    second_config = first_config.model_copy(update={"target_fps": 2.5})
+    for source_config in (first_config, second_config):
+        profile = normalized_profile_for_source_config(
+            dataset_id=DatasetId.RECORD3D,
+            sequence_id="synthetic",
+            source_id=source_config.source_id,
+            payload=source_config.model_dump(mode="json"),
+            include_frame_selection=True,
+        )
+        source = service._build_raw_streaming_source(
+            sequence_id="synthetic",
+            frame_selection=FrameSelectionConfig(target_fps=source_config.target_fps),
+            replay_mode=source_config.replay_mode,
+            materialization=source_config.materialization,
+            reference_cloud=source_config.reference_cloud,
+        )
+        store.create_entry_from_source(profile=profile, source=source)
+    requested_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id=first_config.source_id,
+        payload=first_config.model_dump(mode="json"),
+    )
+
+    with pytest.raises(FileNotFoundError, match="multiple compatible profiles"):
+        store.resolve_entry(requested_profile)
 
 
 def test_record3d_normalized_store_reports_invalid_entries_without_aborting_summary(tmp_path: Path) -> None:
@@ -528,24 +677,62 @@ def test_normalized_store_preserves_manifest_timestamps_for_video_sources(
         dataset_id=DatasetId.ADVIO,
         sequence_id="video-seq",
         source_id="video-seq",
-        source_profile={"sequence_id": "video-seq"},
+        source_profile={},
     )
 
     entry = store.create_entry_from_source(profile=profile, source=VideoSource())
     manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
 
-    assert timestamps == {"timestamps_ns": [0, 123_456_789]}
+    assert timestamps == {
+        "timestamps_ns": [0, 123_456_789],
+        "requested_frame_stride": 1,
+        "requested_target_fps": None,
+        "resolved_frame_stride": 1,
+        "resolved_target_fps": pytest.approx(8.10000007371),
+        "frame_stride": 1,
+        "target_fps": pytest.approx(8.10000007371),
+    }
 
 
 def test_source_config_for_normalization_preserves_dataset_reference_cloud_defaults() -> None:
+    advio_config = source_config_for_normalization(dataset_id=DatasetId.ADVIO, sequence_id="advio-21")
     tum_config = source_config_for_normalization(dataset_id=DatasetId.TUM_RGBD, sequence_id="freiburg1_desk")
     record3d_config = source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id="synthetic")
 
+    assert isinstance(advio_config, AdvioSourceConfig)
+    assert advio_config.target_fps == 10.0
+    assert advio_config.rgb_max_width_px == 392
+    assert advio_config.rgb_dimension_multiple == 14
     assert isinstance(tum_config, TumRgbdSourceConfig)
+    assert tum_config.target_fps == 15.0
     assert tum_config.reference_cloud == ReferenceCloudConfig()
+    assert tum_config.rgb_max_width_px == 392
+    assert tum_config.rgb_dimension_multiple == 14
     assert isinstance(record3d_config, Record3DDatasetSourceConfig)
+    assert record3d_config.target_fps == 15.0
     assert record3d_config.reference_cloud == ReferenceCloudConfig(min_confidence=1)
+    assert record3d_config.rgb_max_width_px == 392
+    assert record3d_config.rgb_dimension_multiple == 14
+
+
+def test_fresh_normalized_entries_are_default_query_records(tmp_path: Path) -> None:
+    _write_record3d_archive(tmp_path / ".data" / "record3d", zero_origin_depth=False)
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = Record3DDatasetService(path_config)
+    source_config = source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id="synthetic")
+
+    entry = normalize_dataset_entry(
+        dataset_id=DatasetId.RECORD3D,
+        path_config=path_config,
+        service=service,
+        source_config=source_config,
+    )
+    query = query_normalized_dataset(DatasetId.RECORD3D, path_config)
+
+    assert [(record.sequence_id, record.profile_key) for record in query.default_records] == [
+        (entry.sequence_id, entry.profile_key)
+    ]
 
 
 def test_normalize_dataset_entries_parallelizes_multi_sequence_builds(monkeypatch, tmp_path: Path) -> None:
@@ -612,7 +799,7 @@ def test_normalized_store_preserves_external_benchmark_observation_sources(tmp_p
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id="synthetic",
-        source_profile={"sequence_id": "synthetic"},
+        source_profile={},
     )
 
     entry = store.create_entry(
@@ -644,7 +831,7 @@ def test_normalized_store_does_not_rewrite_opaque_json_strings(tmp_path: Path, m
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id="synthetic",
-        source_profile={"sequence_id": "synthetic"},
+        source_profile={},
     )
     temp_root = (store.store_root / ".tmp-normalized-test" / profile.sequence_id / profile.profile_key).resolve()
     opaque_value = (temp_root / "literal-not-a-path-contract").as_posix()
@@ -700,6 +887,8 @@ def test_normalized_store_failed_rebuild_preserves_existing_entry(
     timestamps_path = tmp_path / "replacement" / "timestamps.json"
     timestamps_path.parent.mkdir()
     timestamps_path.write_text(json.dumps({"timestamps_ns": [0]}), encoding="utf-8")
+    intrinsics_path = tmp_path / "replacement" / "intrinsics.yaml"
+    intrinsics_path.write_text("camera:\n  model: pinhole\n", encoding="utf-8")
 
     def fail_copy_path(source: Path, target: Path) -> Path:
         raise RuntimeError(f"boom while copying {source} to {target}")
@@ -713,6 +902,7 @@ def test_normalized_store_failed_rebuild_preserves_existing_entry(
                 sequence_id="synthetic",
                 dataset_id=DatasetId.RECORD3D,
                 timestamps_path=timestamps_path,
+                intrinsics_path=intrinsics_path,
             ),
             benchmark_inputs=PreparedBenchmarkInputs(),
         )
@@ -721,7 +911,7 @@ def test_normalized_store_failed_rebuild_preserves_existing_entry(
     assert not list(fixture.entry.root.parent.glob(f".{fixture.entry.root.name}.tmp-*"))
 
 
-def test_normalized_store_uses_indexed_observation_layout_only_for_multiple_sequences(tmp_path: Path) -> None:
+def test_normalized_store_rejects_multiple_observation_sequences(tmp_path: Path) -> None:
     source_roots: list[Path] = []
     refs: list[ObservationSequenceRef] = []
     for index in range(2):
@@ -763,27 +953,17 @@ def test_normalized_store_uses_indexed_observation_layout_only_for_multiple_sequ
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id="synthetic",
-        source_profile={"sequence_id": "synthetic"},
+        source_profile={},
     )
 
-    entry = store.create_entry(
-        profile=profile,
-        sequence_manifest=SequenceManifest(
-            sequence_id="synthetic", dataset_id=DatasetId.RECORD3D, timestamps_path=timestamps_path
-        ),
-        benchmark_inputs=PreparedBenchmarkInputs(observation_sequences=refs),
-    )
-    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
-
-    assert [
-        Path(ref["payload_root"]).relative_to(entry.root).as_posix()
-        for ref in benchmark_inputs["observation_sequences"]
-    ] == [
-        "observations/0",
-        "observations/1",
-    ]
-    assert (entry.root / "observations" / "0" / "observations.json").exists()
-    assert (entry.root / "observations" / "1" / "observations.json").exists()
+    with pytest.raises(RuntimeError, match="exactly one observation sequence"):
+        store.create_entry(
+            profile=profile,
+            sequence_manifest=SequenceManifest(
+                sequence_id="synthetic", dataset_id=DatasetId.RECORD3D, timestamps_path=timestamps_path
+            ),
+            benchmark_inputs=PreparedBenchmarkInputs(observation_sequences=refs),
+        )
 
 
 def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tmp_path: Path) -> None:
@@ -811,13 +991,57 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
 
     assert sampled_profile.profile_key == fixture.profile.profile_key
     assert fixture.entry.root.joinpath("input", "rgb").exists() is False
+    assert manifest.video_path is None
     assert manifest.rgb_dir == observation_ref.payload_root / "rgb"
     assert manifest.rgb_dir.is_relative_to(fixture.entry.root)
     assert not (tmp_path / "run" / "input" / "rgb").exists()
     assert frame_indices == {"source_frame_indices": [0, 2]}
     assert timestamps["timestamps_ns"] == [0, 200_000_000]
+    assert timestamps["requested_frame_stride"] == 2
+    assert timestamps["requested_target_fps"] is None
+    assert timestamps["resolved_frame_stride"] == 2
+    assert timestamps["resolved_target_fps"] == pytest.approx(5.0)
+    assert timestamps["target_fps"] == pytest.approx(5.0)
     assert observation_ref.payload_root.is_relative_to(fixture.entry.root)
     assert [row["provenance"]["source_frame_index"] for row in observation_index["rows"]] == [0, 2]
+
+
+def test_record3d_normalized_store_applies_runtime_target_fps_without_copying_payloads(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        target_fps=5.0,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+    fixture.archive_path.rename(fixture.archive_path.with_suffix(".r3d.bak"))
+    normalized_source = source_config.setup_target(path_config=fixture.path_config)
+
+    manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+    timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
+
+    assert manifest.rgb_dir.is_relative_to(fixture.entry.root)
+    assert not (tmp_path / "run" / "input" / "rgb").exists()
+    assert frame_indices == {"source_frame_indices": [0, 2]}
+    assert timestamps["timestamps_ns"] == [0, 200_000_000]
+    assert timestamps["requested_frame_stride"] == 1
+    assert timestamps["requested_target_fps"] == pytest.approx(5.0)
+    assert timestamps["resolved_frame_stride"] == 2
+    assert timestamps["resolved_target_fps"] == pytest.approx(5.0)
+
+
+def test_record3d_normalized_store_rejects_runtime_upsampling(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        target_fps=30.0,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+
+    with pytest.raises(ValueError, match="would require upsampling"):
+        source_config.setup_target(path_config=fixture.path_config).prepare_sequence_manifest(
+            tmp_path / "run" / "input"
+        )
 
 
 def test_record3d_normalized_store_rejects_tampered_entry_metadata(tmp_path: Path) -> None:
@@ -1013,6 +1237,9 @@ def test_record3d_source_config_accepts_reference_cloud_block_and_rejects_old_ma
         max_points = 64
         random_seed = 5
         min_confidence = 2
+
+        rgb_max_width_px = 392
+        rgb_dimension_multiple = 14
         """
     )
     reloaded = SourceStageConfig.from_toml(source.to_toml())
@@ -1022,8 +1249,12 @@ def test_record3d_source_config_accepts_reference_cloud_block_and_rejects_old_ma
     assert source.backend.reference_cloud.max_points == 64
     assert source.backend.reference_cloud.random_seed == 5
     assert source.backend.reference_cloud.min_confidence == 2
+    assert source.backend.rgb_max_width_px == 392
+    assert source.backend.rgb_dimension_multiple == 14
     assert isinstance(reloaded.backend, Record3DDatasetSourceConfig)
     assert reloaded.backend.reference_cloud == source.backend.reference_cloud
+    assert reloaded.backend.rgb_max_width_px == 392
+    assert reloaded.backend.rgb_dimension_multiple == 14
 
     removed_shapes = [
         {"materialization": {"reference_cloud_max_points": 64}},
@@ -1117,9 +1348,10 @@ def test_record3d_real_sample_decodes_rgbd_and_materializes_reference_cloud(tmp_
     assert len(sample.frames) > 0
     assert sample.metadata.dw > 0
     assert sample.metadata.dh > 0
-    assert observations[0].rgb.shape == (sample.metadata.dh, sample.metadata.dw, 3)
-    assert observations[0].depth_m.shape == (sample.metadata.dh, sample.metadata.dw)
-    assert observations[0].intrinsics.width_px == sample.metadata.dw
+    assert observations[0].rgb.shape[:2] == observations[0].depth_m.shape
+    assert observations[0].rgb.shape[1] <= sequence.config.rgb_max_width_px
+    assert observations[0].intrinsics.width_px == observations[0].rgb.shape[1]
+    assert observations[0].intrinsics.height_px == observations[0].rgb.shape[0]
     assert benchmark_inputs.reference_clouds[0].path.exists()
     assert cloud_metadata["point_count_after_sampling"] > 0
     assert cloud_metadata["point_count_after_sampling"] <= cloud_metadata["max_points"]

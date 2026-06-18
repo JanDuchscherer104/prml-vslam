@@ -15,8 +15,10 @@ import prml_vslam.main as main_module
 from prml_vslam.main import Record3DStreamConfig, _apply_dotted_overrides_to_run_config, app
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
-from prml_vslam.sources.config import VideoSourceConfig
+from prml_vslam.sources.config import Record3DDatasetSourceConfig, VideoSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioDownloadRequest
+from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalization import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadRequest
 from prml_vslam.utils import PathConfig
@@ -116,20 +118,19 @@ def test_advio_summary_reports_normalized_entries_and_native_cache(monkeypatch) 
     class FakeService:
         dataset_root = Path(".data/advio")
         catalog = SimpleNamespace(
-            upstream=SimpleNamespace(model_dump=lambda *, mode: {"repo_url": "https://example.test", "mode": mode})
+            upstream=SimpleNamespace(model_dump=lambda *, mode: {"repo_url": "https://example.test", "mode": mode}),
+            scenes=[SimpleNamespace(archive_size_bytes=123)],
         )
 
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
-
-        def summarize(self) -> SimpleNamespace:
-            return SimpleNamespace(model_dump=lambda *, mode: {"cached_archive_count": 1, "mode": mode})
 
         def local_scene_statuses(self) -> list[SimpleNamespace]:
             return [
                 SimpleNamespace(
                     scene=SimpleNamespace(sequence_id=15),
                     sequence_dir=Path(".data/advio/advio-15"),
+                    archive_path=Path(".data/advio/advio-15.zip"),
                 )
             ]
 
@@ -143,6 +144,11 @@ def test_advio_summary_reports_normalized_entries_and_native_cache(monkeypatch) 
     assert "'normalized': {'records': [{'sequence_id': 'advio-15'}], 'mode': 'json'}" in result.stdout
     assert "'native_cache':" in result.stdout
     assert "'sequence_ids': [15]" in result.stdout
+    assert "'archive_sequence_ids': [15]" in result.stdout
+    assert "'total_remote_archive_bytes': 123" in result.stdout
+    assert "'summary':" not in result.stdout
+    assert "replay_ready_scene_count" not in result.stdout
+    assert "offline_ready_scene_count" not in result.stdout
     assert "'local_sequence_ids'" not in result.stdout
 
 
@@ -175,9 +181,70 @@ def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monke
     assert result.exit_code == 0
     assert captured["sequence_ids"] == ["scene-a", "scene-b"]
     assert captured["workers"] == 7
+    assert captured["frame_selection"].frame_stride == 1
+    assert captured["frame_selection"].target_fps == 15.0
     assert "'sequence_count': 2" in result.stdout
+    assert "'frame_stride': 1" in result.stdout
+    assert "'target_fps': 15.0" in result.stdout
     assert "'workers': 2" in result.stdout
     assert "'entries'" in result.stdout
+
+
+def test_dataset_normalize_advio_defaults_to_10_fps(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeService:
+        dataset_root = Path(".data/advio")
+
+        def list_local_sequence_ids(self) -> list[str]:
+            return ["advio-21"]
+
+    class FakeEntry:
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": "advio-21", "mode": mode}
+
+    def fake_normalize_dataset_entries(**kwargs):
+        captured.update(kwargs)
+        return [FakeEntry()]
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+    monkeypatch.setattr(main_module, "normalize_dataset_entries", fake_normalize_dataset_entries)
+
+    result = runner.invoke(app, ["dataset", "normalize", "--dataset", "advio", "--sequence", "advio-21"])
+
+    assert result.exit_code == 0
+    assert captured["frame_selection"].frame_stride == 1
+    assert captured["frame_selection"].target_fps == 10.0
+    assert "'target_fps': 10.0" in result.stdout
+
+
+def test_dataset_normalize_frame_stride_clears_default_target_fps(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+        def list_local_sequence_ids(self) -> list[str]:
+            return ["scene-a"]
+
+    class FakeEntry:
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": "scene-a", "mode": mode}
+
+    def fake_normalize_dataset_entries(**kwargs):
+        captured.update(kwargs)
+        return [FakeEntry()]
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+    monkeypatch.setattr(main_module, "normalize_dataset_entries", fake_normalize_dataset_entries)
+
+    result = runner.invoke(app, ["dataset", "normalize", "--dataset", "record3d", "--frame-stride", "2"])
+
+    assert result.exit_code == 0
+    assert captured["frame_selection"].frame_stride == 2
+    assert captured["frame_selection"].target_fps is None
+    assert "'frame_stride': 2" in result.stdout
+    assert "'target_fps': None" in result.stdout
 
 
 def test_dataset_normalize_preserves_single_sequence_entry_payload(monkeypatch) -> None:
@@ -199,6 +266,95 @@ def test_dataset_normalize_preserves_single_sequence_entry_payload(monkeypatch) 
     assert result.exit_code == 0
     assert "'entry'" in result.stdout
     assert "'entries'" not in result.stdout
+
+
+def test_dataset_normalize_accepts_typed_source_config_toml(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="scene-a",
+        target_fps=12.0,
+        rgb_max_width_px=280,
+        rgb_dimension_multiple=14,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=4, max_points=64, min_confidence=2),
+    )
+    config_path = tmp_path / "record3d-source.toml"
+    source_config.save_toml(config_path)
+
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+    class FakeEntry:
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": "scene-a", "mode": mode}
+
+    def fake_normalize_dataset_entry(**kwargs):
+        captured.update(kwargs)
+        return FakeEntry()
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+    monkeypatch.setattr(main_module, "normalize_dataset_entry", fake_normalize_dataset_entry)
+
+    result = runner.invoke(app, ["dataset", "normalize", "--source-config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert captured["dataset_id"] is DatasetId.RECORD3D
+    assert captured["source_config"] == source_config
+    assert "'rgb_max_width_px': 280" in result.stdout
+    assert "'target_fps': 12.0" in result.stdout
+    assert "'entry'" in result.stdout
+
+
+def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+    build_config = NormalizedDatasetBuildConfig(
+        workers=4,
+        sources=[
+            Record3DDatasetSourceConfig(sequence_id="scene-a", target_fps=30.0),
+            Record3DDatasetSourceConfig(sequence_id="scene-b", frame_stride=2),
+        ],
+    )
+    config_path = tmp_path / "benchmark-vslam-datastore.toml"
+    build_config.save_toml(config_path)
+
+    class FakeEntry:
+        def __init__(self, sequence_id: str) -> None:
+            self.sequence_id = sequence_id
+
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            return {"sequence_id": self.sequence_id, "mode": mode}
+
+    def fake_normalize_dataset_source_configs(**kwargs):
+        captured.update(kwargs)
+        return [FakeEntry(source.sequence_id) for source in kwargs["source_configs"]]
+
+    monkeypatch.setattr(main_module, "normalize_dataset_source_configs", fake_normalize_dataset_source_configs)
+
+    result = runner.invoke(app, ["dataset", "normalize", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert [source.sequence_id for source in captured["source_configs"]] == ["scene-a", "scene-b"]
+    assert captured["workers"] == 4
+    assert "'source_count': 2" in result.stdout
+    assert "'workers': 2" in result.stdout
+    assert "'entries'" in result.stdout
+
+
+def test_dataset_normalize_rejects_runtime_and_normalize_time_sampling_mix(monkeypatch) -> None:
+    class FakeService:
+        dataset_root = Path(".data/record3d")
+
+        def list_local_sequence_ids(self) -> list[str]:
+            return ["scene-a"]
+
+    monkeypatch.setattr(main_module, "dataset_service", lambda dataset_id, path_config: FakeService())
+
+    result = runner.invoke(
+        app,
+        ["dataset", "normalize", "--dataset", "record3d", "--frame-stride", "2", "--target-fps", "5.0"],
+    )
+
+    assert result.exit_code != 0
+    assert "Configure either `frame_stride` or `target_fps`, not both." in result.stderr
 
 
 @pytest.mark.parametrize("command", (("advio", "download"), ("tum-rgbd", "download")))
