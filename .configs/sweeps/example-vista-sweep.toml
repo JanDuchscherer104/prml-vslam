@@ -1,4 +1,4 @@
-# ViSTA-SLAM sweep across four sequences (2 TUM RGB-D + 2 ADVIO).
+# ViSTA-SLAM sweep across five sequences (2 TUM RGB-D + 2 ADVIO + 1 Record3D).
 #
 # Inspect the expanded plan (no execution):
 #   uv run prml-vslam plan-sweep-config .configs/sweeps/example-vista-sweep.toml
@@ -17,6 +17,7 @@
 #   example-vista-tum_rgbd-freiburg1_desk-vista
 #   example-vista-advio-advio-15-vista
 #   example-vista-advio-advio-01-vista
+#   example-vista-record3d_dataset-2026-06-03--18-29-08-vista
 
 [sweep]
 name       = "example-vista"
@@ -55,6 +56,15 @@ evaluate_trajectory = true
 dataset_id          = "advio"
 sequence_id         = "advio-01"
 frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 5: Record3D 18-29-08 ─────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 1
 baseline_source     = "ground_truth"
 align_trajectory    = true
 evaluate_trajectory = true

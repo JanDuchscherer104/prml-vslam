@@ -20,7 +20,7 @@ from prml_vslam.pipeline.sweep import (
     expand_sweep,
     load_sweep_config,
 )
-from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig
 from prml_vslam.sources.contracts import ReferenceSource
 
 # ---------------------------------------------------------------------------
@@ -376,6 +376,13 @@ def test_build_run_config_uses_advio_source_backend(tmp_path: Path) -> None:
     run_cfg = build_run_config_from_sweep_item(item)
     assert isinstance(run_cfg.stages.source.backend, AdvioSourceConfig)
     assert run_cfg.stages.source.backend.sequence_id == "advio-15"
+
+
+def test_build_run_config_uses_record3d_dataset_source_backend(tmp_path: Path) -> None:
+    item = _make_item(tmp_path, dataset_id="record3d_dataset", sequence_id="2026-06-03--18-29-08")
+    run_cfg = build_run_config_from_sweep_item(item)
+    assert isinstance(run_cfg.stages.source.backend, Record3DDatasetSourceConfig)
+    assert run_cfg.stages.source.backend.sequence_id == "2026-06-03--18-29-08"
 
 
 def test_build_run_config_rejects_unknown_dataset_id(tmp_path: Path) -> None:
