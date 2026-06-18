@@ -4,9 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 
 import prml_vslam.app.pages.datasets as advio_page
-from prml_vslam.app.models import AppState, Record3DDatasetPoseSource
+from prml_vslam.app.models import AdvioPageState, AppState, Record3DDatasetPoseSource
 from prml_vslam.interfaces import Observation, ObservationProvenance
 from prml_vslam.sources.datasets.advio import AdvioPoseSource
 from prml_vslam.sources.datasets.contracts import LocalSceneStatus
@@ -69,6 +70,42 @@ def test_advio_preview_pose_sources_use_provider_readiness_flags() -> None:
     ]
 
 
+def test_advio_sequence_explorer_saves_normalized_sequence_slug(monkeypatch) -> None:
+    saved: list[AppState] = []
+    state = AppState(advio=AdvioPageState())
+    record = NormalizedSequenceRecord(
+        dataset_id="advio",
+        sequence_id="advio-21",
+        sequence_label="ADVIO 21",
+        source_id="advio",
+        profile_key=AdvioPoseSource.GROUND_TRUTH.value,
+        root=Path(".data/vslam-datastore/advio/advio-21") / AdvioPoseSource.GROUND_TRUTH.value,
+        is_default_profile=True,
+        stats_row_count=1,
+        metadata_row_count=1,
+        advio_pose_source=AdvioPoseSource.GROUND_TRUTH,
+    )
+    context = SimpleNamespace(
+        state=state,
+        store=SimpleNamespace(save=lambda current_state: saved.append(current_state.model_copy(deep=True))),
+    )
+
+    monkeypatch.setattr(advio_page.st, "container", lambda **_kwargs: _NullContext())
+    monkeypatch.setattr(advio_page.st, "subheader", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(advio_page.st, "selectbox", lambda *_args, **_kwargs: "advio-21")
+    monkeypatch.setattr(advio_page.st, "dataframe", lambda *_args, **_kwargs: None)
+
+    advio_page._render_sequence_explorer_impl(
+        context=context,
+        records=[record],
+        page_state=state.advio,
+        dataset_label="ADVIO",
+    )
+
+    assert state.advio.explorer_sequence_id == "advio-21"
+    assert saved[-1].advio.explorer_sequence_id == "advio-21"
+
+
 def test_record3d_download_form_builds_index_request_and_syncs_state(monkeypatch) -> None:
     saved: list[AppState] = []
     state = AppState()
@@ -127,7 +164,7 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
     )
 
     rows = advio_page._record3d_scene_rows([status])
-    rows = advio_page._record3d_rows_with_normalized_status(
+    rows = advio_page._rows_with_normalized_status(
         rows,
         NormalizedDatasetQuery(
             dataset_id="record3d",
@@ -145,8 +182,8 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
                 )
             ],
             issues=[],
-            stats_rows=[],
-            metadata_rows=[],
+            stats_df=pd.DataFrame(),
+            metadata_df=pd.DataFrame(),
         ),
     )
 
@@ -162,6 +199,84 @@ def test_record3d_scene_rows_mark_local_only_archives(monkeypatch) -> None:
             "Normalized": True,
             "Normalized Profiles": 1,
         }
+    ]
+
+
+def test_normalized_dataset_query_builds_compact_analysis_frames(tmp_path: Path) -> None:
+    entry_root = tmp_path / ".data" / "vslam-datastore" / "advio" / "advio-21" / "profile"
+    rgb_dir = entry_root / "observations" / "rgb"
+    depth_dir = entry_root / "observations" / "depth"
+    rgb_dir.mkdir(parents=True)
+    depth_dir.mkdir()
+    (rgb_dir / "000000.png").write_bytes(b"rgb")
+    (depth_dir / "000000.png").write_bytes(b"depth")
+    query = NormalizedDatasetQuery(
+        dataset_id="advio",
+        records=[
+            NormalizedSequenceRecord(
+                dataset_id="advio",
+                sequence_id="advio-21",
+                sequence_label="ADVIO 21",
+                source_id="advio",
+                profile_key="profile",
+                root=entry_root,
+                is_default_profile=True,
+                stats_row_count=8,
+                metadata_row_count=1,
+            )
+        ],
+        issues=[],
+        stats_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "advio",
+                    "sequence_id": "advio-21",
+                    "profile_key": "profile",
+                    "source_id": "advio",
+                    "scope": "observation_sequence",
+                    "subject": "advio",
+                    "stat": "observation_frame_count",
+                    "value": "10",
+                    "unit": "count",
+                },
+                {
+                    "dataset_id": "advio",
+                    "sequence_id": "advio-21",
+                    "profile_key": "profile",
+                    "source_id": "advio",
+                    "scope": "reference_trajectory",
+                    "subject": "ground_truth/source_native",
+                    "stat": "trajectory_path_length_m",
+                    "value": "3.5",
+                    "unit": "m",
+                },
+                {
+                    "dataset_id": "advio",
+                    "sequence_id": "advio-21",
+                    "profile_key": "profile",
+                    "source_id": "advio",
+                    "scope": "reference_trajectory",
+                    "subject": "ground_truth/source_native",
+                    "stat": "trajectory_mean_curvature_rad_m",
+                    "value": "0.12",
+                    "unit": "rad/m",
+                },
+            ]
+        ),
+        metadata_df=pd.DataFrame(),
+    )
+
+    assert query.observation_summary_frame()["observation_frame_count"].tolist() == ["10"]
+    trajectory_summary = query.trajectory_summary_frame()
+    assert trajectory_summary["trajectory_path_length_m"].tolist() == ["3.5"]
+    assert trajectory_summary["trajectory_mean_curvature_rad_m"].tolist() == ["0.12"]
+    assert query.filtered_stats_frame(sequence_ids=["advio-21"], scopes=["observation_sequence"])["stat"].tolist() == [
+        "observation_frame_count"
+    ]
+    assert query.payload_footprint_frame()[["RGB MB", "Depth MB", "Video MB"]].iloc[0].tolist() == [
+        0.0,
+        0.0,
+        0.0,
     ]
 
 
@@ -186,8 +301,8 @@ def test_record3d_loop_preview_uses_normalized_default_records(monkeypatch) -> N
             )
         ],
         issues=[],
-        stats_rows=[],
-        metadata_rows=[],
+        stats_df=pd.DataFrame(),
+        metadata_df=pd.DataFrame(),
     )
     monkeypatch.setattr(
         advio_page, "_render_loop_preview_impl", lambda **kwargs: captured.update(records=kwargs["records"])

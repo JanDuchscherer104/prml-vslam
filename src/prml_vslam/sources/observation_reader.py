@@ -11,6 +11,7 @@ import numpy as np
 
 from prml_vslam.interfaces import Observation, ObservationProvenance
 from prml_vslam.sources.contracts import SequenceManifest
+from prml_vslam.sources.replay.video import iter_rgb_video_frames
 
 
 def iter_sequence_manifest_observations(
@@ -19,15 +20,19 @@ def iter_sequence_manifest_observations(
     max_frames: int | None = None,
 ) -> Iterator[Observation]:
     """Yield RGB observations from a normalized source sequence manifest."""
-    image_paths, timestamps_ns = _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
+    rgb_inputs, timestamps_ns, source_frame_indices = _load_manifest_rgb_inputs(
+        sequence=sequence, max_frames=max_frames
+    )
     provenance = _manifest_provenance(sequence)
-    for seq, (image_path, timestamp_ns) in enumerate(zip(image_paths, timestamps_ns, strict=True)):
+    for seq, (rgb_input, timestamp_ns, source_frame_index) in enumerate(
+        zip(rgb_inputs, timestamps_ns, source_frame_indices, strict=True)
+    ):
         yield Observation(
             seq=seq,
             timestamp_ns=timestamp_ns,
-            source_frame_index=seq,
-            rgb=_load_rgb(image_path),
-            provenance=provenance.model_copy(update={"source_frame_index": seq}),
+            source_frame_index=source_frame_index,
+            rgb=_load_rgb_input(rgb_input),
+            provenance=provenance.model_copy(update={"source_frame_index": source_frame_index}),
         )
 
 
@@ -35,33 +40,61 @@ def _load_manifest_rgb_inputs(
     *,
     sequence: SequenceManifest,
     max_frames: int | None,
-) -> tuple[list[Path], list[int]]:
-    if sequence.rgb_dir is None or not sequence.rgb_dir.exists():
-        raise RuntimeError(
-            "Offline observation loading requires a normalized `SequenceManifest.rgb_dir`. "
-            "Materialize the source stage before invoking downstream offline stages."
-        )
+) -> tuple[list[Path | np.ndarray], list[int], list[int]]:
     if sequence.timestamps_path is None or not sequence.timestamps_path.exists():
         raise RuntimeError(
             "Offline observation loading requires a normalized `SequenceManifest.timestamps_path`. "
             "Materialize the source stage before invoking downstream offline stages."
         )
+    timestamps_ns = _load_timestamps_ns(sequence.timestamps_path)
+    if sequence.video_path is not None:
+        if not sequence.video_path.exists():
+            raise RuntimeError(f"Normalized video input does not exist: {sequence.video_path}")
+        source_frame_indices = _manifest_source_frame_indices(sequence, len(timestamps_ns))
+        if sequence.source_frame_indices_path is not None and len(timestamps_ns) != len(source_frame_indices):
+            timestamps_ns = [timestamps_ns[index] for index in source_frame_indices]
+        if max_frames is not None:
+            timestamps_ns = timestamps_ns[:max_frames]
+            source_frame_indices = source_frame_indices[:max_frames]
+        frames = list(iter_rgb_video_frames(sequence.video_path, source_frame_indices))
+        if len(frames) != len(timestamps_ns):
+            raise RuntimeError(
+                "Normalized offline inputs are inconsistent: "
+                f"{len(frames)} video frame(s) from '{sequence.video_path}' but {len(timestamps_ns)} timestamp(s) "
+                f"in '{sequence.timestamps_path}'."
+            )
+        return frames, timestamps_ns, source_frame_indices
+    if sequence.rgb_dir is None or not sequence.rgb_dir.exists():
+        raise RuntimeError(
+            "Offline observation loading requires either `SequenceManifest.video_path` or `SequenceManifest.rgb_dir`. "
+            "Materialize the source stage before invoking downstream offline stages."
+        )
     image_paths = sorted(sequence.rgb_dir.glob("*.png"))
-    if sequence.source_frame_indices_path is not None:
-        image_paths = [image_paths[index] for index in _load_source_frame_indices(sequence.source_frame_indices_path)]
+    if sequence.source_frame_indices_path is None:
+        source_frame_indices = list(range(len(image_paths)))
+    else:
+        source_frame_indices = _load_source_frame_indices(sequence.source_frame_indices_path)
+        image_paths = [image_paths[index] for index in source_frame_indices]
+        timestamps_ns = [timestamps_ns[index] for index in source_frame_indices]
     if not image_paths:
         raise RuntimeError(f"Normalized input directory '{sequence.rgb_dir}' does not contain any PNG frames.")
-    timestamps_ns = _load_timestamps_ns(sequence.timestamps_path)
     if max_frames is not None:
         image_paths = image_paths[:max_frames]
         timestamps_ns = timestamps_ns[:max_frames]
+        source_frame_indices = source_frame_indices[:max_frames]
     if len(timestamps_ns) != len(image_paths):
         raise RuntimeError(
             "Normalized offline inputs are inconsistent: "
             f"{len(image_paths)} PNG frames in '{sequence.rgb_dir}' but {len(timestamps_ns)} timestamps in "
             f"'{sequence.timestamps_path}'."
         )
-    return image_paths, timestamps_ns
+    return image_paths, timestamps_ns, source_frame_indices
+
+
+def _manifest_source_frame_indices(sequence: SequenceManifest, frame_count: int) -> list[int]:
+    if sequence.source_frame_indices_path is None:
+        return list(range(frame_count))
+    return _load_source_frame_indices(sequence.source_frame_indices_path)
 
 
 def _load_timestamps_ns(path: Path) -> list[int]:
@@ -82,6 +115,10 @@ def _load_source_frame_indices(path: Path) -> list[int]:
             f"'{path}', got: {type(payload).__name__}."
         )
     return [int(index) for index in payload["source_frame_indices"]]
+
+
+def _load_rgb_input(rgb: Path | np.ndarray) -> np.ndarray:
+    return rgb if isinstance(rgb, np.ndarray) else _load_rgb(rgb)
 
 
 def _load_rgb(path: Path) -> np.ndarray:

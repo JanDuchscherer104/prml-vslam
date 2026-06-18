@@ -139,8 +139,8 @@ class AdvioPageState(BaseData):
     overwrite_existing: bool = False
     """Whether download actions should overwrite local archives and extracted files."""
 
-    explorer_sequence_id: int | None = None
-    """Selected local sequence shown in the explorer section."""
+    explorer_sequence_id: str | None = None
+    """Selected normalized sequence shown in the explorer section."""
 
     preview_sequence_id: int | None = None
     """Selected local sequence shown in the loop-preview section."""

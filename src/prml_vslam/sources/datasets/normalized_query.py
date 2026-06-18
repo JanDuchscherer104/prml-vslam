@@ -6,6 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
+import pandas as pd
+
 from prml_vslam.sources.datasets.contracts import AdvioPoseSource, DatasetId
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
@@ -15,10 +17,12 @@ from prml_vslam.sources.datasets.normalization import (
 )
 from prml_vslam.sources.datasets.normalized_store import (
     METADATA_LONG_FILENAME,
+    METADATA_LONG_HEADER,
     STATS_LONG_FILENAME,
+    STATS_LONG_HEADER,
     NormalizedDatasetEntry,
-    load_normalized_entry_metadata,
-    load_normalized_entry_stats,
+    load_normalized_entry_metadata_table,
+    load_normalized_entry_stats_table,
     normalized_entry_analysis_summary,
 )
 from prml_vslam.utils import BaseData, PathConfig
@@ -49,8 +53,8 @@ class NormalizedDatasetQuery(BaseData):
     dataset_id: DatasetId
     records: list[NormalizedSequenceRecord]
     issues: list[dict[str, str | int | float | bool | None]]
-    stats_rows: list[dict[str, str | int | float | bool | None]]
-    metadata_rows: list[dict[str, str | int | float | bool | None]]
+    stats_df: pd.DataFrame
+    metadata_df: pd.DataFrame
 
     @property
     def sequence_ids(self) -> set[str]:
@@ -71,9 +75,6 @@ class NormalizedDatasetQuery(BaseData):
     def default_records(self) -> list[NormalizedSequenceRecord]:
         return [record for record in self.records if record.is_default_profile]
 
-    def records_for_sequence(self, sequence_id: str) -> list[NormalizedSequenceRecord]:
-        return [record for record in self.records if record.sequence_id == sequence_id]
-
     def table_rows(self) -> list[dict[str, str | int | float | bool | None]]:
         counts = self.profile_counts
         return [
@@ -92,6 +93,89 @@ class NormalizedDatasetQuery(BaseData):
             for record in self.records
         ]
 
+    def entry_frame(self) -> pd.DataFrame:
+        """Return one dataframe row per usable normalized entry."""
+        return pd.DataFrame.from_records(self.table_rows())
+
+    def filtered_stats_frame(
+        self,
+        *,
+        sequence_ids: list[str] | None = None,
+        scopes: list[str] | None = None,
+        stats: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """Return the canonical long stats table after UI-selected categorical filters."""
+        frame = self.stats_df
+        if frame.empty:
+            return frame
+        mask = pd.Series(True, index=frame.index)
+        if sequence_ids:
+            mask &= frame["sequence_id"].isin(sequence_ids)
+        if scopes:
+            mask &= frame["scope"].isin(scopes)
+        if stats:
+            mask &= frame["stat"].isin(stats)
+        return frame.loc[mask].reset_index(drop=True)
+
+    def observation_summary_frame(self) -> pd.DataFrame:
+        """Return compact observation count, duration, and FPS statistics."""
+        return _pivot_stats(
+            self.stats_df,
+            scope="observation_sequence",
+            stats=(
+                "observation_frame_count",
+                "rgb_frame_count",
+                "depth_frame_count",
+                "observation_duration_s",
+                "observation_mean_fps",
+            ),
+        )
+
+    def trajectory_summary_frame(self) -> pd.DataFrame:
+        """Return compact trajectory motion statistics for reference/candidate rows."""
+        frame = self.stats_df
+        if frame.empty:
+            return pd.DataFrame()
+        selected = frame.loc[
+            frame["scope"].isin(["reference_trajectory", "candidate_trajectory"])
+            & frame["stat"].isin(
+                [
+                    "trajectory_pose_count",
+                    "trajectory_duration_s",
+                    "trajectory_path_length_m",
+                    "trajectory_mean_speed_m_s",
+                    "trajectory_mean_curvature_rad_m",
+                    "ego_motion_class",
+                ]
+            )
+        ]
+        return _pivot_stats(selected, scope=None, stats=())
+
+    def payload_footprint_frame(self) -> pd.DataFrame:
+        """Return stored RGB/depth/video footprint by normalized entry."""
+        rows: list[dict[str, str | int | float | bool | None]] = []
+        for record in self.records:
+            observations_root = record.root / "observations"
+            rgb_bytes = _sum_payload_bytes(observations_root / "rgb", "*.png")
+            depth_bytes = _sum_payload_bytes(observations_root / "depth", "*.png")
+            video_bytes = sum(
+                path.stat().st_size
+                for path in (observations_root / filename for filename in ("rgb.mp4", "rgb.mov", "rgb.m4v"))
+                if path.is_file()
+            )
+            rows.append(
+                {
+                    "Dataset": record.dataset_id.label,
+                    "Sequence": record.sequence_id,
+                    "Profile": record.profile_key,
+                    "RGB MB": round(rgb_bytes / 1_000_000, 3),
+                    "Depth MB": round(depth_bytes / 1_000_000, 3),
+                    "Video MB": round(video_bytes / 1_000_000, 3),
+                    "Total MB": round((rgb_bytes + depth_bytes + video_bytes) / 1_000_000, 3),
+                }
+            )
+        return pd.DataFrame.from_records(rows)
+
 
 def query_normalized_dataset(dataset_id: DatasetId, path_config: PathConfig) -> NormalizedDatasetQuery:
     """Return a tolerant normalized-store snapshot for one dataset."""
@@ -107,9 +191,48 @@ def query_normalized_dataset(dataset_id: DatasetId, path_config: PathConfig) -> 
         dataset_id=dataset_id,
         records=records,
         issues=[issue.model_dump(mode="json") for issue in store.issues()],
-        stats_rows=[row for entry in entries for row in load_normalized_entry_stats(entry)],
-        metadata_rows=[row for entry in entries for row in load_normalized_entry_metadata(entry)],
+        stats_df=_concat_analysis_tables(
+            [load_normalized_entry_stats_table(entry) for entry in entries], columns=STATS_LONG_HEADER
+        ),
+        metadata_df=_concat_analysis_tables(
+            [load_normalized_entry_metadata_table(entry) for entry in entries], columns=METADATA_LONG_HEADER
+        ),
     )
+
+
+def _concat_analysis_tables(tables: list[pd.DataFrame], *, columns: tuple[str, ...]) -> pd.DataFrame:
+    if not tables:
+        return pd.DataFrame(columns=columns)
+    table = pd.concat(tables, ignore_index=True)
+    return table if not table.empty else pd.DataFrame(columns=columns)
+
+
+def _pivot_stats(stats_df: pd.DataFrame, *, scope: str | None, stats: tuple[str, ...]) -> pd.DataFrame:
+    if stats_df.empty:
+        return pd.DataFrame()
+    frame = stats_df
+    if scope is not None:
+        frame = frame.loc[frame["scope"].eq(scope)]
+    if stats:
+        frame = frame.loc[frame["stat"].isin(stats)]
+    if frame.empty:
+        return pd.DataFrame()
+    return (
+        frame.pivot_table(
+            index=["dataset_id", "sequence_id", "profile_key", "source_id", "scope", "subject"],
+            columns="stat",
+            values="value",
+            aggfunc="first",
+        )
+        .reset_index()
+        .rename_axis(columns=None)
+    )
+
+
+def _sum_payload_bytes(root: Path, pattern: str) -> int:
+    if not root.exists():
+        return 0
+    return sum(path.stat().st_size for path in root.glob(pattern) if path.is_file())
 
 
 def normalized_query_fingerprint(path_config: PathConfig, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
@@ -131,11 +254,6 @@ def normalized_query_fingerprint(path_config: PathConfig, dataset_id: DatasetId)
     return tuple(
         (path.relative_to(store_root).as_posix(), path.stat().st_mtime_ns, path.stat().st_size) for path in paths
     )
-
-
-def normalized_sequence_options(dataset_id: DatasetId, path_config: PathConfig) -> list[NormalizedSequenceRecord]:
-    """Return default-profile sequence records for selector controls."""
-    return query_normalized_dataset(dataset_id, path_config).default_records
 
 
 def resolve_normalized_advio_sequence_id(
@@ -197,7 +315,12 @@ def _default_profile_keys(
     keys: set[tuple[str, str]] = set()
     for entry in entries:
         source_config = source_config_for_normalization(dataset_id=dataset_id, sequence_id=entry.sequence_id)
-        profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source_config)
+        profile = normalized_profile_for_dataset(
+            dataset_id=dataset_id,
+            service=service,
+            source_config=source_config,
+            include_frame_selection=True,
+        )
         if entry.profile_key == profile.profile_key:
             keys.add((entry.sequence_id, entry.profile_key))
     return keys

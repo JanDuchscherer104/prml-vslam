@@ -179,10 +179,15 @@ The most important dataset-owned DTOs and outputs are:
 
 Dataset-backed sources share one canonical `NormalizedDatasetStore` under
 `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. The store persists
-full-frame source payloads once, plus source-owned long-form Core/Motion
+source-selected replay payloads once, plus source-owned long-form Core/Motion
 statistics and metadata tables. Runtime sampling options such as
 `frame_stride` and `target_fps` remain read-time policy and do not create
 stride-specific stored payloads.
+
+Runtime readers first request the exact profile key. If that profile is missing,
+they may reuse the only current-schema entry for the same dataset, sequence, and
+source id with a warning. Multiple compatible profiles remain ambiguous and
+must be resolved by rebuilding or selecting the exact profile.
 
 Each new entry writes two queryable CSV tables:
 
@@ -193,12 +198,23 @@ Each new entry writes two queryable CSV tables:
   that app and CLI surfaces can load without re-normalizing the dataset.
 
 A normalized entry stores the common single RGB-D observation sequence directly
-under `<entry>/observations/`. Indexed child directories such as
-`<entry>/observations/0/` are reserved only for entries that genuinely carry
-multiple observation sequences. Record3D depth maps remain benchmark observation
+under `<entry>/observations/`. Multi-sequence normalized observation layouts are
+rejected instead of persisted. Record3D depth maps remain benchmark observation
 payloads rather than primary `SequenceManifest` input, but the matching RGB
 frames are shared with the source manifest instead of duplicated under
 `benchmark/observations/`.
+
+ADVIO normalizes display-oriented replay frames into a PNG sequence under
+`<entry>/observations/rgb/`. To avoid the old full-resolution PNG blow-up while
+keeping the same file-backed contract as TUM RGB-D and Record3D, ADVIO defaults
+to a method-neutral cache raster with maximum width 392 px and dimensions rounded
+to multiples of 14; intrinsics are scaled to that stored raster.
+
+New entries use canonical roots only: source inputs under `<entry>/input/`,
+reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds
+under `<entry>/benchmark/reference_clouds/`, and replay payloads under
+`<entry>/observations/`. The store schema rejects stale non-canonical entries so
+they are rebuilt instead of silently mixed with the current layout.
 
 To build or refresh normalized entries, use the CLI normalization command. Omit
 `--sequence` to normalize every offline-ready local sequence with one worker per
@@ -207,7 +223,14 @@ CPU by default, or repeat `--sequence` to bound the build:
 ```bash
 prml-vslam dataset normalize --dataset record3d
 prml-vslam dataset normalize --dataset record3d --sequence <sequence-id> --workers 4
+prml-vslam dataset normalize --dataset record3d --target-fps 5
+prml-vslam dataset normalize --dataset record3d --frame-stride 3
 ```
+
+`--target-fps` and `--frame-stride` are normalize-time sampling controls. They
+reduce the frames persisted to the normalized datastore and are therefore part of
+the store profile when used. Runtime sampling in pipeline source configs remains
+read-time only and does not request a different normalized entry.
 
 The Streamlit Datasets page and `prml-vslam dataset summary` read persisted
 entries, issues, and analysis tables; they do not normalize datasets during

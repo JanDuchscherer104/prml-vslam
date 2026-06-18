@@ -460,13 +460,11 @@ wheels = [
 [[package]]
 name = "dbow3py"
 version = "0.0.3"
-source = { directory = "external/vista-slam/DBoW3Py" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "numpy" }]
+sdist = { url = "https://files.pythonhosted.org/packages/90/11/ab126eabcbeec3972ba15148eaf41b81aa06e980d70480eb606b6e8ef4f4/DBoW3Py-0.0.3.tar.gz", hash = "sha256:bb8f58df24fcfbff8eec8e896cefd836308c072eeeb2ee6d1f1849c8f0e191ee", size = 2251, upload-time = "2020-05-07T09:06:48.588Z" }
 
 [[package]]
 name = "distlib"
@@ -1877,6 +1875,7 @@ dependencies = [
     { name = "numpy" },
     { name = "open3d" },
     { name = "opencv-python" },
+    { name = "pandas" },
     { name = "plotly" },
     { name = "pooch" },
     { name = "pydantic" },
@@ -1948,7 +1947,7 @@ requires-dist = [
     { name = "av", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "curope", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'mast3r'", editable = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope" },
-    { name = "dbow3py", marker = "extra == 'vista'", directory = "external/vista-slam/DBoW3Py" },
+    { name = "dbow3py", marker = "extra == 'vista'" },
     { name = "einops", marker = "extra == 'vista'", specifier = ">=0.6" },
     { name = "evo", specifier = ">=1.31,<2" },
     { name = "imgui", marker = "extra == 'mast3r'", editable = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui" },
@@ -1962,6 +1961,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26,<3" },
     { name = "open3d", specifier = ">=0.19.0,<0.20" },
     { name = "opencv-python", specifier = ">=4.10,<5" },
+    { name = "pandas", specifier = "==2.3.3" },
     { name = "plotly", specifier = ">=6.6.0,<7" },
     { name = "pooch", specifier = ">=1.8,<2" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2,<5" },

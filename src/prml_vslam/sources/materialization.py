@@ -51,11 +51,12 @@ def materialize_manifest(
     rgb_dir = prepared_manifest.rgb_dir
     timestamps_path = prepared_manifest.timestamps_path
     intrinsics_path = prepared_manifest.intrinsics_path
-    frame_stride = frame_stride if prepared_manifest.video_path is not None else 1
+    manifest_is_preselected = prepared_manifest.source_frame_indices_path is not None
+    frame_stride = 1 if manifest_is_preselected else frame_stride if prepared_manifest.video_path is not None else 1
     cached_rgb_dir: Path | None = None
     fallback_timestamps_ns: list[int] = []
 
-    if prepared_manifest.video_path is not None and rgb_dir is None:
+    if prepared_manifest.video_path is not None and rgb_dir is None and not manifest_is_preselected:
         max_frames = streaming_max_frames if mode is PipelineMode.STREAMING else None
         cached_rgb_dir = _check_extraction_cache(
             video_path=prepared_manifest.video_path,
@@ -97,19 +98,20 @@ def materialize_manifest(
 
         fallback_timestamps_ns = [] if cached_rgb_dir is not None else extracted.timestamps_ns
 
-    timestamps_source = prepared_manifest.timestamps_path
-    if timestamps_source is None and cached_rgb_dir is not None and run_paths.input_timestamps_path.exists():
-        timestamps_source = run_paths.input_timestamps_path
-    elif timestamps_source is not None and not timestamps_source.exists():
-        timestamps_source = run_paths.input_timestamps_path if cached_rgb_dir is not None else timestamps_source
-    if (timestamps_source is not None and timestamps_source.exists()) or fallback_timestamps_ns:
-        timestamps_ns = _resolve_timestamps_ns(
-            source_path=timestamps_source,
-            frame_stride=frame_stride,
-            fallback_timestamps_ns=fallback_timestamps_ns,
-        )
-        write_json(run_paths.input_timestamps_path, {"timestamps_ns": timestamps_ns, "frame_stride": frame_stride})
-        timestamps_path = run_paths.input_timestamps_path.resolve()
+    if not manifest_is_preselected:
+        timestamps_source = prepared_manifest.timestamps_path
+        if timestamps_source is None and cached_rgb_dir is not None and run_paths.input_timestamps_path.exists():
+            timestamps_source = run_paths.input_timestamps_path
+        elif timestamps_source is not None and not timestamps_source.exists():
+            timestamps_source = run_paths.input_timestamps_path if cached_rgb_dir is not None else timestamps_source
+        if (timestamps_source is not None and timestamps_source.exists()) or fallback_timestamps_ns:
+            timestamps_ns = _resolve_timestamps_ns(
+                source_path=timestamps_source,
+                frame_stride=frame_stride,
+                fallback_timestamps_ns=fallback_timestamps_ns,
+            )
+            write_json(run_paths.input_timestamps_path, {"timestamps_ns": timestamps_ns, "frame_stride": frame_stride})
+            timestamps_path = run_paths.input_timestamps_path.resolve()
 
     if intrinsics_path is not None:
         run_paths.input_intrinsics_path.parent.mkdir(parents=True, exist_ok=True)

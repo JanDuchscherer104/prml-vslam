@@ -7,7 +7,7 @@
 # uv run --extra vista prml-vslam run-config .configs/pipelines/vista-full.toml
 # uv run rerun .artifacts/vista-tum-cabinet-full/vista/visualization/viewer_recording.rrd --serve-web
 
-experiment_name          = "vista-tum-cabinet-full"
+experiment_name          = "vista-r3d-29-08"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -16,10 +16,13 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
-    frame_stride = 1
-    replay_mode  = "fast_as_possible"
+    source_id   = "record3d_dataset"
+    sequence_id = "2026-06-03--18-29-08"
+    # source_id   = "tum_rgbd"
+    # sequence_id = "freiburg3_large_cabinet"
+    # frame_stride = 1
+    target_fps  = 15.0
+    replay_mode = "fast_as_possible"
 
         [stages.source.backend.reference_cloud]
         depth_stride_px = 8
@@ -96,14 +99,14 @@ enabled = true
     min_confidence = 0.6
 
 [stages.align_cloud]
-enabled = true
+enabled                       = false
 max_correspondence_distance_m = 0.05
 
 [stages.evaluate_trajectory]
 enabled = true
 
 [stages.reconstruction]
-enabled = true
+enabled = false
 
     [stages.reconstruction.input_selection]
     source_kind = "evaluation_aligned_cloud"

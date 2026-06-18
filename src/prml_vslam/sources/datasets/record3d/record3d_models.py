@@ -35,6 +35,8 @@ class Record3DSequenceConfig(BaseConfig):
     sequence_id: str
     materialization: Record3DMaterializationConfig = Field(default_factory=Record3DMaterializationConfig)
     reference_cloud: ReferenceCloudConfig = Field(default_factory=lambda: ReferenceCloudConfig(min_confidence=1))
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)
 
 
 class Record3DSceneMetadata(BaseData):

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, cast
 import streamlit as st
 
 from prml_vslam.interfaces import Observation
+from prml_vslam.plotting.datasets import build_payload_footprint_figure
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
@@ -34,7 +35,7 @@ from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
 )
-from prml_vslam.utils import BaseConfig, JsonObject, PathConfig
+from prml_vslam.utils import JsonObject, PathConfig
 
 from ..advio_controller import (
     AdvioDownloadFormData,
@@ -72,13 +73,11 @@ if TYPE_CHECKING:
 
 
 @dataclass(slots=True)
-class _DownloadFormData:
-    request: BaseConfig
+class _TumRgbdDownloadFormData:
+    request: TumRgbdDownloadRequest
     submitted: bool = False
 
 
-DownloadFormData = AdvioDownloadFormData | Record3DDownloadFormData | _DownloadFormData
-DownloadFormT = TypeVar("DownloadFormT", AdvioDownloadFormData, Record3DDownloadFormData, _DownloadFormData)
 DownloadRequestT = TypeVar("DownloadRequestT", AdvioDownloadRequest, TumRgbdDownloadRequest)
 
 
@@ -121,14 +120,13 @@ def _render_advio_tab(context: AppContext) -> None:
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.ADVIO)
     _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
-    page_data.rows = _rows_with_normalized_status(DatasetId.ADVIO, page_data.rows, normalized)
+    page_data.rows = _rows_with_normalized_status(page_data.rows, normalized)
     _render_download_cache_summary(page_data.summary)
     _render_sequence_explorer_impl(
         context=context,
         records=normalized.default_records,
         page_state=context.state.advio,
         dataset_label="ADVIO",
-        state_field="explorer_sequence_id",
     )
     _render_advio_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
@@ -156,14 +154,13 @@ def _render_tum_rgbd_tab(context: AppContext) -> None:
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.TUM_RGBD)
     _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
-    page_data.rows = _rows_with_normalized_status(DatasetId.TUM_RGBD, page_data.rows, normalized)
+    page_data.rows = _rows_with_normalized_status(page_data.rows, normalized)
     _render_download_cache_summary(page_data.summary)
     _render_sequence_explorer_impl(
         context=context,
         records=normalized.default_records,
         page_state=context.state.tum_rgbd,
         dataset_label="TUM RGB-D",
-        state_field="explorer_sequence_id",
     )
     _render_tum_rgbd_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
@@ -184,22 +181,24 @@ def _render_record3d_tab(context: AppContext) -> None:
     normalized = _load_normalized_dataset_snapshot_for_context(context, DatasetId.RECORD3D)
     _render_normalized_summary_metrics(normalized)
     _render_normalized_characterization(normalized)
-    page_data.rows = _record3d_rows_with_normalized_status(page_data.rows, normalized)
+    page_data.rows = _rows_with_normalized_status(page_data.rows, normalized)
     _render_download_cache_summary(page_data.summary)
     _render_sequence_explorer_impl(
         context=context,
         records=normalized.default_records,
         page_state=context.state.record3d_dataset,
         dataset_label="Record3D",
-        state_field="explorer_sequence_id",
     )
     _render_record3d_loop_preview(context, normalized)
     _render_catalog(page_data.rows)
 
 
 def _render_download_card(
-    *, dataset_root: Path, download_label: str, render_form: Callable[[], DownloadFormT]
-) -> DownloadFormT:
+    *,
+    dataset_root: Path,
+    download_label: str,
+    render_form: Callable[[], AdvioDownloadFormData | Record3DDownloadFormData | _TumRgbdDownloadFormData],
+) -> AdvioDownloadFormData | Record3DDownloadFormData | _TumRgbdDownloadFormData:
     with st.container(border=True):
         st.subheader("Download Scenes")
         st.caption(f"Dataset root: `{dataset_root}`")
@@ -211,7 +210,7 @@ def _render_notice(level: str | None, message: str) -> None:
         {"error": st.error, "warning": st.warning, "success": st.success}[level](message)
 
 
-def _build_tum_rgbd_page_data(context: AppContext, form: _DownloadFormData) -> DatasetPageData:
+def _build_tum_rgbd_page_data(context: AppContext, form: _TumRgbdDownloadFormData) -> DatasetPageData:
     notice_level: Literal["error", "warning", "success"] | None = None
     notice_message = ""
     if form.submitted:
@@ -289,14 +288,6 @@ def _record3d_scene_rows(statuses: list[LocalSceneStatus[Record3DSceneMetadata]]
 
 
 def _rows_with_normalized_status(
-    dataset_id: DatasetId,
-    rows: list[DatasetTableRow],
-    normalized: NormalizedDatasetQuery,
-) -> list[DatasetTableRow]:
-    return [{**row, "Normalized": _row_sequence_id(dataset_id, row) in normalized.sequence_ids} for row in rows]
-
-
-def _record3d_rows_with_normalized_status(
     rows: list[DatasetTableRow],
     normalized: NormalizedDatasetQuery,
 ) -> list[DatasetTableRow]:
@@ -310,18 +301,12 @@ def _record3d_rows_with_normalized_status(
     ]
 
 
-def _row_sequence_id(dataset_id: DatasetId, row: DatasetTableRow) -> str:
-    if dataset_id is DatasetId.ADVIO:
-        return str(row.get("Sequence", row.get("Scene", "")))
-    return str(row.get("Sequence", ""))
-
-
 def _load_normalized_dataset_snapshot_for_context(context: AppContext, dataset_id: DatasetId) -> NormalizedDatasetQuery:
     return _load_normalized_dataset_snapshot(
         context.path_config.root.as_posix(),
         context.path_config.data_dir.as_posix(),
         dataset_id.value,
-        _normalized_store_fingerprint(context, dataset_id),
+        normalized_query_fingerprint(context.path_config, dataset_id),
     )
 
 
@@ -340,39 +325,53 @@ def _render_normalized_characterization(normalized: NormalizedDatasetQuery) -> N
             st.info("No usable normalized entries found for this dataset.")
             return
         st.metric("Normalized Entries", str(len(normalized.records)))
-        st.dataframe(normalized.table_rows(), hide_index=True, width="stretch")
+        st.dataframe(normalized.entry_frame(), hide_index=True, width="stretch")
         _render_normalized_analysis_tables(normalized)
 
 
 def _render_normalized_analysis_tables(normalized: NormalizedDatasetQuery) -> None:
-    if not normalized.stats_rows and not normalized.metadata_rows:
+    if normalized.stats_df.empty and normalized.metadata_df.empty:
         st.info("No persisted normalized analysis tables found. Rebuild entries to populate stats and metadata CSVs.")
         return
-    columns = st.columns(3, gap="small")
-    motion_counts = _motion_class_counts(normalized.stats_rows)
-    columns[0].metric("Stats Rows", str(len(normalized.stats_rows)))
-    columns[1].metric("Metadata Rows", str(len(normalized.metadata_rows)))
-    columns[2].metric("Motion Classes", str(len(motion_counts)))
-    if motion_counts:
-        st.dataframe(
-            [{"Motion Class": motion_class, "Sequence Count": count} for motion_class, count in motion_counts.items()],
-            hide_index=True,
-            width="stretch",
-        )
-    if normalized.stats_rows:
-        st.dataframe(normalized.stats_rows, hide_index=True, width="stretch")
-    if normalized.metadata_rows:
-        st.dataframe(normalized.metadata_rows, hide_index=True, width="stretch")
+    sequence_ids = _multiselect_all("Sequences", normalized.stats_df["sequence_id"].unique().tolist())
+    scopes = _multiselect_all("Scopes", normalized.stats_df["scope"].unique().tolist())
+    stats = _multiselect_all("Stats", normalized.stats_df["stat"].unique().tolist())
+    filtered_stats = normalized.filtered_stats_frame(sequence_ids=sequence_ids, scopes=scopes, stats=stats)
+    columns = st.columns(4, gap="small")
+    columns[0].metric("Stats Rows", str(len(filtered_stats.index)))
+    columns[1].metric("Metadata Rows", str(len(normalized.metadata_df.index)))
+    columns[2].metric("Sequences", str(filtered_stats["sequence_id"].nunique() if not filtered_stats.empty else 0))
+    motion_classes = (
+        filtered_stats.loc[filtered_stats["stat"].eq("ego_motion_class"), "value"].nunique()
+        if not filtered_stats.empty
+        else 0
+    )
+    columns[3].metric("Motion Classes", str(motion_classes))
+
+    observation_summary = normalized.observation_summary_frame()
+    if not observation_summary.empty:
+        st.subheader("Observation Summary")
+        st.dataframe(observation_summary, hide_index=True, width="stretch")
+    footprint = normalized.payload_footprint_frame()
+    if not footprint.empty:
+        st.subheader("Payload Footprint")
+        st.plotly_chart(build_payload_footprint_figure(footprint), width="stretch")
+        st.dataframe(footprint, hide_index=True, width="stretch")
+    trajectory_summary = normalized.trajectory_summary_frame()
+    if not trajectory_summary.empty:
+        st.subheader("Trajectory Summary")
+        st.dataframe(trajectory_summary, hide_index=True, width="stretch")
+    if not filtered_stats.empty:
+        st.subheader("Filtered Stats")
+        st.dataframe(filtered_stats, hide_index=True, width="stretch")
+    if not normalized.metadata_df.empty:
+        st.subheader("Metadata")
+        st.dataframe(normalized.metadata_df, hide_index=True, width="stretch")
 
 
-def _motion_class_counts(rows: list[JsonObject]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for row in rows:
-        if row.get("stat") != "ego_motion_class":
-            continue
-        motion_class = str(row.get("value", ""))
-        counts[motion_class] = counts.get(motion_class, 0) + 1
-    return counts
+def _multiselect_all(label: str, values: list[object]) -> list[str]:
+    options = sorted({str(value) for value in values})
+    return st.multiselect(label, options=options, default=options)
 
 
 @st.cache_data
@@ -383,20 +382,6 @@ def _load_normalized_dataset_snapshot(
     path_config = PathConfig(root=Path(root), data_dir=Path(data_dir))
     dataset = DatasetId(dataset_id)
     return query_normalized_dataset(dataset, path_config)
-
-
-def _normalized_store_fingerprint(context: AppContext, dataset_id: DatasetId) -> tuple[tuple[str, int, int], ...]:
-    return normalized_query_fingerprint(context.path_config, dataset_id)
-
-
-def _dataset_root(context: AppContext, dataset_id: DatasetId) -> Path:
-    match dataset_id:
-        case DatasetId.ADVIO:
-            return context.advio_service.dataset_root
-        case DatasetId.TUM_RGBD:
-            return context.tum_rgbd_service.dataset_root
-        case DatasetId.RECORD3D:
-            return context.record3d_dataset_service.dataset_root
 
 
 def _sync_tum_rgbd_preview_state(
@@ -534,8 +519,8 @@ def _render_normalized_summary_metrics(normalized: NormalizedDatasetQuery) -> No
         ("Normalized Entries", len(normalized.records)),
         ("Sequences", len(normalized.sequence_ids)),
         ("Default Profiles", len(normalized.default_profile_sequence_ids)),
-        ("Stats Rows", len(normalized.stats_rows)),
-        ("Metadata Rows", len(normalized.metadata_rows)),
+        ("Stats Rows", len(normalized.stats_df.index)),
+        ("Metadata Rows", len(normalized.metadata_df.index)),
         ("Issues", len(normalized.issues)),
     )
     for column, (label, value) in zip(st.columns(6, gap="small"), metrics, strict=True):
@@ -569,7 +554,7 @@ def _render_advio_download_form(context: AppContext) -> AdvioDownloadFormData:
     return AdvioDownloadFormData(request=request, submitted=submitted)
 
 
-def _render_tum_rgbd_download_form(context: AppContext) -> _DownloadFormData:
+def _render_tum_rgbd_download_form(context: AppContext) -> _TumRgbdDownloadFormData:
     request, submitted = _render_download_form_fields(
         form_key="tum_rgbd_download_form",
         page_state=context.state.tum_rgbd,
@@ -583,7 +568,7 @@ def _render_tum_rgbd_download_form(context: AppContext) -> _DownloadFormData:
         selected_sequence_ids=request.sequence_ids,
         overwrite_existing=request.overwrite,
     )
-    return _DownloadFormData(request=request, submitted=submitted)
+    return _TumRgbdDownloadFormData(request=request, submitted=submitted)
 
 
 def _render_record3d_download_form(context: AppContext) -> Record3DDownloadFormData:
@@ -637,7 +622,6 @@ def _render_sequence_explorer_impl(
     records: list[NormalizedSequenceRecord],
     page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
     dataset_label: str,
-    state_field: str,
 ) -> None:
     sequence_ids = [record.sequence_id for record in records]
     with st.container(border=True):
@@ -645,8 +629,9 @@ def _render_sequence_explorer_impl(
         if not sequence_ids:
             st.info(f"Build at least one normalized {dataset_label} entry to unlock sequence statistics.")
             return
-        current = getattr(page_state, state_field)
-        selected_id = current if current in sequence_ids else sequence_ids[0]
+        selected_id = (
+            page_state.explorer_sequence_id if page_state.explorer_sequence_id in sequence_ids else sequence_ids[0]
+        )
         selected_id = st.selectbox(
             "Normalized Scene",
             options=sequence_ids,
@@ -655,7 +640,7 @@ def _render_sequence_explorer_impl(
                 record.sequence_label for record in records if record.sequence_id == sequence_id
             ),
         )
-        save_model_updates(context.store, context.state, page_state, **{state_field: selected_id})
+        save_model_updates(context.store, context.state, page_state, explorer_sequence_id=selected_id)
         selected_records = [record for record in records if record.sequence_id == selected_id]
         st.dataframe(
             [
