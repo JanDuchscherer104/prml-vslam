@@ -15,6 +15,7 @@ from prml_vslam.interfaces import (
     CameraIntrinsics,
     FrameTransform,
     Observation,
+    ObservationIndexEntry,
     ObservationProvenance,
 )
 from prml_vslam.interfaces.artifacts import artifact_ref
@@ -27,6 +28,7 @@ from prml_vslam.sources.config import (
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    normalized_profile_for_source_config,
 )
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
@@ -37,9 +39,12 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
-from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.sources.protocols import OfflineSequenceSource
+from prml_vslam.sources.replay import ImageSequenceObservationSource, ReplayMode, write_rgb_video
 from prml_vslam.sources.stage.artifacts import reference_trajectory_artifact_key
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.sources.stage.runtime import SourceRuntime
@@ -55,6 +60,10 @@ from prml_vslam.sources.stage.visualization import (
     SourceVisualizationAdapter,
 )
 from prml_vslam.utils import PathConfig, RunArtifactPaths
+
+
+def test_offline_sequence_source_label_contract_is_read_only_property() -> None:
+    assert isinstance(OfflineSequenceSource.__dict__["label"], property)
 
 
 class _ManifestOnlySource:
@@ -138,6 +147,7 @@ def _write_rgb_manifest(
     *,
     frame_count: int = 2,
     timestamps_ns: list[int] | None = None,
+    source_frame_indices: list[int] | None = None,
 ) -> SequenceManifest:
     rgb_dir = tmp_path / "frames"
     rgb_dir.mkdir()
@@ -149,7 +159,49 @@ def _write_rgb_manifest(
         json.dumps({"timestamps_ns": timestamps_ns or [index * 100_000_000 for index in range(frame_count)]}),
         encoding="utf-8",
     )
-    return SequenceManifest(sequence_id="seq-rgb", rgb_dir=rgb_dir, timestamps_path=timestamps_path)
+    source_frame_indices_path = None
+    if source_frame_indices is not None:
+        source_frame_indices_path = tmp_path / "source_frame_indices.json"
+        source_frame_indices_path.write_text(
+            json.dumps({"source_frame_indices": source_frame_indices}),
+            encoding="utf-8",
+        )
+    return SequenceManifest(
+        sequence_id="seq-rgb",
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+        source_frame_indices_path=source_frame_indices_path,
+    )
+
+
+def _write_video_manifest(
+    tmp_path: Path,
+    *,
+    frame_count: int = 3,
+    timestamps_ns: list[int] | None = None,
+    source_frame_indices: list[int] | None = None,
+) -> SequenceManifest:
+    frames = [np.full((4, 6, 3), index + 1, dtype=np.uint8) for index in range(frame_count)]
+    video_path = write_rgb_video(tmp_path / "rgb.mp4", frames)
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(
+        json.dumps({"timestamps_ns": timestamps_ns or [index * 100_000_000 for index in range(frame_count)]}),
+        encoding="utf-8",
+    )
+    source_frame_indices_path = None
+    if source_frame_indices is not None:
+        source_frame_indices_path = tmp_path / "source_frame_indices.json"
+        source_frame_indices_path.write_text(
+            json.dumps({"source_frame_indices": source_frame_indices}),
+            encoding="utf-8",
+        )
+    return SequenceManifest(
+        sequence_id="seq-video",
+        video_path=video_path,
+        rgb_dir=None,
+        timestamps_path=timestamps_path,
+        source_frame_indices_path=source_frame_indices_path,
+    )
 
 
 def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: Path) -> None:
@@ -165,12 +217,103 @@ def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: 
     assert observations[0].provenance.sequence_id == "seq-rgb"
 
 
+def test_image_sequence_replay_loads_depth_before_pose_contract_validation(tmp_path: Path) -> None:
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(tmp_path / "rgb.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    depth_path = tmp_path / "depth.npy"
+    np.save(depth_path, np.ones((2, 2), dtype=np.float32))
+    loaded_depth_paths: list[Path] = []
+    source = ImageSequenceObservationSource(
+        sequence_dir=tmp_path,
+        rows=[
+            ObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb.png"),
+                depth_path=Path("depth.npy"),
+                intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
+                T_world_camera=None,
+                provenance=ObservationProvenance(source_id="synthetic"),
+            )
+        ],
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+        depth_loader=lambda path: loaded_depth_paths.append(path) or np.asarray(np.load(path), dtype=np.float32),
+    )
+
+    source.connect()
+    with pytest.raises(ValueError, match="Metric observation geometry requires T_world_camera"):
+        source.wait_for_observation()
+
+    assert loaded_depth_paths == [depth_path]
+
+
 def test_sequence_manifest_observation_reader_applies_max_frames(tmp_path: Path) -> None:
     manifest = _write_rgb_manifest(tmp_path, frame_count=3)
 
     observations = list(iter_sequence_manifest_observations(manifest, max_frames=2))
 
     assert [observation.seq for observation in observations] == [0, 1]
+
+
+def test_sequence_manifest_observation_reader_preserves_original_source_frame_indices(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(
+        tmp_path,
+        frame_count=4,
+        timestamps_ns=[10, 20, 30, 40],
+        source_frame_indices=[1, 3],
+    )
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert [observation.seq for observation in observations] == [0, 1]
+    assert [observation.timestamp_ns for observation in observations] == [20, 40]
+    assert [observation.source_frame_index for observation in observations] == [1, 3]
+    assert [observation.provenance.source_frame_index for observation in observations] == [1, 3]
+
+
+def test_sequence_manifest_observation_reader_decodes_video_path_without_rgb_dir(tmp_path: Path) -> None:
+    manifest = _write_video_manifest(
+        tmp_path,
+        frame_count=4,
+        timestamps_ns=[10, 20, 30, 40],
+        source_frame_indices=[1, 3],
+    )
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert manifest.rgb_dir is None
+    assert [observation.seq for observation in observations] == [0, 1]
+    assert [observation.timestamp_ns for observation in observations] == [20, 40]
+    assert [observation.source_frame_index for observation in observations] == [1, 3]
+    assert observations[0].rgb is not None
+    assert observations[0].rgb.shape == (4, 6, 3)
+
+
+def test_image_sequence_replay_preserves_row_provenance_source_frame_index(tmp_path: Path) -> None:
+    rgb_dir = tmp_path / "rgb"
+    rgb_dir.mkdir()
+    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(rgb_dir / "000003.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    source = ImageSequenceObservationSource(
+        sequence_dir=tmp_path,
+        rows=[
+            ObservationIndexEntry(
+                seq=0,
+                timestamp_ns=0,
+                rgb_path=Path("rgb/000003.png"),
+                provenance=ObservationProvenance(source_id="synthetic", source_frame_index=3),
+            )
+        ],
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+    )
+
+    source.connect()
+    observation = source.wait_for_observation()
+    source.disconnect()
+
+    assert observation.seq == 0
+    assert observation.source_frame_index == 3
+    assert observation.provenance.source_frame_index == 3
 
 
 def test_sequence_manifest_observation_reader_requires_rgb_dir(tmp_path: Path) -> None:
@@ -487,6 +630,48 @@ def test_source_runtime_materialization_applies_advio_video_frame_stride(
     assert payload == {"frame_stride": 3, "timestamps_ns": [0, 300_000_000]}
 
 
+def test_source_runtime_materialization_preserves_selected_normalized_video(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
+    video_path = tmp_path / "store" / "observations" / "rgb.mp4"
+    video_path.parent.mkdir(parents=True)
+    video_path.write_bytes(b"video")
+    timestamps_path = run_paths.input_timestamps_path
+    timestamps_path.parent.mkdir(parents=True)
+    timestamps_path.write_text(json.dumps({"timestamps_ns": [0, 300_000_000], "frame_stride": 3}), encoding="utf-8")
+    indices_path = run_paths.artifact_root / "input" / "source_frame_indices.json"
+    indices_path.write_text(json.dumps({"source_frame_indices": [0, 3]}), encoding="utf-8")
+
+    def fail_extract_video_frames(**_kwargs):
+        raise AssertionError("normalized video-backed manifests must not extract artifact PNG frames")
+
+    monkeypatch.setattr("prml_vslam.sources.materialization.extract_video_frames", fail_extract_video_frames)
+
+    manifest = materialize_manifest(
+        mode=PipelineMode.OFFLINE,
+        frame_stride=3,
+        streaming_max_frames=None,
+        prepared_manifest=SequenceManifest(
+            sequence_id="advio-15",
+            video_path=video_path,
+            timestamps_path=timestamps_path,
+            source_frame_indices_path=indices_path,
+        ),
+        run_paths=run_paths,
+    )
+
+    assert manifest.video_path == video_path
+    assert manifest.rgb_dir is None
+    assert manifest.timestamps_path == timestamps_path
+    assert not run_paths.input_frames_dir.exists()
+    assert json.loads(timestamps_path.read_text(encoding="utf-8")) == {
+        "timestamps_ns": [0, 300_000_000],
+        "frame_stride": 3,
+    }
+
+
 def test_source_runtime_materialization_does_not_double_sample_dataset_timestamps(tmp_path: Path) -> None:
     run_paths = RunArtifactPaths.build(tmp_path / "artifacts")
     rgb_dir = tmp_path / "rgb"
@@ -509,6 +694,16 @@ def test_source_runtime_materialization_does_not_double_sample_dataset_timestamp
     assert payload == {"frame_stride": 1, "timestamps_ns": [0, 200_000_000]}
 
 
+def test_normalized_store_timestamp_loader_accepts_tum_rgbd_list_rows(tmp_path: Path) -> None:
+    timestamps_path = tmp_path / "rgb.txt"
+    timestamps_path.write_text(
+        "# timestamp rgb\n0.000000000 rgb/000000.png\n0.200000000 rgb/000001.png\n",
+        encoding="utf-8",
+    )
+
+    assert load_timestamps_ns(timestamps_path) == [0, 200_000_000]
+
+
 def test_video_source_config_constructs_video_adapter(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path, captures_dir=tmp_path / "captures")
     path_config.captures_dir.mkdir()
@@ -526,12 +721,15 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     class FakeDatasetService:
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
+            self.dataset_root = path_config.data_dir / "fake-dataset"
 
         def resolve_sequence_id(self, sequence_id: str) -> str:
+            if sequence_id == "advio-20":
+                return 20
             return f"resolved-{sequence_id}"
 
-        def build_streaming_source(self, **kwargs):
-            calls.append(("streaming", kwargs))
+        def build_normalized_source(self, **kwargs):
+            calls.append(("normalized", kwargs))
             return _ManifestOnlySource(rgb_dir=tmp_path)
 
     monkeypatch.setattr("prml_vslam.sources.config.AdvioDatasetService", FakeDatasetService)
@@ -551,13 +749,62 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
 
     assert tum_source.label == "manifest-only"
     assert advio_source.label == "manifest-only"
+    assert [call[0] for call in calls] == ["normalized", "normalized"]
     assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
     assert calls[0][1]["frame_selection"].target_fps == 15.0
     assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[1][1]["sequence_id"] == "resolved-advio-20"
+    assert calls[0][1]["normalized_store"].dataset_id is DatasetId.TUM_RGBD
+    assert calls[0][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
+    assert calls[0][1]["normalized_profile"].dataset_id is DatasetId.TUM_RGBD
+    assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
+    assert calls[1][1]["sequence_id"] == 20
     assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[1][1]["normalize_video_orientation"] is True
+    assert "normalize_video_orientation" not in calls[1][1]
     assert calls[1][1]["frame_selection"].frame_stride == 3
+    assert calls[1][1]["normalized_store"].dataset_id is DatasetId.ADVIO
+    assert calls[1][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
+    assert calls[1][1]["normalized_profile"].dataset_id is DatasetId.ADVIO
+    assert calls[1][1]["normalized_profile"].sequence_id == "advio-20"
+
+
+def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orientation() -> None:
+    source = AdvioSourceConfig(sequence_id="advio-20", normalize_video_orientation=True)
+    rotated_source = source.model_copy(update={"normalize_video_orientation": False})
+    sampled_source = source.model_copy(update={"frame_stride": 3, "replay_mode": ReplayMode.FAST_AS_POSSIBLE})
+    target_fps_source = source.model_copy(update={"target_fps": 15.0})
+
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=source.source_id,
+        payload=source.model_dump(mode="json"),
+    )
+    rotated_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=rotated_source.source_id,
+        payload=rotated_source.model_dump(mode="json"),
+    )
+    sampled_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=sampled_source.source_id,
+        payload=sampled_source.model_dump(mode="json"),
+    )
+    target_fps_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-20",
+        source_id=target_fps_source.source_id,
+        payload=target_fps_source.model_dump(mode="json"),
+    )
+
+    assert profile.profile_key == rotated_profile.profile_key
+    assert profile.profile_key == sampled_profile.profile_key
+    assert profile.profile_key == target_fps_profile.profile_key
+    assert "frame_stride" not in target_fps_profile.source_profile
+    assert "target_fps" not in target_fps_profile.source_profile
+    assert "sequence_id" not in target_fps_profile.source_profile
+    assert "source_id" not in target_fps_profile.source_profile
 
 
 def test_record3d_source_config_constructs_sampled_live_adapter(tmp_path: Path, monkeypatch) -> None:

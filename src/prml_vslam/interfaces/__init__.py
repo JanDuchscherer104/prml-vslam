@@ -1,7 +1,7 @@
 """Curated import surface for repo-wide shared DTOs."""
 
 from .alignment import GroundAlignmentMetadata, GroundPlaneModel, GroundPlaneVisualizationHint
-from .camera import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries
+from .camera import CameraIntrinsics, CameraIntrinsicsSample, CameraIntrinsicsSeries, write_camera_intrinsics_yaml
 from .geometry import DepthMap, PointCloud, PointMap
 from .observation import (
     CAMERA_RDF_FRAME,
@@ -34,4 +34,5 @@ __all__ = [
     "PointCloud",
     "PointMap",
     "VisualizationArtifacts",
+    "write_camera_intrinsics_yaml",
 ]

@@ -6,14 +6,15 @@ Use [../REQUIREMENTS.md](../REQUIREMENTS.md) for top-level ownership rules. Use 
 
 ## Current Implementation
 
-This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO
-and TUM RGB-D.
+This package owns repository-local dataset adapters and dataset-facing contracts. The implemented targets are ADVIO,
+TUM RGB-D, and Record3D.
 
 Current simplification work must preserve the supported dataset surface. In particular:
 
-- all currently supported modalities remain in scope
+- full-scene dataset downloads remain the only supported local fetch surface
 - ADVIO remains trajectory-only for benchmark inputs
 - TUM RGB-D dataset-provided reference cloud preparation remains in scope
+- Record3D downloads cache full `.r3d` archives and derive RGB-D observations plus reference clouds from those archives
 - the current ray-pipeline-facing dataset service and sequence surfaces remain the public integration boundary
 
 The current ADVIO stack includes:
@@ -43,6 +44,13 @@ The TUM RGB-D stack mirrors the same service shape where practical:
 - TGZ download/extraction flows in `tum_rgbd/tum_rgbd_download.py`
 - sequence manifest and benchmark input preparation in `tum_rgbd/tum_rgbd_sequence.py`
 - image-sequence loop preview in `tum_rgbd/tum_rgbd_replay_adapter.py`
+
+The Record3D stack follows the same dataset-service boundary for full `.r3d` archives:
+
+- static Zenodo catalog and local archive path resolution in `record3d/record3d_layout.py`
+- full-archive download and SHA-256 verification in `record3d/record3d_download.py`
+- RGB-D frame decoding, trajectory preparation, and reference-cloud generation in `record3d/record3d_sequence.py`
+- replay and offline source integration through `record3d/record3d_service.py`
 
 Package-local guides:
 
@@ -149,13 +157,12 @@ The most important dataset-owned DTOs and outputs are:
 - [AdvioDatasetService](./advio/advio_service.py:66)
   - summarize the local dataset state
   - inspect scenes
-  - download selected modalities
+  - download selected full scenes
   - resolve dataset sequence ids for pipeline execution
-  - prepare normalized sequence manifests and benchmark inputs
-  - open a replay stream for the app or pipeline surfaces
+  - build normalized-store-backed sources for app and pipeline surfaces
 - [AdvioSequence](./advio/advio_sequence.py:138)
   - load one offline sample
-  - open one replay stream
+  - parse native observations for normalized-store ingestion
   - prepare one `SequenceManifest`
   - prepare one `PreparedBenchmarkInputs`
 - [TumRgbdDatasetService](./tum_rgbd/tum_rgbd_service.py:14)
@@ -164,9 +171,71 @@ The most important dataset-owned DTOs and outputs are:
   - prepare RGB-directory sequence manifests and ground-truth TUM references
 - [TumRgbdSequence](./tum_rgbd/tum_rgbd_sequence.py:52)
   - load one local sequence
-  - open one RGB-D image-sequence replay stream
+  - parse native RGB-D observations for normalized-store ingestion
   - prepare one `SequenceManifest`
   - prepare one `PreparedBenchmarkInputs`
+
+## Normalized Store Batch Builds
+
+Dataset-backed sources share one canonical `NormalizedDatasetStore` under
+`.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. The store persists
+source-selected replay payloads once, plus source-owned long-form Core/Motion
+statistics and metadata tables. Runtime sampling options such as
+`frame_stride` and `target_fps` remain read-time policy and do not create
+stride-specific stored payloads.
+
+Runtime readers first request the exact profile key. If that profile is missing,
+they may reuse the only current-schema entry for the same dataset, sequence, and
+source id with a warning. Multiple compatible profiles remain ambiguous and
+must be resolved by rebuilding or selecting the exact profile.
+
+Each new entry writes two queryable CSV tables:
+
+- `stats_long.csv`: one row per persisted sequence, observation-sequence, or
+  trajectory statistic, including frame counts, duration, FPS, path length,
+  speed, 3D tangent-angle change, curvature proxy, and coarse ego-motion class.
+- `metadata_long.csv`: one row per profile, source, and artifact metadata fact
+  that app and CLI surfaces can load without re-normalizing the dataset.
+
+A normalized entry stores the common single RGB-D observation sequence directly
+under `<entry>/observations/`. Multi-sequence normalized observation layouts are
+rejected instead of persisted. Record3D depth maps remain benchmark observation
+payloads rather than primary `SequenceManifest` input, but the matching RGB
+frames are shared with the source manifest instead of duplicated under
+`benchmark/observations/`.
+
+ADVIO normalizes display-oriented replay frames into a PNG sequence under
+`<entry>/observations/rgb/`. To avoid the old full-resolution PNG blow-up while
+keeping the same file-backed contract as TUM RGB-D and Record3D, ADVIO defaults
+to a method-neutral cache raster with maximum width 392 px and dimensions rounded
+to multiples of 14; intrinsics are scaled to that stored raster.
+
+New entries use canonical roots only: source inputs under `<entry>/input/`,
+reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds
+under `<entry>/benchmark/reference_clouds/`, and replay payloads under
+`<entry>/observations/`. The store schema rejects stale non-canonical entries so
+they are rebuilt instead of silently mixed with the current layout.
+
+To build or refresh normalized entries, use the CLI normalization command. Omit
+`--sequence` to normalize every offline-ready local sequence with one worker per
+CPU by default, or repeat `--sequence` to bound the build:
+
+```bash
+prml-vslam dataset normalize --dataset record3d
+prml-vslam dataset normalize --dataset record3d --sequence <sequence-id> --workers 4
+prml-vslam dataset normalize --dataset record3d --target-fps 5
+prml-vslam dataset normalize --dataset record3d --frame-stride 3
+```
+
+`--target-fps` and `--frame-stride` are normalize-time sampling controls. They
+reduce the frames persisted to the normalized datastore and are therefore part of
+the store profile when used. Runtime sampling in pipeline source configs remains
+read-time only and does not request a different normalized entry.
+
+The Streamlit Datasets page and `prml-vslam dataset summary` read persisted
+entries, issues, and analysis tables; they do not normalize datasets during
+display. Raw dataset explorers remain ingestion and inspection surfaces, while
+pipeline-ready dataset serving consumes normalized-store artifacts.
 
 ## Typical Usage
 
@@ -187,31 +256,31 @@ print(sample.calibration.intrinsics)
 print(sample.ground_truth.timestamps.shape)
 ```
 
-Open a replay stream:
+Open a normalized replay stream:
 
 ```python
-from pathlib import Path
-
-from prml_vslam.sources.datasets.advio import (
-    AdvioPoseFrameMode,
-    AdvioPoseSource,
-    AdvioSequence,
-    AdvioSequenceConfig,
-    AdvioServingConfig,
+from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalization import (
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
 )
-from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.sources.datasets.advio import AdvioDatasetService
+from prml_vslam.utils import PathConfig
 
-sequence = AdvioSequence(
-    config=AdvioSequenceConfig(dataset_root=Path(".data/advio"), sequence_id=15)
-)
-stream = sequence.open_stream(
-    dataset_serving=AdvioServingConfig(
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+path_config = PathConfig()
+service = AdvioDatasetService(path_config)
+source_config = AdvioSourceConfig(sequence_id="advio-15")
+source = service.build_normalized_source(
+    sequence_id=service.resolve_sequence_id(source_config.sequence_id),
+    normalized_store=normalized_store_for_service(DatasetId.ADVIO, path_config),
+    normalized_profile=normalized_profile_for_dataset(
+        dataset_id=DatasetId.ADVIO,
+        service=service,
+        source_config=source_config,
     ),
-    replay_mode=ReplayMode.REALTIME,
-    normalize_video_orientation=True,
 )
+stream = source.open_stream(loop=False)
 
 stream.connect()
 observation = stream.wait_for_observation()
@@ -232,8 +301,9 @@ statuses = service.local_scene_statuses()
 ## Boundaries
 
 - This package owns dataset normalization and replay preparation, not evaluation policy.
-- Simplification in this package must not drop supported modalities or TUM RGB-D reference-cloud preparation.
+- Simplification in this package must not reintroduce partial modality downloads or drop TUM RGB-D reference-cloud preparation.
+- App and pipeline dataset replay must come from `.data/vslam-datastore/<dataset>/`; native dataset readers are parser/ingestion internals.
 - Generic replay mechanics stay in `prml_vslam.sources.replay`.
 - App pages and pipeline surfaces should prefer `AdvioDatasetService`, `TumRgbdDatasetService`, or the
-  corresponding sequence classes over rebuilding dataset path, manifest, or
-  replay logic directly.
+  corresponding normalized store helpers over rebuilding dataset path, manifest,
+  or replay logic directly.

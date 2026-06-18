@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 
 import prml_vslam.sources.replay.video as replay_video_module
+from prml_vslam.interfaces import ObservationSequenceIndex
+from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceSource,
@@ -18,10 +20,8 @@ from prml_vslam.sources.contracts import (
 from prml_vslam.sources.datasets.advio import (
     AdvioCatalog,
     AdvioDatasetService,
-    AdvioDownloadPreset,
     AdvioDownloadRequest,
     AdvioEnvironment,
-    AdvioModality,
     AdvioPeopleLevel,
     AdvioPoseFrameMode,
     AdvioPoseSource,
@@ -29,7 +29,6 @@ from prml_vslam.sources.datasets.advio import (
     AdvioSequence,
     AdvioSequenceConfig,
     AdvioServingConfig,
-    AdvioStreamingSourceConfig,
     AdvioUpstreamMetadata,
 )
 from prml_vslam.sources.datasets.advio.advio_frames import (
@@ -42,8 +41,11 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
+from prml_vslam.utils.geometry import load_tum_trajectory
 
 
 def _write_video(path: Path, *, num_frames: int = 3) -> None:
@@ -457,28 +459,28 @@ def test_advio_sequence_can_normalize_to_sequence_manifest(tmp_path: Path) -> No
     assert manifest.advio.fixpoints_csv_path == sequence_dir / "ground-truth" / "fixpoints.csv"
     assert manifest.advio.pose_refs.selected_pose_csv_path == sequence_dir / "pixel" / "arcore.csv"
     assert manifest.advio.T_cam_imu.tx == 0.01
-    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == ["ground_truth"]
-    assert [candidate.source.value for candidate in benchmark_inputs.candidate_trajectories] == [
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
+        "ground_truth",
         "arcore",
         "arcore",
         "arkit",
         "arkit",
     ]
     assert benchmark_inputs.reference_trajectories[0].path == sequence_dir / "evaluation" / "ground_truth.tum"
-    assert benchmark_inputs.candidate_trajectories[0].path == sequence_dir / "evaluation" / "arcore.tum"
-    assert benchmark_inputs.candidate_trajectories[1].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
-    assert benchmark_inputs.candidate_trajectories[2].path == sequence_dir / "evaluation" / "arkit.tum"
-    assert benchmark_inputs.candidate_trajectories[3].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
+    assert benchmark_inputs.reference_trajectories[1].path == sequence_dir / "evaluation" / "arcore.tum"
+    assert benchmark_inputs.reference_trajectories[2].path == sequence_dir / "evaluation" / "arcore_aligned_to_gt.tum"
+    assert benchmark_inputs.reference_trajectories[3].path == sequence_dir / "evaluation" / "arkit.tum"
+    assert benchmark_inputs.reference_trajectories[4].path == sequence_dir / "evaluation" / "arkit_aligned_to_gt.tum"
     assert all(reference.path.exists() for reference in benchmark_inputs.reference_trajectories)
-    assert all(candidate.path.exists() for candidate in benchmark_inputs.candidate_trajectories)
-    assert [candidate.coordinate_status for candidate in benchmark_inputs.candidate_trajectories] == [
+    assert [reference.coordinate_status for reference in benchmark_inputs.reference_trajectories] == [
+        ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.ALIGNED,
         ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
         ReferenceCloudCoordinateStatus.ALIGNED,
     ]
-    assert benchmark_inputs.candidate_trajectories[1].target_frame == "advio_gt_world"
-    assert benchmark_inputs.candidate_trajectories[3].target_frame == "advio_gt_world"
+    assert benchmark_inputs.reference_trajectories[2].target_frame == "advio_gt_world"
+    assert benchmark_inputs.reference_trajectories[4].target_frame == "advio_gt_world"
     assert benchmark_inputs.reference_clouds == []
 
 
@@ -500,8 +502,8 @@ def test_advio_benchmark_inputs_sanitize_optional_provider_trajectory(tmp_path: 
 
     benchmark_inputs = sequence.to_benchmark_inputs()
 
-    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == ["ground_truth"]
-    assert [candidate.source.value for candidate in benchmark_inputs.candidate_trajectories] == [
+    assert [reference.source.value for reference in benchmark_inputs.reference_trajectories] == [
+        "ground_truth",
         "arcore",
         "arcore",
         "arkit",
@@ -539,7 +541,7 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     assert any(
         reference.source is ReferenceSource.ARKIT
         and reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-        for reference in benchmark_inputs.candidate_trajectories
+        for reference in benchmark_inputs.reference_trajectories
     )
     arkit_metadata = json.loads((sequence_dir / "evaluation" / "arkit.metadata.json").read_text())
     assert arkit_metadata["sanitization"]["normalized_quaternion_rows"] == 3
@@ -548,19 +550,17 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
         reference.source is ReferenceSource.ARKIT
         and reference.coordinate_status is ReferenceCloudCoordinateStatus.ALIGNED
         and reference.target_frame == "advio_gt_world"
-        for reference in benchmark_inputs.candidate_trajectories
+        for reference in benchmark_inputs.reference_trajectories
     )
 
 
-def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path) -> None:
-    _write_advio_sequence(tmp_path)
+def test_advio_dataset_service_builds_raw_ingestion_source(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / "advio")
 
-    source = AdvioStreamingSourceConfig(
-        dataset_root=tmp_path,
+    source = AdvioDatasetService(PathConfig(root=tmp_path, data_dir=tmp_path))._build_raw_streaming_source(
         sequence_id=15,
         dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.GROUND_TRUTH),
-        frame_stride=1,
-    ).setup_target()
+    )
 
     assert source is not None
     assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"
@@ -570,6 +570,129 @@ def test_advio_streaming_source_config_rehydrates_process_source(tmp_path: Path)
     stream.disconnect()
     assert packet.T_world_camera is not None
     assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
+
+
+def test_advio_source_config_requires_normalized_store_entry(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    source = AdvioSourceConfig(sequence_id="advio-15").setup_target(path_config=PathConfig(root=tmp_path))
+
+    with pytest.raises(FileNotFoundError, match="prml-vslam dataset normalize --dataset advio"):
+        source.prepare_sequence_manifest(tmp_path / "prepared")
+
+
+def test_advio_normalized_entry_replays_display_oriented_observations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    monkeypatch.setattr(replay_video_module, "read_video_rotation_degrees", lambda path: 90)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15")
+
+    entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=source_config,
+    )
+    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    sequence_manifest = json.loads(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    observation_ref = benchmark_inputs["observation_sequences"][0]
+    observation_index = ObservationSequenceIndex.model_validate_json(
+        Path(observation_ref["index_path"]).read_text(encoding="utf-8")
+    )
+
+    stream = source_config.setup_target(path_config=path_config).open_stream(loop=False)
+    stream.connect()
+    packet = stream.wait_for_observation()
+    stream.disconnect()
+
+    assert observation_ref["raster_space"] == "display_downscaled"
+    assert observation_ref["rgb_video_path"] is None
+    assert sequence_manifest.get("video_path") is None
+    assert sequence_manifest["rgb_dir"] == (entry.root / "observations" / "rgb").as_posix()
+    assert observation_index.raster_space == "display_downscaled"
+    assert Path(observation_ref["payload_root"]).relative_to(entry.root).as_posix() == "observations"
+    assert (entry.root / "observations" / "rgb").is_dir()
+    assert not (entry.root / "observations" / "rgb.mp4").exists()
+    assert json.loads((entry.root / "observations" / "rgb.metadata.json").read_text()) == {
+        "dimension_multiple": 14,
+        "raster_space": "display_downscaled",
+        "rgb_max_width_px": 392,
+        "source_raster_space": "display",
+    }
+    assert (
+        benchmark_inputs["reference_trajectories"][0]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "ground_truth.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][1]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["reference_trajectories"][2]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
+    )
+    assert (
+        benchmark_inputs["candidate_trajectories"][1]["path"]
+        == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
+    )
+    for trajectory_ref in [
+        *benchmark_inputs["reference_trajectories"],
+        *benchmark_inputs["candidate_trajectories"],
+    ]:
+        trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
+        trajectory_metadata = json.loads(Path(trajectory_ref["metadata_path"]).read_text())
+        np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+        assert trajectory_metadata["trajectory_origin"] == "first_pose"
+        assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
+    assert observation_index.rows[0].rgb_path == Path("rgb/000000.png")
+    assert observation_index.rows[0].rgb_video_frame_index is None
+    assert (entry.root / "observations" / observation_index.rows[0].rgb_path).is_file()
+    assert observation_index.rows[0].provenance.source_frame_index == 0
+    assert observation_index.rows[0].provenance.raster_space == "display_downscaled"
+    assert observation_index.rows[0].provenance.original_width == 48
+    assert observation_index.rows[0].provenance.original_height == 64
+    assert observation_index.rows[0].intrinsics is not None
+    assert observation_index.rows[0].intrinsics.width_px == 42
+    assert observation_index.rows[0].intrinsics.height_px == 56
+    assert packet.rgb is not None
+    assert packet.rgb.shape == (56, 42, 3)
+    assert packet.intrinsics is not None
+    assert packet.intrinsics.width_px == 42
+    assert packet.intrinsics.height_px == 56
+    assert packet.source_frame_index == 0
+    assert packet.provenance.source_frame_index == 0
+
+
+def test_advio_normalization_target_fps_changes_profile_and_observation_count(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    full_config = AdvioSourceConfig(sequence_id="advio-15")
+    sampled_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
+
+    full_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=full_config,
+    )
+    sampled_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=sampled_config,
+    )
+    sampled_inputs = json.loads(sampled_entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    sampled_index = ObservationSequenceIndex.model_validate_json(
+        Path(sampled_inputs["observation_sequences"][0]["index_path"]).read_text(encoding="utf-8")
+    )
+
+    assert sampled_entry.profile_key != full_entry.profile_key
+    assert sampled_index.observation_count == 2
+    assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:
@@ -637,13 +760,10 @@ def test_resolve_existing_advio_reference_tum_finds_ground_truth(tmp_path: Path)
     assert resolve_existing_reference_tum(dataset_root, "advio-15") == reference_path
 
 
-def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive(tmp_path: Path) -> None:
+def test_advio_dataset_service_downloads_full_scene_from_cached_archive(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
-    request = AdvioDownloadRequest(
-        sequence_ids=[15],
-        modalities=[AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO],
-    )
+    request = AdvioDownloadRequest(sequence_ids=[15])
 
     first_result = service.download(request)
     second_result = service.download(request)
@@ -658,25 +778,21 @@ def test_advio_dataset_service_downloads_selected_modalities_from_cached_archive
     assert (dataset_root / "calibration" / "iphone-03.yaml").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.mov").exists()
     assert (dataset_root / "data" / "advio-15" / "iphone" / "frames.csv").exists()
-    assert not (dataset_root / "data" / "advio-15" / "pixel" / "arcore.csv").exists()
+    assert (dataset_root / "data" / "advio-15" / "pixel" / "arcore.csv").exists()
 
     status = service.local_scene_statuses()[0]
     assert status.archive_path == archive_path
-    assert status.local_modalities == [AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO]
-    assert status.replay_ready is False
-    assert status.offline_ready is False
+    assert status.arcore_ready is True
+    assert status.arkit_ready is True
+    assert status.replay_ready is True
+    assert status.offline_ready is True
 
 
-def test_advio_dataset_service_extracts_complete_ground_truth_bundle(tmp_path: Path) -> None:
+def test_advio_dataset_service_extracts_complete_ground_truth_files(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
 
-    result = service.download(
-        AdvioDownloadRequest(
-            sequence_ids=[15],
-            modalities=[AdvioModality.GROUND_TRUTH],
-        )
-    )
+    result = service.download(AdvioDownloadRequest(sequence_ids=[15]))
 
     dataset_root = tmp_path / ".data" / "advio"
     ground_truth_dir = dataset_root / "data" / "advio-15" / "ground-truth"
@@ -684,7 +800,7 @@ def test_advio_dataset_service_extracts_complete_ground_truth_bundle(tmp_path: P
     assert result.downloaded_archive_count == 1
     assert (ground_truth_dir / "poses.csv").exists()
     assert (ground_truth_dir / "fixpoints.csv").exists()
-    assert service.local_scene_statuses()[0].local_modalities == [AdvioModality.GROUND_TRUTH]
+    assert service.local_scene_statuses()[0].offline_ready is True
 
 
 def test_advio_ground_truth_modality_requires_fixpoints_csv(tmp_path: Path) -> None:
@@ -696,21 +812,15 @@ def test_advio_ground_truth_modality_requires_fixpoints_csv(tmp_path: Path) -> N
 
     status = service.local_scene_statuses()[0]
 
-    assert AdvioModality.GROUND_TRUTH not in status.local_modalities
     assert status.replay_ready is False
     assert status.offline_ready is False
 
 
-def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(tmp_path: Path) -> None:
+def test_advio_dataset_service_full_scene_downloads_evaluation_ready_bundle(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
 
-    result = service.download(
-        AdvioDownloadRequest(
-            sequence_ids=[15],
-            preset=AdvioDownloadPreset.OFFLINE,
-        )
-    )
+    result = service.download(AdvioDownloadRequest(sequence_ids=[15]))
 
     assert result.downloaded_archive_count == 1
     summary = service.summarize()
@@ -726,10 +836,7 @@ def test_advio_dataset_service_offline_preset_downloads_evaluation_ready_bundle(
 def test_advio_dataset_service_refreshes_corrupted_cached_archive(tmp_path: Path) -> None:
     catalog = _build_fake_catalog(tmp_path)
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
-    request = AdvioDownloadRequest(
-        sequence_ids=[15],
-        modalities=[AdvioModality.CALIBRATION, AdvioModality.IPHONE_VIDEO],
-    )
+    request = AdvioDownloadRequest(sequence_ids=[15])
 
     service.download(request)
     archive_path = tmp_path / ".data" / "advio" / ".archives" / "advio-15.zip"
@@ -799,7 +906,7 @@ def test_advio_dataset_service_handles_official_archive_layout(tmp_path: Path) -
     )
     service = AdvioDatasetService(PathConfig(root=tmp_path), catalog=catalog)
 
-    service.download(AdvioDownloadRequest(sequence_ids=[15], preset=AdvioDownloadPreset.OFFLINE))
+    service.download(AdvioDownloadRequest(sequence_ids=[15]))
 
     status = service.local_scene_statuses()[0]
     ground_truth_dir = tmp_path / ".data" / "advio" / "data" / "advio-15" / "ground-truth"
