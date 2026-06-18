@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import cv2
+import liblzfse
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -55,7 +56,6 @@ from prml_vslam.sources.datasets.record3d import (
     Record3DSceneMetadata,
     Record3DSequence,
     Record3DSequenceConfig,
-    record3d_loading,
 )
 from prml_vslam.sources.datasets.record3d.record3d_download import _redact_url_for_log
 from prml_vslam.sources.datasets.record3d.record3d_layout import load_record3d_catalog
@@ -65,21 +65,6 @@ from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors
 
-try:
-    import liblzfse as _liblzfse
-except ImportError:
-    _liblzfse = None
-
-
-class _PassthroughLzfseCodec:
-    @staticmethod
-    def compress(payload: bytes) -> bytes:
-        return payload
-
-    @staticmethod
-    def decompress(payload: bytes) -> bytes:
-        return payload
-
 
 @dataclass(frozen=True, slots=True)
 class _Record3DNormalizedEntryFixture:
@@ -88,15 +73,6 @@ class _Record3DNormalizedEntryFixture:
     store: NormalizedDatasetStore
     profile: NormalizedDatasetProfile
     entry: NormalizedDatasetEntry
-
-
-def _test_lzfse_codec() -> object:
-    return _liblzfse or _PassthroughLzfseCodec
-
-
-@pytest.fixture(autouse=True)
-def _patch_record3d_lzfse_codec(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(record3d_loading, "_load_liblzfse", _test_lzfse_codec)
 
 
 def _write_record3d_archive(
@@ -132,8 +108,8 @@ def _write_record3d_archive(
             confidence = np.full((4, 4), 2, dtype=np.uint8)
             confidence[0, 1] = 0
             archive.writestr(f"rgbd/{index}.jpg", jpg.tobytes())
-            archive.writestr(f"rgbd/{index}.depth", _test_lzfse_codec().compress(depth.tobytes()))
-            archive.writestr(f"rgbd/{index}.conf", _test_lzfse_codec().compress(confidence.tobytes()))
+            archive.writestr(f"rgbd/{index}.depth", liblzfse.compress(depth.tobytes()))
+            archive.writestr(f"rgbd/{index}.conf", liblzfse.compress(confidence.tobytes()))
     return archive_path
 
 
@@ -1114,24 +1090,7 @@ def test_record3d_source_config_plans_arkit_and_cloud_alignment_path(tmp_path: P
     assert next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT).available is True
 
 
-def test_record3d_decode_reports_missing_lzfse(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    archive_path = _write_record3d_archive(tmp_path)
-    sequence = Record3DSequence(config=Record3DSequenceConfig(dataset_root=tmp_path, sequence_id="synthetic"))
-    sample = sequence.load_offline_sample()
-
-    def missing_lzfse() -> object:
-        raise RuntimeError("Record3D `.r3d` depth/confidence decoding requires `pyliblzfse`.")
-
-    from prml_vslam.sources.datasets.record3d import record3d_loading
-
-    monkeypatch.setattr(record3d_loading, "_load_liblzfse", missing_lzfse)
-    with pytest.raises(RuntimeError, match="pyliblzfse"):
-        record3d_loading.decode_depth_frame_m(archive_path, sample.frames[0], sample.metadata)
-
-
 def test_record3d_real_sample_decodes_rgbd_and_materializes_reference_cloud(tmp_path: Path) -> None:
-    if _liblzfse is None:
-        pytest.skip("Record3D real sample requires pyliblzfse for LZFSE payloads.")
     dataset_root = PathConfig().resolve_dataset_dir("record3d")
     archive_path = next(
         (

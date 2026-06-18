@@ -6,9 +6,9 @@ import json
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import cv2
+import liblzfse
 import numpy as np
 from numpy.typing import NDArray
 
@@ -170,7 +170,7 @@ def decode_depth_frame_m(
     """Decode one LZFSE-compressed depth payload into meters."""
     with zipfile.ZipFile(archive_path) as archive:
         payload = archive.read(frame.depth_name)
-    decompressed = _load_liblzfse().decompress(payload)
+    decompressed = liblzfse.decompress(payload)
     depth = np.frombuffer(decompressed, dtype=np.float32)
     expected = metadata.dh * metadata.dw
     if depth.size != expected:
@@ -186,7 +186,7 @@ def decode_confidence_frame(
     """Decode one LZFSE-compressed confidence payload."""
     with zipfile.ZipFile(archive_path) as archive:
         payload = archive.read(frame.confidence_name)
-    decompressed = _load_liblzfse().decompress(payload)
+    decompressed = liblzfse.decompress(payload)
     confidence = np.frombuffer(decompressed, dtype=np.uint8)
     expected = metadata.dh * metadata.dw
     if confidence.size != expected:
@@ -220,14 +220,3 @@ def _names_by_index(names: set[str], suffix: str) -> dict[int, str]:
         except ValueError:
             continue
     return result
-
-
-def _load_liblzfse() -> Any:
-    try:
-        import liblzfse
-    except ImportError as exc:
-        raise RuntimeError(
-            "Record3D `.r3d` depth/confidence decoding requires `pyliblzfse`. "
-            "Install the project dependencies or run `uv sync` in the helper-managed environment."
-        ) from exc
-    return liblzfse

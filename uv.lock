@@ -1881,6 +1881,7 @@ dependencies = [
     { name = "pooch" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyliblzfse" },
     { name = "pytransform3d" },
     { name = "pyyaml" },
     { name = "ray" },
@@ -1968,6 +1969,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pydantic-settings", specifier = ">=2.14,<3" },
     { name = "pykdtree", marker = "extra == 'vista'", specifier = ">=1.3" },
+    { name = "pyliblzfse", specifier = "==0.4.1" },
     { name = "pypose", marker = "extra == 'vista'", specifier = ">=0.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6,<4" },
@@ -2233,6 +2235,16 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/62/d2/439860d63d40501e33370694a66de439696039a613ab31156040454e633a/pykdtree-1.4.3-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:3b3899ae553d63e351a2fd98f1656affb7923bda02e066ea4703aa5ca1879582", size = 493800, upload-time = "2025-08-06T11:10:59.228Z" },
     { url = "https://files.pythonhosted.org/packages/ec/0c/f2bbc770d16b76a1a0d0967121796be4bbdece358c736b5fbc07327df82d/pykdtree-1.4.3-cp311-cp311-win_amd64.whl", hash = "sha256:bb3367a325278a218fd22b321f1ef485445a0f19c23e1aa7bd6e34e0f4ff4d03", size = 67916, upload-time = "2025-08-06T11:11:00.681Z" },
     { url = "https://files.pythonhosted.org/packages/1a/95/8ea06124b9f2880b645532703cacee062bce45ec67c0c05314686415fc31/pykdtree-1.4.3-cp311-cp311-win_arm64.whl", hash = "sha256:b6630c10c5b05535b0045d7a00a95e5e53a7a44319069ff3054d69b52be3e81c", size = 55430, upload-time = "2025-08-06T11:11:01.625Z" },
+]
+
+[[package]]
+name = "pyliblzfse"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/ba/a4bc465d36f6aafbff89da1bf67bcc6a97475b1d2300a74a778dcb293cef/pyliblzfse-0.4.1.tar.gz", hash = "sha256:bb0b899b3830c02fdf3dbde48ea59611833f366fef836e5c32cf8145134b7d3d", size = 47666, upload-time = "2020-07-09T02:50:17.52Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/be/8d2ff58df014ef7a5a84befedb9573d250455ecb500cfcfeb660206fd8a6/pyliblzfse-0.4.1-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:0ddfc3617ef8cd885ae69b5b8e852087f861dfde5c0499724085d0951fca61c4", size = 41035, upload-time = "2025-05-03T09:06:59.451Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/bd/390808e922e3f3858087ec30bb89f52511c27a51c46e5989ee19d8eec54a/pyliblzfse-0.4.1-cp311-cp311-win_amd64.whl", hash = "sha256:2b49aa4ea96c3feb1324c066c7ed637739a0a2c2f300ef6f9bfafb16af9d5cb2", size = 22956, upload-time = "2025-05-03T09:07:00.512Z" },
 ]
 
 [[package]]

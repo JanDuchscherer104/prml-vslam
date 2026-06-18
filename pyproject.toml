@@ -28,6 +28,7 @@ dependencies = [
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
   "rerun-sdk==0.24.1",
+  "pyliblzfse==0.4.1",
 ]
 
   [project.optional-dependencies]
