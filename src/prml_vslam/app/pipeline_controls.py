@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.sources.datasets.advio import (
-    AdvioLocalSceneStatus,
-    AdvioPoseFrameMode,
-    AdvioPoseSource,
     AdvioServingConfig,
 )
+from prml_vslam.sources.datasets.normalized_query import resolve_normalized_advio_sequence_id
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import BaseData, JsonObject, PathConfig
 
@@ -43,23 +41,6 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
     }
 )
 
-PipelinePageStateUpdateValue: TypeAlias = (
-    PipelineSourceId
-    | AdvioPoseSource
-    | AdvioPoseFrameMode
-    | Record3DTransportId
-    | PipelineMode
-    | MethodId
-    | BackendSpec
-    | Path
-    | int
-    | float
-    | str
-    | bool
-    | None
-)
-PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
-
 
 class PipelinePageAction(PipelinePageState):
     """Typed action payload for the pipeline page controls."""
@@ -81,20 +62,22 @@ def sync_pipeline_page_state_from_template(
     context: AppContext,
     config_path: Path,
     run_config: RunConfig,
-    statuses: list[AdvioLocalSceneStatus],
 ) -> None:
     """Hydrate Pipeline page state from a newly selected request template."""
     page_state = context.state.pipeline
     if page_state.config_path == config_path:
         return
-    source_updates: PipelinePageStateUpdates = {
+    source_updates: dict[str, object] = {
         "source_kind": page_state.source_kind,
         "advio_sequence_id": page_state.advio_sequence_id,
     }
     source_backend = run_config.stages.source.backend
     match source_backend:
         case AdvioSourceConfig(sequence_id=sequence_slug):
-            advio_sequence_id, _ = resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=statuses)
+            advio_sequence_id, _ = resolve_normalized_advio_sequence_id(
+                sequence_slug=sequence_slug,
+                path_config=context.path_config,
+            )
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
@@ -211,7 +194,7 @@ def request_support_error(
     *,
     request: RunConfig | None,
     plan: RunPlan | None,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    path_config: PathConfig,
 ) -> str | None:
     """Return why the Pipeline app page cannot execute the current request."""
     if request is None:
@@ -232,8 +215,12 @@ def request_support_error(
         )
     match request.stages.source.backend:
         case AdvioSourceConfig(sequence_id=sequence_slug):
-            if resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=previewable_statuses)[0] is None:
-                return f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
+            sequence_id, error = resolve_normalized_advio_sequence_id(
+                sequence_slug=sequence_slug,
+                path_config=path_config,
+            )
+            if sequence_id is None:
+                return error
             return None
         case Record3DSourceConfig():
             if request.mode is not PipelineMode.STREAMING:
@@ -312,25 +299,6 @@ def load_pipeline_run_config(path_config: PathConfig, config_path: Path) -> tupl
         return load_run_config_toml(path_config=path_config, config_path=config_path), None
     except Exception as exc:
         return None, str(exc)
-
-
-def resolve_advio_sequence_id(
-    *,
-    sequence_slug: str,
-    statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, str | None]:
-    """Resolve one ADVIO sequence id and matching error message."""
-    sequence_id = None
-    for status in statuses:
-        if status.scene.sequence_slug == sequence_slug:
-            sequence_id = int(status.scene.sequence_id)
-            break
-    if sequence_id is None and sequence_slug.startswith("advio-"):
-        suffix = sequence_slug.split("-", maxsplit=1)[1]
-        sequence_id = int(suffix) if suffix.isdigit() else None
-    if sequence_id is None:
-        return None, f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
-    return sequence_id, None
 
 
 def parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None, str | None]:
@@ -448,7 +416,6 @@ __all__ = [
     "record3d_source_config_from_action",
     "request_summary_payload",
     "request_support_error",
-    "resolve_advio_sequence_id",
     "source_input_error",
     "sync_pipeline_page_state_from_template",
 ]

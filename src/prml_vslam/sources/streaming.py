@@ -54,7 +54,11 @@ class SampledStreamingSource(StreamingSequenceSource):
     def __init__(self, source: StreamingSequenceSource, *, frame_selection: FrameSelectionConfig) -> None:
         self._source = source
         self._frame_selection = frame_selection
-        self.label = source.label
+
+    @property
+    def label(self) -> str:
+        """Return the wrapped source label."""
+        return self._source.label
 
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
         """Delegate manifest preparation to the wrapped source."""

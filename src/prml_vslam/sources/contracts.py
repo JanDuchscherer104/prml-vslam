@@ -16,7 +16,7 @@ from pydantic import Field
 from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.observation import ObservationSequenceRef
 from prml_vslam.interfaces.transforms import FrameTransform
-from prml_vslam.sources.datasets.contracts import DatasetId, DatasetServingConfig
+from prml_vslam.sources.datasets.contracts import AdvioServingConfig, DatasetId
 from prml_vslam.utils import BaseData
 
 
@@ -70,10 +70,11 @@ class SequenceManifest(BaseData):
 
     sequence_id: str
     dataset_id: DatasetId | None = None
-    dataset_serving: DatasetServingConfig | None = None
+    dataset_serving: AdvioServingConfig | None = None
     video_path: Path | None = None
     rgb_dir: Path | None = None
     timestamps_path: Path | None = None
+    source_frame_indices_path: Path | None = None
     intrinsics_path: Path | None = None
     rotation_metadata_path: Path | None = None
     advio: AdvioManifestAssets | None = None
@@ -104,6 +105,7 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
+    RECORD3D_LIDAR = "record3d_lidar"
     TUM_RGBD = "tum_rgbd"
 
 

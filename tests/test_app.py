@@ -8,16 +8,21 @@ from pathlib import Path
 import numpy as np
 from evo.core import metrics
 
+import prml_vslam.app.pipeline_controls as pipeline_controls
 from prml_vslam.app.bootstrap import _PAGE_SPECS
 from prml_vslam.app.live_session import render_live_action_slot
 from prml_vslam.app.models import (
+    AdvioPageState,
     AppPageId,
     AppState,
     ArtifactInspectorPageState,
+    MetricsPageState,
     PipelinePageState,
     PipelineSourceId,
     PipelineTelemetryMetricId,
     PipelineTelemetryViewMode,
+    Record3DDatasetPageState,
+    Record3DDatasetPoseSource,
 )
 from prml_vslam.app.pipeline_controller import (
     build_pipeline_snapshot_render_model,
@@ -48,8 +53,58 @@ from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalized_query import normalized_query_fingerprint
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
+
+
+def test_normalized_store_fingerprint_uses_shared_datastore_root(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store_root = path_config.resolve_normalized_datastore_dir("record3d")
+    entry_root = store_root / "synthetic" / "profile"
+    entry_root.mkdir(parents=True)
+    (entry_root / "entry.json").write_text("{}", encoding="utf-8")
+    (entry_root / "sequence_manifest.json").write_text("{}", encoding="utf-8")
+    (entry_root / "stats_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,subject,stat,value,unit\n", encoding="utf-8"
+    )
+    (entry_root / "metadata_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,key,value\n", encoding="utf-8"
+    )
+    old_root = path_config.resolve_dataset_dir("record3d") / ".normalized" / "synthetic" / "profile"
+    old_root.mkdir(parents=True)
+    (old_root / "entry.json").write_text("{}", encoding="utf-8")
+    fingerprint = normalized_query_fingerprint(path_config, DatasetId.RECORD3D)
+
+    assert [row[0] for row in fingerprint] == [
+        "synthetic/profile/entry.json",
+        "synthetic/profile/metadata_long.csv",
+        "synthetic/profile/sequence_manifest.json",
+        "synthetic/profile/stats_long.csv",
+    ]
+
+
+def test_metrics_page_state_preserves_persisted_view_fields() -> None:
+    state = MetricsPageState()
+
+    assert state.scope == "sequence"
+    assert state.dataset_primary_metric == "ape/translation_part/rmse"
+
+
+def test_advio_tum_dataset_state_round_trips_without_download_modality_fields() -> None:
+    state = AppState.model_validate(
+        {
+            "advio": {"download_" + "preset": "offline", "selected_" + "modalities": ["iphone_video"]},
+            "tum_rgbd": {"download_" + "preset": "offline", "selected_" + "modalities": ["rgb"]},
+        }
+    )
+
+    dumped = state.model_dump(mode="json")
+
+    assert "download_" + "preset" not in dumped["advio"]
+    assert "selected_" + "modalities" not in dumped["advio"]
+    assert "download_" + "preset" not in dumped["tum_rgbd"]
+    assert "selected_" + "modalities" not in dumped["tum_rgbd"]
 
 
 def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:
@@ -182,6 +237,54 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert reloaded.artifacts.comparison_target_triangles == 10_000
     assert reloaded.artifacts.rerun_validation_max_keyed_clouds == 7
     assert reloaded.artifacts.rerun_validation_max_render_points == 8_000
+
+
+def test_record3d_dataset_state_round_trips_separately_from_live_state() -> None:
+    state = AppState(
+        record3d_dataset=Record3DDatasetPageState(
+            selected_sequence_ids=[1, 3],
+            overwrite_existing=True,
+            explorer_sequence_id="2026-06-03--18-26-32",
+            preview_sequence_id="2026-06-03--18-29-08",
+            preview_pose_source=Record3DDatasetPoseSource.ARKIT,
+            preview_include_depth=False,
+            preview_is_running=True,
+        )
+    )
+    state.record3d.transport = Record3DTransportId.WIFI
+    state.record3d.wifi_device_address = "record3d.local"
+    state.record3d.is_running = True
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.record3d.transport is Record3DTransportId.WIFI
+    assert reloaded.record3d.wifi_device_address == "record3d.local"
+    assert reloaded.record3d.is_running is True
+    assert reloaded.record3d_dataset.selected_sequence_ids == [1, 3]
+    assert reloaded.record3d_dataset.overwrite_existing is True
+    assert reloaded.record3d_dataset.explorer_sequence_id == "2026-06-03--18-26-32"
+    assert reloaded.record3d_dataset.preview_sequence_id == "2026-06-03--18-29-08"
+    assert reloaded.record3d_dataset.preview_pose_source is Record3DDatasetPoseSource.ARKIT
+    assert reloaded.record3d_dataset.preview_include_depth is False
+    assert reloaded.record3d_dataset.preview_is_running is True
+
+
+def test_advio_dataset_explorer_state_uses_normalized_sequence_slug() -> None:
+    state = AppState(
+        advio=AdvioPageState(
+            selected_sequence_ids=[21],
+            overwrite_existing=True,
+            explorer_sequence_id="advio-21",
+            preview_sequence_id=21,
+        )
+    )
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.advio.selected_sequence_ids == [21]
+    assert reloaded.advio.overwrite_existing is True
+    assert reloaded.advio.explorer_sequence_id == "advio-21"
+    assert reloaded.advio.preview_sequence_id == 21
 
 
 def test_build_run_config_from_action_derives_backend_kind(tmp_path: Path) -> None:
@@ -409,7 +512,7 @@ def test_build_run_config_from_action_uses_record3d_frame_timeout(tmp_path: Path
     assert run_config.stages.source.backend.frame_timeout_seconds == 2.5
 
 
-def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path) -> None:
+def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path, monkeypatch) -> None:
     class _Store:
         def save(self, state: AppState) -> None:
             self.payload = state.model_dump(mode="json")
@@ -447,12 +550,16 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
             "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
         },
     )
+    monkeypatch.setattr(
+        pipeline_controls,
+        "resolve_normalized_advio_sequence_id",
+        lambda **_kwargs: (1, None),
+    )
 
     sync_pipeline_page_state_from_template(
         context=context,
         config_path=Path(".configs/pipelines/vista-full.toml"),
         run_config=run_config,
-        statuses=[],
     )
 
     backend_spec = context.state.pipeline.slam_backend_spec
@@ -486,7 +593,7 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
     )
     plan = run_config.compile_plan(path_config)
 
-    error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
+    error = request_support_error(request=run_config, plan=plan, path_config=path_config)
 
     assert error is not None
     assert "no runtime is registered yet" in error

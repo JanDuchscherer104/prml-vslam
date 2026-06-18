@@ -83,7 +83,7 @@ def test_build_reference_reconstruction_figure_rejects_empty_modality_selection(
         )
 
 
-def test_build_slam_reference_comparison_figure_includes_selected_modalities(tmp_path: Path) -> None:
+def test_build_slam_reference_comparison_figure_includes_selected_layers(tmp_path: Path) -> None:
     artifact_root = _write_tiny_reconstruction_artifacts(tmp_path)
     _write_tiny_slam_artifacts(artifact_root)
 

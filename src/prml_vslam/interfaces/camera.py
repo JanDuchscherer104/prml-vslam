@@ -257,6 +257,33 @@ def load_camera_intrinsics_yaml(path: Path) -> CameraIntrinsics:
     )
 
 
+def write_camera_intrinsics_yaml(intrinsics: CameraIntrinsics, target_path: Path) -> Path:
+    """Write the repository's canonical single-camera intrinsics YAML schema."""
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    distortion = ", ".join(f"{value:.8g}" for value in intrinsics.distortion_coefficients)
+    rows = [
+        "cameras:",
+        "- camera:",
+        f"    image_height: {intrinsics.height_px or 0}",
+        f"    image_width: {intrinsics.width_px or 0}",
+        "    type: pinhole",
+        "    intrinsics:",
+        f"      data: [{intrinsics.fx:.8g}, {intrinsics.fy:.8g}, {intrinsics.cx:.8g}, {intrinsics.cy:.8g}]",
+        "    distortion:",
+        f"      type: {intrinsics.distortion_model or 'none'}",
+        "      parameters:",
+        f"        data: [{distortion}]",
+        "    T_cam_imu:",
+        "      data:",
+        "      - [1.0, 0.0, 0.0, 0.0]",
+        "      - [0.0, 1.0, 0.0, 0.0]",
+        "      - [0.0, 0.0, 1.0, 0.0]",
+        "      - [0.0, 0.0, 0.0, 1.0]",
+    ]
+    target_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return target_path.resolve()
+
+
 def scale_camera_intrinsics(
     intrinsics: CameraIntrinsics,
     *,

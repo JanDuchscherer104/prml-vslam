@@ -97,7 +97,7 @@ class _BaseRerunEventSink:
 
     def close(self) -> None:
         """Release the recording handle."""
-        self._stream.flush(blocking=True)
+        self._stream.flush()
         self._stream.disconnect()
 
     @staticmethod
