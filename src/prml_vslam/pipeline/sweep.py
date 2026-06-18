@@ -12,7 +12,7 @@ Schema overview::
     output_dir = ".artifacts/sweeps"
 
     [[datasets]]
-    dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio"
+    dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio" | "record3d_dataset"
     sequence_id         = "freiburg1_xyz"
     frame_stride        = 1
     baseline_source     = "ground_truth"
@@ -52,7 +52,12 @@ from prml_vslam.pipeline.config import RunConfig, StageBundle
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+)
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig
@@ -151,8 +156,15 @@ def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfi
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
             )
+        case "record3d_dataset":
+            return Record3DDatasetSourceConfig(
+                sequence_id=dataset.sequence_id,
+                frame_stride=dataset.frame_stride,
+            )
         case _:
-            raise ValueError(f"Unknown dataset_id {dataset.dataset_id!r}. Supported values: tum_rgbd, advio.")
+            raise ValueError(
+                f"Unknown dataset_id {dataset.dataset_id!r}. Supported values: tum_rgbd, advio, record3d_dataset."
+            )
 
 
 class SweepMeta(BaseConfig):
@@ -188,7 +200,7 @@ class SweepDataset(BaseConfig):
     all source and downstream decisions; method templates may not override them.
 
     Attributes:
-        dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``.
+        dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``.
         sequence_id: Dataset-specific sequence slug passed to the source backend.
         frame_stride: Frame sub-sampling stride forwarded to the source backend.
             ``1`` means every frame; ``2`` means every other frame, etc.
@@ -204,7 +216,7 @@ class SweepDataset(BaseConfig):
     model_config = ConfigDict(extra="ignore")
 
     dataset_id: str
-    """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``."""
+    """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``."""
 
     sequence_id: str
     """Dataset-specific sequence slug."""

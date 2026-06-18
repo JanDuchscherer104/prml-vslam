@@ -1,6 +1,6 @@
-# LingBot-Map full sweep — all available TUM RGB-D and ADVIO sequences.
+# LingBot-Map full sweep — all normalized TUM RGB-D, Record3D, and ADVIO sequences.
 #
-# 40 datasets × 1 method = 40 runs.
+# 50 datasets × 1 method = 50 runs.
 #
 # Requires the lingbot extra (conflicts with vista and mast3r — install separately):
 #   mamba activate prml-vslam
@@ -18,8 +18,8 @@
 #       --continue-on-failure
 #
 # NOTE on frame strides: LingBot is trained within ~320 direct-mode views.
-# TUM sequences use frame_stride=5 (~100–200 processed frames) and ADVIO
-# sequences use frame_stride=10 to stay comfortably within that range.
+# TUM and Record3D sequences use frame_stride=5 (~100–200 processed frames)
+# and ADVIO sequences use frame_stride=10 to stay comfortably within that range.
 
 [sweep]
 name       = "full-lingbot"
@@ -158,6 +158,22 @@ evaluate_trajectory = true
 [[datasets]]
 dataset_id          = "tum_rgbd"
 sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_long_office_household"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_teddy"
 frame_stride        = 5
 baseline_source     = "ground_truth"
 align_trajectory    = true
@@ -345,6 +361,72 @@ evaluate_trajectory = true
 dataset_id          = "advio"
 sequence_id         = "advio-23"
 frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Record3D ──────────────────────────────────────────────────────────────────
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-17-10"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-20-22"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-24-27"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-26-32"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-27-25"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-32-27"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-35-44"
+frame_stride        = 5
 baseline_source     = "ground_truth"
 align_trajectory    = true
 evaluate_trajectory = true

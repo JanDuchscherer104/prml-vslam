@@ -755,6 +755,11 @@ dataset_id = "advio"
 sequence_id = "advio-15"
 frame_stride = 2
 
+[[datasets]]
+dataset_id = "record3d_dataset"
+sequence_id = "2026-06-03--18-29-08"
+frame_stride = 1
+
 [methods.vista]
 config_path = "{vista.as_posix()}"
 
@@ -777,6 +782,8 @@ def test_plan_sweep_config_outputs_valid_json(tmp_path: Path) -> None:
     assert "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r" in run_ids
     assert "cli-sweep-advio-advio-15-vista" in run_ids
     assert "cli-sweep-advio-advio-15-mast3r" in run_ids
+    assert "cli-sweep-record3d_dataset-2026-06-03--18-29-08-vista" in run_ids
+    assert "cli-sweep-record3d_dataset-2026-06-03--18-29-08-mast3r" in run_ids
 
 
 def test_plan_sweep_config_stable_ordering(tmp_path: Path) -> None:
@@ -791,6 +798,8 @@ def test_plan_sweep_config_stable_ordering(tmp_path: Path) -> None:
             "cli-sweep-tum_rgbd-freiburg1_xyz-mast3r",
             "cli-sweep-advio-advio-15-vista",
             "cli-sweep-advio-advio-15-mast3r",
+            "cli-sweep-record3d_dataset-2026-06-03--18-29-08-vista",
+            "cli-sweep-record3d_dataset-2026-06-03--18-29-08-mast3r",
         ]
     ]
     assert positions == sorted(positions), "Run IDs must appear in dataset×method order"
@@ -854,7 +863,7 @@ def test_run_sweep_config_continue_on_failure_attempts_all_runs(
     result = runner.invoke(app, ["run-sweep-config", str(sweep), "--continue-on-failure"])
 
     assert result.exit_code == 1
-    assert len(executed) == 4, "continue-on-failure must attempt all four runs"
+    assert len(executed) == 6, "continue-on-failure must attempt all six runs"
 
 
 def test_run_sweep_config_exits_zero_when_all_succeed(
