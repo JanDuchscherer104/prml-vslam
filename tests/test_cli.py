@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pandas as pd
 import pytest
 import typer
 from click.utils import strip_ansi
@@ -19,6 +20,8 @@ from prml_vslam.sources.config import Record3DDatasetSourceConfig, VideoSourceCo
 from prml_vslam.sources.datasets.advio import AdvioDownloadRequest
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import NormalizedDatasetBuildConfig
+from prml_vslam.sources.datasets.normalized_query import NormalizedDatasetQuery, NormalizedSequenceRecord
+from prml_vslam.sources.datasets.normalized_store import STORE_SCHEMA_VERSION, NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadRequest
 from prml_vslam.utils import PathConfig
@@ -88,30 +91,129 @@ def test_record3d_download_rejects_invalid_sequence_index() -> None:
 
 
 def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> None:
-    class FakeEntry:
-        def model_dump(self, *, mode: str) -> dict[str, str]:
-            return {"sequence_id": "synthetic", "mode": mode}
-
-    class FakeStore:
-        store_root = tmp_path / ".data" / "vslam-datastore" / "record3d"
-
-        def summary(self) -> list[FakeEntry]:
-            return [FakeEntry()]
-
-    monkeypatch.setattr(main_module, "normalized_store_for_service", lambda dataset_id, path_config: FakeStore())
-    monkeypatch.setattr(
-        main_module,
-        "normalized_entry_analysis_summary",
-        lambda entry: {"stats_long_row_count": 9, "metadata_long_row_count": 4},
+    normalized = NormalizedDatasetQuery(
+        dataset_id=DatasetId.RECORD3D,
+        records=[
+            NormalizedSequenceRecord(
+                dataset_id=DatasetId.RECORD3D,
+                sequence_id="synthetic",
+                sequence_label="Synthetic",
+                source_id="record3d_dataset",
+                profile_key="profile",
+                root=tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / "profile",
+                is_default_profile=True,
+                stats_row_count=9,
+                metadata_row_count=4,
+            )
+        ],
+        issues=[],
+        stats_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "record3d",
+                    "sequence_id": "synthetic",
+                    "profile_key": "profile",
+                    "source_id": "record3d_dataset",
+                    "scope": "observation_sequence",
+                    "subject": "record3d_dataset",
+                    "stat": "observation_frame_count",
+                    "value": "30",
+                    "unit": "count",
+                }
+            ]
+        ),
+        metadata_df=pd.DataFrame(),
     )
+    monkeypatch.setattr(main_module, "query_normalized_dataset", lambda dataset_id, path_config: normalized)
 
     result = runner.invoke(app, ["dataset", "summary", "--dataset", "record3d"])
 
     assert result.exit_code == 0
     assert "record3d" in result.stdout
     assert "vslam-datastore" in result.stdout
-    assert "'analysis'" in result.stdout
-    assert "'stats_long_row_count': 9" in result.stdout
+    assert "'record_count': 1" in result.stdout
+    assert "'observation_frame_count': '30'" in result.stdout
+    assert "'entries'" not in result.stdout
+
+
+def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Path) -> None:
+    entry_root = tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / "profile"
+    entry_root.mkdir(parents=True)
+    manifest_path = entry_root / "sequence_manifest.json"
+    benchmark_path = entry_root / "benchmark_inputs.json"
+    manifest_path.write_text(
+        '{"sequence_id":"synthetic","dataset_id":"record3d","rgb_dir":"observations/rgb"}',
+        encoding="utf-8",
+    )
+    benchmark_path.write_text(
+        '{"reference_trajectories":[],"candidate_trajectories":[],"reference_clouds":[],"observation_sequences":[]}',
+        encoding="utf-8",
+    )
+    entry = NormalizedDatasetEntry(
+        schema_version=STORE_SCHEMA_VERSION,
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id="record3d_dataset",
+        profile_key="profile",
+        profile={},
+        root=entry_root,
+        sequence_manifest_path=manifest_path,
+        benchmark_inputs_path=benchmark_path,
+    )
+    (entry_root / "entry.json").write_text(entry.model_dump_json(), encoding="utf-8")
+    normalized = NormalizedDatasetQuery(
+        dataset_id=DatasetId.RECORD3D,
+        records=[
+            NormalizedSequenceRecord(
+                dataset_id=DatasetId.RECORD3D,
+                sequence_id="synthetic",
+                sequence_label="Synthetic",
+                source_id="record3d_dataset",
+                profile_key="profile",
+                root=entry_root,
+                is_default_profile=True,
+                stats_row_count=1,
+                metadata_row_count=1,
+            )
+        ],
+        issues=[],
+        stats_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "record3d",
+                    "sequence_id": "synthetic",
+                    "profile_key": "profile",
+                    "source_id": "record3d_dataset",
+                    "scope": "reference_trajectory",
+                    "subject": "ground_truth/source_native",
+                    "stat": "trajectory_path_length_m",
+                    "value": "1.5",
+                    "unit": "m",
+                }
+            ]
+        ),
+        metadata_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "record3d",
+                    "sequence_id": "synthetic",
+                    "profile_key": "profile",
+                    "source_id": "record3d_dataset",
+                    "scope": "sequence",
+                    "key": "rgb_dir",
+                    "value": "observations/rgb",
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(main_module, "query_normalized_dataset", lambda dataset_id, path_config: normalized)
+
+    result = runner.invoke(app, ["dataset", "inspect", "--dataset", "record3d", "--sequence", "synthetic"])
+
+    assert result.exit_code == 0
+    assert "'sequence_manifest'" in result.stdout
+    assert "'trajectory_path_length_m'" in result.stdout
+    assert "'rgb_dir'" in result.stdout
 
 
 def test_advio_summary_reports_normalized_entries_and_native_cache(monkeypatch) -> None:

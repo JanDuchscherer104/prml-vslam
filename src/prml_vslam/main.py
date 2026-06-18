@@ -45,7 +45,7 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
@@ -60,11 +60,10 @@ from prml_vslam.sources.datasets.normalization import (
     normalize_dataset_entries,
     normalize_dataset_entry,
     normalize_dataset_source_configs,
-    normalized_store_for_service,
     parse_dataset_id,
 )
-from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
-from prml_vslam.sources.datasets.normalized_store import normalized_entry_analysis_summary
+from prml_vslam.sources.datasets.normalized_query import NormalizedSequenceRecord, query_normalized_dataset
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
@@ -1292,22 +1291,121 @@ def dataset_summary(
         typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
     ],
 ) -> None:
-    """Print normalized-entry metadata for one dataset."""
+    """Print compact normalized-entry coverage and persisted analysis tables."""
     path_config = get_path_config()
     try:
         dataset_id = parse_dataset_id(dataset)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    store = normalized_store_for_service(dataset_id, path_config)
-    entries = store.summary()
+    query = query_normalized_dataset(dataset_id, path_config)
     console.plog(
         {
             "dataset_id": dataset_id.value,
-            "store_root": store.store_root,
-            "entries": [entry.model_dump(mode="json") for entry in entries],
-            "analysis": [normalized_entry_analysis_summary(entry) for entry in entries],
+            "store_root": path_config.resolve_normalized_datastore_dir(dataset_id.value),
+            "record_count": len(query.records),
+            "default_record_count": len(query.default_records),
+            "sequence_count": len(query.sequence_ids),
+            "issue_count": len(query.issues),
+            "records": query.table_rows(),
+            "observation_summary": _dataframe_records(query.observation_summary_frame()),
+            "trajectory_summary": _dataframe_records(query.trajectory_summary_frame()),
+            "payload_footprint": _dataframe_records(query.payload_footprint_frame()),
+            "issues": query.issues,
         }
     )
+
+
+@dataset_app.command("inspect")
+def dataset_inspect(
+    dataset: Annotated[
+        str,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ],
+    sequence: Annotated[
+        str,
+        typer.Option("--sequence", "-s", help="Normalized sequence id to inspect."),
+    ],
+    profile_key: Annotated[
+        str | None,
+        typer.Option("--profile-key", help="Profile key. Omit to prefer the default profile for the sequence."),
+    ] = None,
+) -> None:
+    """Inspect one normalized dataset entry without loading heavy RGB/depth payloads."""
+    path_config = get_path_config()
+    try:
+        dataset_id = parse_dataset_id(dataset)
+        query = query_normalized_dataset(dataset_id, path_config)
+        record = _select_normalized_record(query.records, sequence=sequence, profile_key=profile_key)
+        entry = _load_normalized_entry_from_root(record.root)
+        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        benchmark = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.plog(
+        {
+            "entry": record.model_dump(mode="json"),
+            "sequence_manifest": manifest.model_dump(mode="json"),
+            "reference_trajectories": [
+                ref.model_dump(mode="json")
+                for ref in benchmark.reference_trajectories + benchmark.candidate_trajectories
+            ],
+            "reference_clouds": [ref.model_dump(mode="json") for ref in benchmark.reference_clouds],
+            "observation_sequences": [ref.model_dump(mode="json") for ref in benchmark.observation_sequences],
+            "observation_summary": _entry_dataframe_records(query.observation_summary_frame(), record),
+            "trajectory_summary": _entry_dataframe_records(query.trajectory_summary_frame(), record),
+            "payload_footprint": _entry_dataframe_records(query.payload_footprint_frame(), record),
+            "metadata": _entry_dataframe_records(query.metadata_df, record),
+            "stats": _entry_dataframe_records(query.stats_df, record),
+        }
+    )
+
+
+def _load_normalized_entry_from_root(root: Path) -> NormalizedDatasetEntry:
+    entry_path = root / "entry.json"
+    if not entry_path.exists():
+        raise ValueError(f"Normalized entry metadata does not exist: {entry_path}")
+    return NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+
+
+def _select_normalized_record(
+    records: list[NormalizedSequenceRecord],
+    *,
+    sequence: str,
+    profile_key: str | None,
+) -> NormalizedSequenceRecord:
+    sequence_records = [record for record in records if record.sequence_id == sequence]
+    if not sequence_records:
+        raise ValueError(f"No normalized entry found for sequence {sequence!r}.")
+    if profile_key is not None:
+        matching = [record for record in sequence_records if record.profile_key == profile_key]
+        if not matching:
+            raise ValueError(f"No normalized entry found for sequence {sequence!r} and profile {profile_key!r}.")
+        return matching[0]
+    defaults = [record for record in sequence_records if record.is_default_profile]
+    if len(defaults) == 1:
+        return defaults[0]
+    if len(sequence_records) == 1:
+        return sequence_records[0]
+    raise ValueError(
+        f"Sequence {sequence!r} has multiple normalized profiles; pass --profile-key. "
+        f"Available profiles: {[record.profile_key for record in sequence_records]}"
+    )
+
+
+def _dataframe_records(frame: Any) -> list[dict[str, Any]]:
+    if bool(getattr(frame, "empty", True)):
+        return []
+    records = frame.to_dict(orient="records")
+    return [dict(record) for record in records]
+
+
+def _entry_dataframe_records(frame: Any, record: NormalizedSequenceRecord) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in _dataframe_records(frame)
+        if (row.get("sequence_id", row.get("Sequence")) == record.sequence_id)
+        and (row.get("profile_key", row.get("Profile")) == record.profile_key)
+    ]
 
 
 @advio_app.command("summary")
