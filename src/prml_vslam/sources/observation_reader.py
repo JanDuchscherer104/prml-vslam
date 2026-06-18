@@ -38,14 +38,6 @@ def load_sequence_manifest_rgb_inputs(
     max_frames: int | None = None,
 ) -> tuple[list[Path], list[int]]:
     """Return validated normalized RGB payload paths and timestamps without loading rasters."""
-    return _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)
-
-
-def _load_manifest_rgb_inputs(
-    *,
-    sequence: SequenceManifest,
-    max_frames: int | None,
-) -> tuple[list[Path], list[int]]:
     if sequence.rgb_dir is None or not sequence.rgb_dir.exists():
         raise RuntimeError(
             "Offline observation loading requires a normalized `SequenceManifest.rgb_dir`. "

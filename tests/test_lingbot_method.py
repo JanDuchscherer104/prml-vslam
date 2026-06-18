@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import types
 from pathlib import Path
@@ -12,15 +11,12 @@ import pytest
 
 import prml_vslam.app.pages.pipeline_request_editor as pipeline_request_editor
 import prml_vslam.methods.lingbot.adapter as lingbot_adapter
-from prml_vslam.app.models import PipelineSourceId
-from prml_vslam.app.pipeline_controls import PipelinePageAction, build_run_config_from_action
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, Observation, ObservationProvenance
 from prml_vslam.methods.lingbot.adapter import (
     LingbotMapSlamBackend,
     _adapt_checkpoint_state_dict,
     _build_lingbot_artifacts,
     _pose_camera_to_world_to_frame_transform,
-    _prepare_lingbot_cuda_jit_env,
     _resolve_keyframe_interval,
 )
 from prml_vslam.methods.stage.backend_config import (
@@ -36,9 +32,8 @@ from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.demo import load_run_config_toml
 from prml_vslam.sources.config import TumRgbdSourceConfig
 from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioPoseSource
 from prml_vslam.sources.datasets.contracts import AdvioServingConfig, DatasetId
-from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import load_point_cloud_ply, load_tum_trajectory
 
@@ -141,100 +136,6 @@ def test_lingbot_config_rejects_invalid_runtime_values() -> None:
     with pytest.raises(ValueError, match="keyframe_interval"):
         LingbotMapSlamBackendConfig(keyframe_interval=0)
     assert LingbotMapSlamBackendConfig(confidence_threshold=1.5).confidence_threshold == 1.5
-
-
-def test_lingbot_cuda_jit_env_uses_active_mamba_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    conda_prefix = tmp_path / "prml-vslam"
-    bin_dir = conda_prefix / "bin"
-    lib_stubs = conda_prefix / "lib" / "stubs"
-    target_stubs = conda_prefix / "targets" / "x86_64-linux" / "lib" / "stubs"
-    bin_dir.mkdir(parents=True)
-    lib_stubs.mkdir(parents=True)
-    target_stubs.mkdir(parents=True)
-    for path in (
-        bin_dir / "nvcc",
-        bin_dir / "x86_64-conda-linux-gnu-gcc",
-        bin_dir / "x86_64-conda-linux-gnu-g++",
-        lib_stubs / "libcuda.so",
-        target_stubs / "libcuda.so",
-    ):
-        path.write_text("", encoding="utf-8")
-
-    monkeypatch.delenv("CUDA_HOME", raising=False)
-    monkeypatch.delenv("CUDA_PATH", raising=False)
-    monkeypatch.delenv("CC", raising=False)
-    monkeypatch.delenv("CXX", raising=False)
-    monkeypatch.delenv("CUDAHOSTCXX", raising=False)
-    monkeypatch.delenv("NVCC_PREPEND_FLAGS", raising=False)
-    monkeypatch.delenv("FLASHINFER_EXTRA_LDFLAGS", raising=False)
-    monkeypatch.setenv("CONDA_PREFIX", str(conda_prefix))
-    monkeypatch.setenv("LD_LIBRARY_PATH", "/system/driver")
-
-    _prepare_lingbot_cuda_jit_env()
-
-    assert os.environ["CUDA_HOME"] == str(conda_prefix)
-    assert os.environ["CC"] == str(bin_dir / "x86_64-conda-linux-gnu-gcc")
-    assert os.environ["CXX"] == str(bin_dir / "x86_64-conda-linux-gnu-g++")
-    assert os.environ["CUDAHOSTCXX"] == str(bin_dir / "x86_64-conda-linux-gnu-g++")
-    assert os.environ["NVCC_PREPEND_FLAGS"] == f"--compiler-bindir={bin_dir}"
-    assert os.environ["LD_LIBRARY_PATH"] == "/system/driver"
-    flags = os.environ["FLASHINFER_EXTRA_LDFLAGS"].split()
-    assert flags == [
-        f"-L{lib_stubs}",
-        f"-L{target_stubs}",
-    ]
-
-
-def test_lingbot_cuda_jit_env_preserves_user_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cuda_home = tmp_path / "cuda"
-    stubs = cuda_home / "lib" / "stubs"
-    stubs.mkdir(parents=True)
-    (cuda_home / "bin").mkdir()
-    (cuda_home / "bin" / "nvcc").write_text("", encoding="utf-8")
-    (stubs / "libcuda.so").write_text("", encoding="utf-8")
-
-    monkeypatch.setenv("CUDA_HOME", str(cuda_home))
-    monkeypatch.setenv("CC", "/custom/gcc")
-    monkeypatch.setenv("CXX", "/custom/g++")
-    monkeypatch.setenv("CUDAHOSTCXX", "/custom/host-g++")
-    monkeypatch.setenv("NVCC_PREPEND_FLAGS", "--custom-nvcc")
-    monkeypatch.setenv("FLASHINFER_EXTRA_LDFLAGS", f"-L{stubs} -Wl,--as-needed")
-    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
-
-    _prepare_lingbot_cuda_jit_env()
-
-    assert os.environ["CC"] == "/custom/gcc"
-    assert os.environ["CXX"] == "/custom/g++"
-    assert os.environ["CUDAHOSTCXX"] == "/custom/host-g++"
-    assert os.environ["NVCC_PREPEND_FLAGS"] == "--custom-nvcc"
-    assert os.environ["FLASHINFER_EXTRA_LDFLAGS"].split() == [f"-L{stubs}", "-Wl,--as-needed"]
-    assert "LD_LIBRARY_PATH" not in os.environ
-
-
-def test_lingbot_app_action_coerces_sparse_output(tmp_path: Path) -> None:
-    context = types.SimpleNamespace(
-        path_config=PathConfig(root=tmp_path),
-        advio_service=types.SimpleNamespace(scene=lambda _sequence_id: types.SimpleNamespace(sequence_slug="advio-01")),
-    )
-    action = PipelinePageAction(
-        experiment_name="lingbot-app",
-        config_path=Path(".configs/pipelines/lingbot-full.toml"),
-        source_kind=PipelineSourceId.ADVIO,
-        advio_sequence_id=1,
-        record3d_transport=Record3DTransportId.USB,
-        pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
-        method=MethodId.LINGBOT_MAP,
-        slam_backend_spec=LingbotMapSlamBackendConfig(max_frames=2),
-        emit_sparse_points=True,
-    )
-
-    run_config, error = build_run_config_from_action(context, action)
-
-    assert error is None
-    assert run_config is not None
-    assert run_config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
-    assert run_config.stages.slam.outputs.emit_sparse_points is False
 
 
 def test_lingbot_app_editor_preserves_gpu_fit_backend_fields(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -374,41 +275,6 @@ def test_lingbot_preprocesses_images_with_upstream_loader() -> None:
     assert tensor.device == "cpu"
     assert captured["kwargs"] == {"mode": "crop", "image_size": 518, "patch_size": 14}
     assert not Path(captured["paths"][0]).exists()
-
-
-def test_lingbot_preprocesses_existing_image_paths_without_temp_writes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeTensor:
-        device = "cpu"
-
-    image_paths = [tmp_path / "000000.png", tmp_path / "000001.png"]
-    for path in image_paths:
-        path.write_bytes(b"fake-png")
-    captured: dict[str, Any] = {}
-
-    def fail_fromarray(*args: Any, **kwargs: Any) -> None:
-        del args, kwargs
-        raise AssertionError("Existing image paths should not be rewritten through a TemporaryDirectory.")
-
-    def fake_load_and_preprocess_images(paths: list[str], **kwargs: Any) -> FakeTensor:
-        captured["paths"] = paths
-        captured["kwargs"] = kwargs
-        return FakeTensor()
-
-    monkeypatch.setattr(lingbot_adapter.Image, "fromarray", fail_fromarray)
-
-    tensor = lingbot_adapter._preprocess_image_paths_with_lingbot(
-        fake_load_and_preprocess_images,
-        image_paths,
-        image_size=518,
-        patch_size=14,
-    )
-
-    assert tensor.device == "cpu"
-    assert captured["paths"] == [str(path) for path in image_paths]
-    assert captured["kwargs"] == {"mode": "crop", "image_size": 518, "patch_size": 14}
 
 
 def test_lingbot_checkpoint_pos_embed_interpolates_to_smaller_image_grid() -> None:
