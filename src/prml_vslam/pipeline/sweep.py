@@ -277,7 +277,7 @@ class SweepConfig(BaseConfig):
 
     * ``[sweep]`` — identity and output routing.
     * ``[[datasets]]`` — one or more dataset entries (array of tables).
-    * ``[methods.<id>]`` — one or more method entries keyed by method ID.
+    * ``[methods.<id>]`` — one or more method entries keyed by the template backend method ID.
 
     The sweeper cross-joins datasets × methods in declaration order and derives
     a deterministic run ID for each combination.
@@ -285,7 +285,7 @@ class SweepConfig(BaseConfig):
     Attributes:
         sweep: Sweep identity and output directory.
         datasets: Ordered list of dataset entries (at least one required).
-        methods: Mapping of method ID → method reference (at least one required).
+        methods: Mapping of backend method ID → method reference (at least one required).
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -297,7 +297,7 @@ class SweepConfig(BaseConfig):
     """Ordered dataset entries.  At least one is required."""
 
     methods: dict[str, SweepMethod] = Field(min_length=1)
-    """Method ID → template reference.  At least one is required."""
+    """Backend method ID → template reference.  At least one is required."""
 
     @model_validator(mode="after")
     def validate_method_ids_are_slugs(self) -> Self:
@@ -339,7 +339,7 @@ class SweepRunItem(BaseConfig):
         sweep_name: Name of the originating sweep (from ``[sweep].name``).
         output_dir: Artifact root directory (from ``[sweep].output_dir``).
         dataset: Dataset entry that drives source and downstream stage policy.
-        method_id: Method key from ``[methods]``.
+        method_id: Backend method ID from ``[methods]``.
         slam_stage: Validated SLAM stage config extracted from the method template.
     """
 
@@ -358,7 +358,7 @@ class SweepRunItem(BaseConfig):
     """Dataset entry owning source selection and downstream stage flags."""
 
     method_id: str
-    """Method key as declared in ``[methods]``."""
+    """Backend method ID as declared in ``[methods]``."""
 
     slam_stage: SlamStageConfig
     """SLAM stage config extracted verbatim from the method template."""
@@ -427,6 +427,12 @@ def expand_sweep(
         for method_id, method in config.methods.items():
             template_path = _resolve_path(method.config_path, path_config)
             slam_stage = _load_slam_stage_from_template(template_path)
+            backend_method_id = slam_stage.backend.method_id.value
+            if method_id != backend_method_id:
+                raise ValueError(
+                    f"Sweep method key {method_id!r} does not match template backend method_id "
+                    f"{backend_method_id!r} in {template_path}. Use [methods.{backend_method_id}]."
+                )
 
             run_id = _build_run_id(
                 sweep_name=config.sweep.name,
@@ -490,7 +496,10 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
             source=SourceStageConfig(backend=source_backend),
             slam=item.slam_stage,
             align_ground=GroundAlignmentStageConfig(enabled=ds.align_ground),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=ds.align_trajectory),
+            align_trajectory=TrajectoryAlignmentStageConfig(
+                enabled=ds.align_trajectory,
+                baseline_source=ds.baseline_source,
+            ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=ds.evaluate_trajectory,
                 evaluation=trajectory_policy,

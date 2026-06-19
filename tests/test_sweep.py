@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,19 @@ num_gpus = 1.0
     method_id   = "mast3r"
     max_frames  = 50
     random_seed = 43
+"""
+
+_LINGBOT_SLAM_SECTION = """\
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id = "lingbot_map"
 """
 
 
@@ -164,6 +178,32 @@ def test_sweep_config_accepts_same_sequence_id_different_dataset() -> None:
         }
     )
     assert len(cfg.datasets) == 2
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    sorted(Path(".configs/sweeps").glob("*sweep.toml")),
+    ids=lambda path: path.name,
+)
+def test_checked_in_record3d_sweep_entries_use_arkit_baseline(config_path: Path) -> None:
+    datasets = tomllib.loads(config_path.read_text(encoding="utf-8"))["datasets"]
+    record3d_rows = [row for row in datasets if row["dataset_id"] == "record3d_dataset"]
+
+    assert record3d_rows
+    assert {row["baseline_source"] for row in record3d_rows} == {ReferenceSource.ARKIT.value}
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    sorted(Path(".configs/sweeps").glob("*sweep.toml")),
+    ids=lambda path: path.name,
+)
+def test_checked_in_sweep_method_keys_match_template_backend_ids(config_path: Path) -> None:
+    cfg = load_sweep_config(config_path)
+    for item in expand_sweep(cfg):
+        assert item.slam_stage.backend is not None
+        assert item.method_id == item.slam_stage.backend.method_id.value
+        assert item.run_id.endswith(f"-{item.method_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +318,19 @@ def test_expand_sweep_fails_when_template_has_no_slam_section(tmp_path: Path) ->
         expand_sweep(cfg)
 
 
+def test_expand_sweep_rejects_method_key_backend_method_id_mismatch(tmp_path: Path) -> None:
+    lingbot = _write_template(tmp_path, "lingbot.toml", _LINGBOT_SLAM_SECTION)
+    cfg = SweepConfig.model_validate(
+        {
+            "sweep": {"name": "s", "output_dir": str(tmp_path)},
+            "datasets": [{"dataset_id": "tum_rgbd", "sequence_id": "seq1"}],
+            "methods": {"lingbot": {"config_path": str(lingbot)}},
+        }
+    )
+    with pytest.raises(ValueError, match="Use \\[methods\\.lingbot_map\\]"):
+        expand_sweep(cfg)
+
+
 def test_expand_sweep_item_carries_sweep_metadata(tmp_path: Path) -> None:
     vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
     out = tmp_path / "out"
@@ -336,6 +389,7 @@ def _make_item(
     reconstruction: bool = False,
     align_cloud: bool = False,
     evaluate_cloud: bool = False,
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH,
 ) -> SweepRunItem:
     vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
     slam = _load_slam_stage_from_template(vista)
@@ -352,6 +406,7 @@ def _make_item(
         dataset=SweepDataset(
             dataset_id=dataset_id,
             sequence_id=sequence_id,
+            baseline_source=baseline_source,
             align_trajectory=align_trajectory,
             evaluate_trajectory=evaluate_trajectory,
             align_ground=align_ground,
@@ -455,16 +510,15 @@ def test_build_run_config_carries_slam_stage_verbatim(tmp_path: Path) -> None:
 
 
 def test_build_run_config_baseline_source_propagates(tmp_path: Path) -> None:
-    item = _make_item(tmp_path, evaluate_trajectory=True)
-    item = item.model_copy(
-        update={
-            "dataset": item.dataset.model_copy(
-                update={"baseline_source": ReferenceSource.GROUND_TRUTH, "evaluate_trajectory": True}
-            )
-        }
+    item = _make_item(
+        tmp_path,
+        align_trajectory=True,
+        evaluate_trajectory=True,
+        baseline_source=ReferenceSource.ARKIT,
     )
     run_cfg = build_run_config_from_sweep_item(item)
-    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.GROUND_TRUTH
+    assert run_cfg.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
 
 
 # ---------------------------------------------------------------------------

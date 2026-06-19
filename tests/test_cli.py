@@ -759,6 +759,7 @@ frame_stride = 2
 dataset_id = "record3d_dataset"
 sequence_id = "2026-06-03--18-29-08"
 frame_stride = 1
+baseline_source = "arkit"
 
 [methods.vista]
 config_path = "{vista.as_posix()}"

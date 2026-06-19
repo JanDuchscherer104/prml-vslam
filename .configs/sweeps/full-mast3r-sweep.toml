@@ -367,7 +367,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-17-10"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -375,7 +375,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-20-22"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -383,7 +383,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-24-27"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -391,7 +391,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-26-32"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -399,7 +399,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-27-25"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -407,7 +407,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-29-08"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -415,7 +415,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-32-27"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
@@ -423,7 +423,7 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-35-44"
 frame_stride        = 1
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 

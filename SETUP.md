@@ -299,10 +299,10 @@ app via its recursive artifact scan.
 mamba activate prml-vslam
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 
-# 4-sequence example (2 TUM + 2 ADVIO)
+# 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)
 uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml
 
-# All 40 sequences
+# All 50 normalized benchmark sequences
 uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/full-vista-sweep.toml \
     --continue-on-failure
 ```
@@ -316,10 +316,10 @@ mamba activate prml-vslam
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --extra dev --extra streaming --extra mast3r
 
-# 4-sequence example (2 TUM + 2 ADVIO)
+# 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)
 uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/example-mast3r-sweep.toml
 
-# All 40 sequences
+# All 50 normalized benchmark sequences
 uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/full-mast3r-sweep.toml \
     --continue-on-failure
 ```
@@ -335,10 +335,10 @@ mamba activate prml-vslam
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --extra dev --extra streaming --extra lingbot
 
-# 4-sequence example (2 TUM + 2 ADVIO)
+# 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)
 uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/example-lingbot-sweep.toml
 
-# All 40 sequences
+# All 50 normalized benchmark sequences
 uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-sweep.toml \
     --continue-on-failure
 ```
@@ -347,12 +347,18 @@ uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-
 
 | File | Method | Sequences |
 |---|---|---|
-| `example-vista-sweep.toml` | ViSTA | 4 (2 TUM + 2 ADVIO) |
-| `example-mast3r-sweep.toml` | MASt3R | 4 (2 TUM + 2 ADVIO) |
-| `example-lingbot-sweep.toml` | LingBot | 4 (2 TUM + 2 ADVIO) |
-| `full-vista-sweep.toml` | ViSTA | 40 (all TUM + all ADVIO) |
-| `full-mast3r-sweep.toml` | MASt3R | 40 (all TUM + all ADVIO) |
-| `full-lingbot-sweep.toml` | LingBot | 40 (all TUM + all ADVIO) |
+| `example-vista-sweep.toml` | ViSTA | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
+| `example-mast3r-sweep.toml` | MASt3R | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
+| `example-lingbot-sweep.toml` | LingBot | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
+| `full-vista-sweep.toml` | ViSTA | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+| `full-mast3r-sweep.toml` | MASt3R | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+| `full-lingbot-sweep.toml` | LingBot | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+
+Build the normalized benchmark datastore before running the full sweeps:
+
+```bash
+uv run prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml
+```
 
 ## Streamlit Workbench
 
