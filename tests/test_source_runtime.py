@@ -18,6 +18,7 @@ from prml_vslam.interfaces import (
     ObservationIndexEntry,
     ObservationProvenance,
     ObservationSequenceIndex,
+    ObservationSequenceRef,
 )
 from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.pipeline.contracts.mode import PipelineMode
@@ -40,8 +41,13 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalized_store import (
+    NormalizedDatasetEntry,
+    NormalizedDatasetProfile,
+    NormalizedDatasetStore,
+    load_timestamps_ns,
+)
 from prml_vslam.sources.materialization import materialize_manifest
 from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations
 from prml_vslam.sources.protocols import OfflineSequenceSource
@@ -331,6 +337,88 @@ def test_sequence_manifest_observation_reader_uses_observation_index_rows(tmp_pa
     assert [observation.timestamp_ns for observation in observations] == [100, 200]
     assert [observation.source_frame_index for observation in observations] == [16, 612]
     assert [observation.provenance.source_frame_index for observation in observations] == [16, 612]
+
+
+def test_normalized_store_source_frame_indices_sidecar_uses_original_observation_provenance(tmp_path: Path) -> None:
+    payload_root = tmp_path / "entry" / "observations"
+    rgb_dir = payload_root / "rgb"
+    rgb_dir.mkdir(parents=True)
+    timestamps_path = tmp_path / "entry" / "input" / "timestamps.json"
+    timestamps_path.parent.mkdir(parents=True)
+    timestamps_path.write_text(json.dumps({"timestamps_ns": [10, 20, 30, 40]}), encoding="utf-8")
+    index_path = payload_root / "observations.json"
+    rows = [
+        ObservationIndexEntry(
+            seq=seq,
+            timestamp_ns=timestamp_ns,
+            rgb_path=Path(f"rgb/{seq:06d}.png"),
+            provenance=ObservationProvenance(source_id="advio", source_frame_index=source_frame_index),
+        )
+        for seq, (timestamp_ns, source_frame_index) in enumerate(zip([10, 20, 30, 40], [5, 9, 13, 17], strict=True))
+    ]
+    for row in rows:
+        cv2.imwrite(str(payload_root / row.rgb_path), np.zeros((2, 3, 3), dtype=np.uint8))
+    index_path.write_text(
+        ObservationSequenceIndex(
+            source_id="advio",
+            sequence_id="advio-synthetic",
+            observation_count=len(rows),
+            rows=rows,
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "entry" / "sequence_manifest.json"
+    manifest_path.write_text(
+        SequenceManifest(
+            sequence_id="advio-synthetic", rgb_dir=rgb_dir, timestamps_path=timestamps_path
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    benchmark_inputs_path = tmp_path / "entry" / "benchmark_inputs.json"
+    benchmark_inputs_path.write_text(
+        PreparedBenchmarkInputs(
+            observation_sequences=[
+                ObservationSequenceRef(
+                    source_id="advio",
+                    sequence_id="advio-synthetic",
+                    index_path=index_path,
+                    payload_root=payload_root,
+                    observation_count=len(rows),
+                )
+            ]
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-synthetic",
+        source_id="advio",
+        source_profile={},
+    )
+    entry = NormalizedDatasetEntry(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-synthetic",
+        source_id="advio",
+        profile_key=profile.profile_key,
+        profile=profile.model_dump(mode="json"),
+        root=tmp_path / "entry",
+        sequence_manifest_path=manifest_path,
+        benchmark_inputs_path=benchmark_inputs_path,
+    )
+
+    selected = NormalizedDatasetStore(store_root=tmp_path / "store", dataset_id=DatasetId.ADVIO).read_sequence_manifest(
+        entry,
+        frame_selection=FrameSelectionConfig(frame_stride=2),
+        output_dir=tmp_path / "run" / "input",
+    )
+
+    source_frame_indices = json.loads(selected.source_frame_indices_path.read_text(encoding="utf-8"))
+    selected_observations = ObservationSequenceIndex.model_validate_json(
+        selected.observation_index_path.read_text(encoding="utf-8")
+    )
+    assert source_frame_indices == {"source_frame_indices": [5, 13]}
+    assert [row.seq for row in selected_observations.rows] == [0, 1]
+    assert [row.provenance.source_frame_index for row in selected_observations.rows] == [5, 13]
 
 
 def test_sequence_manifest_observation_reader_decodes_video_path_without_rgb_dir(tmp_path: Path) -> None:
