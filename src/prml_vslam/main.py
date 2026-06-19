@@ -65,7 +65,11 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_store_for_service,
     parse_dataset_id,
 )
-from prml_vslam.sources.datasets.normalized_query import NormalizedSequenceRecord, query_normalized_dataset
+from prml_vslam.sources.datasets.normalized_query import (
+    NormalizedDatasetQuery,
+    NormalizedSequenceRecord,
+    query_normalized_dataset,
+)
 from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
@@ -1435,6 +1439,18 @@ def dataset_summary(
         str,
         typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
     ],
+    sequence: Annotated[
+        str | None,
+        typer.Option("--sequence", "-s", help="Limit summary tables to one normalized sequence."),
+    ] = None,
+    profile_key: Annotated[
+        str | None,
+        typer.Option("--profile-key", help="Profile key for --sequence when more than one profile exists."),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Include full stats and metadata tables."),
+    ] = False,
 ) -> None:
     """Print compact normalized-entry coverage and persisted analysis tables."""
     path_config = get_path_config()
@@ -1451,10 +1467,7 @@ def dataset_summary(
             "default_record_count": len(query.default_records),
             "sequence_count": len(query.sequence_ids),
             "issue_count": len(query.issues),
-            "records": query.table_rows(),
-            "observation_summary": _dataframe_records(query.observation_summary_frame()),
-            "trajectory_summary": _dataframe_records(query.trajectory_summary_frame()),
-            "payload_footprint": _dataframe_records(query.payload_footprint_frame()),
+            **_dataset_summary_tables(query, sequence=sequence, profile_key=profile_key, verbose=verbose),
             "issues": query.issues,
         }
     )
@@ -1537,6 +1550,46 @@ def _select_normalized_record(
     )
 
 
+def _dataset_summary_tables(
+    query: NormalizedDatasetQuery,
+    *,
+    sequence: str | None,
+    profile_key: str | None,
+    verbose: bool,
+) -> dict[str, Any]:
+    if profile_key is not None and sequence is None:
+        raise typer.BadParameter("--profile-key requires --sequence.")
+    records = (
+        [_select_normalized_record(query.records, sequence=sequence, profile_key=profile_key)]
+        if sequence is not None
+        else query.records
+    )
+    payload: dict[str, Any] = {
+        "records": _record_rows(query, records),
+        "observation_summary": _records_dataframe_records(query.observation_summary_frame(), records),
+        "payload_footprint": _records_dataframe_records(query.payload_footprint_frame(), records),
+    }
+    if sequence is not None or verbose:
+        payload["trajectory_summary"] = _records_dataframe_records(query.trajectory_summary_frame(), records)
+    if verbose:
+        payload["metadata"] = _records_dataframe_records(query.metadata_df, records)
+        payload["stats"] = _records_dataframe_records(query.stats_df, records)
+    else:
+        payload["hint"] = (
+            "Pass --verbose for full stats/metadata tables."
+            if sequence is not None
+            else "Pass --sequence for trajectory details or --verbose for full stats/metadata tables."
+        )
+    return payload
+
+
+def _record_rows(
+    query: NormalizedDatasetQuery, records: list[NormalizedSequenceRecord]
+) -> list[dict[str, str | int | float | bool | None]]:
+    keys = {(record.sequence_id, record.profile_key) for record in records}
+    return [row for row in query.table_rows() if (str(row["Sequence"]), str(row["Profile"])) in keys]
+
+
 def _dataframe_records(frame: Any) -> list[dict[str, Any]]:
     if bool(getattr(frame, "empty", True)):
         return []
@@ -1545,11 +1598,15 @@ def _dataframe_records(frame: Any) -> list[dict[str, Any]]:
 
 
 def _entry_dataframe_records(frame: Any, record: NormalizedSequenceRecord) -> list[dict[str, Any]]:
+    return _records_dataframe_records(frame, [record])
+
+
+def _records_dataframe_records(frame: Any, records: list[NormalizedSequenceRecord]) -> list[dict[str, Any]]:
+    keys = {(record.sequence_id, record.profile_key) for record in records}
     return [
         row
         for row in _dataframe_records(frame)
-        if (row.get("sequence_id", row.get("Sequence")) == record.sequence_id)
-        and (row.get("profile_key", row.get("Profile")) == record.profile_key)
+        if (row.get("sequence_id", row.get("Sequence")), row.get("profile_key", row.get("Profile"))) in keys
     ]
 
 
