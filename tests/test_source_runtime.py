@@ -17,6 +17,7 @@ from prml_vslam.interfaces import (
     Observation,
     ObservationIndexEntry,
     ObservationProvenance,
+    ObservationSequenceIndex,
 )
 from prml_vslam.interfaces.artifacts import artifact_ref
 from prml_vslam.pipeline.contracts.mode import PipelineMode
@@ -269,6 +270,67 @@ def test_sequence_manifest_observation_reader_preserves_original_source_frame_in
     assert [observation.timestamp_ns for observation in observations] == [20, 40]
     assert [observation.source_frame_index for observation in observations] == [1, 3]
     assert [observation.provenance.source_frame_index for observation in observations] == [1, 3]
+
+
+def test_sequence_manifest_observation_reader_accepts_preselected_timestamps(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(
+        tmp_path,
+        frame_count=4,
+        timestamps_ns=[10, 30],
+        source_frame_indices=[0, 2],
+    )
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert [int(observation.rgb[0, 0, 0]) for observation in observations if observation.rgb is not None] == [1, 3]
+    assert [observation.timestamp_ns for observation in observations] == [10, 30]
+    assert [observation.source_frame_index for observation in observations] == [0, 2]
+
+
+def test_sequence_manifest_observation_reader_uses_observation_index_rows(tmp_path: Path) -> None:
+    rgb_dir = tmp_path / "observations" / "rgb"
+    rgb_dir.mkdir(parents=True)
+    for index in range(2):
+        frame_rgb = np.full((2, 3, 3), index + 1, dtype=np.uint8)
+        cv2.imwrite(str(rgb_dir / f"{index:06d}.png"), cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(json.dumps({"timestamps_ns": [100, 200]}), encoding="utf-8")
+    observation_index_path = tmp_path / "observations.json"
+    observation_index_path.write_text(
+        ObservationSequenceIndex(
+            source_id="tum_rgbd",
+            sequence_id="seq-rgb",
+            observation_count=2,
+            rows=[
+                ObservationIndexEntry(
+                    seq=0,
+                    timestamp_ns=100,
+                    rgb_path=Path("rgb/000000.png"),
+                    provenance=ObservationProvenance(source_id="tum_rgbd", source_frame_index=16),
+                ),
+                ObservationIndexEntry(
+                    seq=1,
+                    timestamp_ns=200,
+                    rgb_path=Path("rgb/000001.png"),
+                    provenance=ObservationProvenance(source_id="tum_rgbd", source_frame_index=612),
+                ),
+            ],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    manifest = SequenceManifest(
+        sequence_id="seq-rgb",
+        rgb_dir=rgb_dir,
+        timestamps_path=timestamps_path,
+        observation_index_path=observation_index_path,
+    )
+
+    observations = list(iter_sequence_manifest_observations(manifest))
+
+    assert [int(observation.rgb[0, 0, 0]) for observation in observations if observation.rgb is not None] == [1, 2]
+    assert [observation.timestamp_ns for observation in observations] == [100, 200]
+    assert [observation.source_frame_index for observation in observations] == [16, 612]
+    assert [observation.provenance.source_frame_index for observation in observations] == [16, 612]
 
 
 def test_sequence_manifest_observation_reader_decodes_video_path_without_rgb_dir(tmp_path: Path) -> None:
