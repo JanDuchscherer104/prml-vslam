@@ -285,15 +285,15 @@ def test_dataset_normalize_defaults_to_all_local_sequences_and_cpu_workers(monke
     assert captured["sequence_ids"] == ["scene-a", "scene-b"]
     assert captured["workers"] == 7
     assert captured["frame_selection"].frame_stride == 1
-    assert captured["frame_selection"].target_fps == 15.0
+    assert captured["frame_selection"].target_fps == 30.0
     assert "'sequence_count': 2" in result.stdout
     assert "'frame_stride': 1" in result.stdout
-    assert "'target_fps': 15.0" in result.stdout
+    assert "'target_fps': 30.0" in result.stdout
     assert "'workers': 2" in result.stdout
     assert "'entries'" in result.stdout
 
 
-def test_dataset_normalize_advio_defaults_to_10_fps(monkeypatch) -> None:
+def test_dataset_normalize_advio_defaults_to_15_fps(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     class FakeService:
@@ -317,8 +317,8 @@ def test_dataset_normalize_advio_defaults_to_10_fps(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert captured["frame_selection"].frame_stride == 1
-    assert captured["frame_selection"].target_fps == 10.0
-    assert "'target_fps': 10.0" in result.stdout
+    assert captured["frame_selection"].target_fps == 15.0
+    assert "'target_fps': 15.0" in result.stdout
 
 
 def test_dataset_normalize_frame_stride_clears_default_target_fps(monkeypatch) -> None:

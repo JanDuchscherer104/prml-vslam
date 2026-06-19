@@ -128,7 +128,7 @@ def source_config_for_normalization(
 
 def default_frame_selection_for_dataset(dataset_id: DatasetId) -> FrameSelectionConfig:
     """Return normalize-time sampling defaults for newly persisted entries."""
-    return FrameSelectionConfig(target_fps=10.0 if dataset_id is DatasetId.ADVIO else 15.0)
+    return FrameSelectionConfig(target_fps=15.0 if dataset_id is DatasetId.ADVIO else 30.0)
 
 
 def normalized_profile_for_dataset(
