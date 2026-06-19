@@ -330,11 +330,23 @@ class NormalizedDatasetStore:
         manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
         if manifest.timestamps_path is None:
             return manifest
-        timestamps_ns = load_timestamps_ns(manifest.timestamps_path)
+        observation_sequence = PreparedBenchmarkInputs.model_validate_json(
+            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        ).default_observation_sequence()
+        timestamps_ns = (
+            [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
+            if observation_sequence is not None
+            else load_timestamps_ns(manifest.timestamps_path)
+        )
         selected_indices, sampling_payload = _selected_indices_and_sampling_payload(timestamps_ns, frame_selection)
         output_dir.mkdir(parents=True, exist_ok=True)
         selected_timestamps_path = output_dir / "timestamps.json"
         selected_indices_path = output_dir / "source_frame_indices.json"
+        selected_observation_sequence = (
+            _select_observation_sequence(observation_sequence, frame_selection=frame_selection, output_dir=output_dir)
+            if observation_sequence is not None
+            else None
+        )
         timestamp_payload: JsonObject = {
             "timestamps_ns": [timestamps_ns[index] for index in selected_indices],
             **sampling_payload,
@@ -345,6 +357,9 @@ class NormalizedDatasetStore:
             update={
                 "timestamps_path": selected_timestamps_path.resolve(),
                 "source_frame_indices_path": selected_indices_path.resolve(),
+                "observation_index_path": (
+                    None if selected_observation_sequence is None else selected_observation_sequence.index_path
+                ),
             }
         )
 
@@ -527,6 +542,7 @@ class NormalizedDatasetStore:
             updates["video_path"] = None
             updates["rgb_dir"] = observation_sequence.payload_root / "rgb"
             updates["timestamps_path"] = timestamps_path
+            updates["observation_index_path"] = observation_sequence.index_path
         elif manifest.video_path is not None:
             extracted = extract_video_frames(video_path=manifest.video_path, output_dir=input_root / "rgb")
             updates["video_path"] = None
@@ -1208,6 +1224,7 @@ def _validate_manifest_paths(root: Path, manifest: SequenceManifest) -> None:
         manifest.rgb_dir,
         manifest.timestamps_path,
         manifest.source_frame_indices_path,
+        manifest.observation_index_path,
         manifest.intrinsics_path,
         manifest.rotation_metadata_path,
     ):

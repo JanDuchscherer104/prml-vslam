@@ -75,6 +75,7 @@ class SequenceManifest(BaseData):
     rgb_dir: Path | None = None
     timestamps_path: Path | None = None
     source_frame_indices_path: Path | None = None
+    observation_index_path: Path | None = None
     intrinsics_path: Path | None = None
     rotation_metadata_path: Path | None = None
     advio: AdvioManifestAssets | None = None
