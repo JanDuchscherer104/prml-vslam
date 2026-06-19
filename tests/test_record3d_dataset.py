@@ -701,16 +701,16 @@ def test_source_config_for_normalization_preserves_dataset_reference_cloud_defau
     record3d_config = source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id="synthetic")
 
     assert isinstance(advio_config, AdvioSourceConfig)
-    assert advio_config.target_fps == 10.0
+    assert advio_config.target_fps == 15.0
     assert advio_config.rgb_max_width_px == 392
     assert advio_config.rgb_dimension_multiple == 14
     assert isinstance(tum_config, TumRgbdSourceConfig)
-    assert tum_config.target_fps == 15.0
+    assert tum_config.target_fps == 30.0
     assert tum_config.reference_cloud == ReferenceCloudConfig()
     assert tum_config.rgb_max_width_px == 392
     assert tum_config.rgb_dimension_multiple == 14
     assert isinstance(record3d_config, Record3DDatasetSourceConfig)
-    assert record3d_config.target_fps == 15.0
+    assert record3d_config.target_fps == 30.0
     assert record3d_config.reference_cloud == ReferenceCloudConfig(min_confidence=1)
     assert record3d_config.rgb_max_width_px == 392
     assert record3d_config.rgb_dimension_multiple == 14
