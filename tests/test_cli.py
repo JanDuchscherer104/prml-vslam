@@ -137,6 +137,62 @@ def test_dataset_summary_accepts_record3d_alias(monkeypatch, tmp_path: Path) -> 
     assert "'entries'" not in result.stdout
 
 
+def test_dataset_summary_sequence_filter_includes_trajectory_details(monkeypatch, tmp_path: Path) -> None:
+    normalized = NormalizedDatasetQuery(
+        dataset_id=DatasetId.RECORD3D,
+        records=[
+            NormalizedSequenceRecord(
+                dataset_id=DatasetId.RECORD3D,
+                sequence_id="synthetic",
+                sequence_label="Synthetic",
+                source_id="record3d_dataset",
+                profile_key="profile",
+                root=tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / "profile",
+                is_default_profile=True,
+                stats_row_count=2,
+                metadata_row_count=1,
+            )
+        ],
+        issues=[],
+        stats_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "record3d",
+                    "sequence_id": "synthetic",
+                    "profile_key": "profile",
+                    "source_id": "record3d_dataset",
+                    "scope": "reference_trajectory",
+                    "subject": "arkit/aligned",
+                    "stat": "trajectory_path_length_m",
+                    "value": "12.5",
+                    "unit": "m",
+                }
+            ]
+        ),
+        metadata_df=pd.DataFrame.from_records(
+            [
+                {
+                    "dataset_id": "record3d",
+                    "sequence_id": "synthetic",
+                    "profile_key": "profile",
+                    "source_id": "record3d_dataset",
+                    "scope": "sequence",
+                    "key": "rgb_dir",
+                    "value": "observations/rgb",
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(main_module, "query_normalized_dataset", lambda dataset_id, path_config: normalized)
+
+    result = runner.invoke(app, ["dataset", "summary", "--dataset", "record3d", "--sequence", "synthetic"])
+
+    assert result.exit_code == 0
+    assert "'trajectory_path_length_m': '12.5'" in result.stdout
+    assert "'metadata':" not in result.stdout
+    assert "--verbose" in result.stdout
+
+
 def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Path) -> None:
     entry_root = tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / "profile"
     entry_root.mkdir(parents=True)
