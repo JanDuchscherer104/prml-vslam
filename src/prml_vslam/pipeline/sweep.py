@@ -15,6 +15,7 @@ Schema overview::
     dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio" | "record3d_dataset"
     sequence_id         = "freiburg1_xyz"
     frame_stride        = 1
+    normalized_target_fps = 30.0
     baseline_source     = "ground_truth"
     align_ground        = false
     align_trajectory    = true
@@ -150,16 +151,22 @@ def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfi
             return TumRgbdSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
             )
         case "advio":
             return AdvioSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
             )
         case "record3d_dataset":
             return Record3DDatasetSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
             )
         case _:
             raise ValueError(
@@ -204,6 +211,8 @@ class SweepDataset(BaseConfig):
         sequence_id: Dataset-specific sequence slug passed to the source backend.
         frame_stride: Frame sub-sampling stride forwarded to the source backend.
             ``1`` means every frame; ``2`` means every other frame, etc.
+        normalized_frame_stride: Normalize-time frame stride used by the persisted datastore profile.
+        normalized_target_fps: Normalize-time target FPS used by the persisted datastore profile.
         baseline_source: Reference trajectory used by trajectory evaluation.
         align_ground: Enable ground-alignment stage.
         align_trajectory: Enable trajectory Sim(3)-alignment stage.
@@ -223,6 +232,12 @@ class SweepDataset(BaseConfig):
 
     frame_stride: int = Field(default=1, ge=1)
     """Frame sub-sampling stride forwarded to the source backend."""
+
+    normalized_frame_stride: int | None = Field(default=None, ge=1)
+    """Normalize-time frame stride used by the persisted datastore profile."""
+
+    normalized_target_fps: float | None = Field(default=None, gt=0.0)
+    """Normalize-time target FPS used by the persisted datastore profile."""
 
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
     """Reference trajectory source used by the trajectory-evaluation stage."""
@@ -250,6 +265,13 @@ class SweepDataset(BaseConfig):
         """Ensure *dataset_id* and *sequence_id* are safe to embed in run IDs."""
         _assert_slug(self.dataset_id, "dataset_id")
         _assert_slug(self.sequence_id, "sequence_id")
+        return self
+
+    @model_validator(mode="after")
+    def validate_single_normalized_sampling_mode(self) -> Self:
+        """Keep stored-profile sampling unambiguous."""
+        if self.normalized_target_fps is not None and self.normalized_frame_stride not in (None, 1):
+            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
         return self
 
 
@@ -427,7 +449,10 @@ def expand_sweep(
         for method_id, method in config.methods.items():
             template_path = _resolve_path(method.config_path, path_config)
             slam_stage = _load_slam_stage_from_template(template_path)
-            backend_method_id = slam_stage.backend.method_id.value
+            backend = slam_stage.backend
+            if backend is None:
+                raise ValueError(f"Method template {template_path} has no [stages.slam.backend] section.")
+            backend_method_id = backend.method_id.value
             if method_id != backend_method_id:
                 raise ValueError(
                     f"Sweep method key {method_id!r} does not match template backend method_id "

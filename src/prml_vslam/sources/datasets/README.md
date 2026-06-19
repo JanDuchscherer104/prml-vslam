@@ -189,6 +189,12 @@ they may reuse the only current-schema entry for the same dataset, sequence, and
 source id with a warning. Multiple compatible profiles remain ambiguous and
 must be resolved by rebuilding or selecting the exact profile.
 
+When a run wants to read a lower cadence than the persisted entry, source
+configs keep that read-time policy in `frame_stride` / `target_fps` and carry
+the store-build cadence in `normalized_frame_stride` / `normalized_target_fps`.
+This keeps benchmark sweeps on exact datastore profiles without making runtime
+subsampling a rebuild trigger.
+
 Each new entry writes two queryable CSV tables:
 
 - `stats_long.csv`: one row per persisted sequence, observation-sequence, or
