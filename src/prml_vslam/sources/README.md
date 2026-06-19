@@ -97,11 +97,14 @@ classDiagram
     SourceBackendConfig <|-- Record3DSourceConfig
 ```
 
-`frame_stride` and `target_fps` are shared source backend policy fields. Dataset
-sources apply them through timestamp-aware frame selection before manifest,
-observation-sequence, stream, and reference-cloud materialization. Shared
-dataset `reference_cloud` config only controls depth pixel sampling, point
-capping, random sampling seed, and dataset-specific confidence filtering.
+`frame_stride` and `target_fps` are shared read-time source backend policy
+fields. Dataset sources apply them through timestamp-aware frame selection when
+serving an existing normalized entry. Dataset-backed source configs also accept
+`normalized_frame_stride` / `normalized_target_fps` to identify the persisted
+normalized-store profile when the run-time sampling policy differs from the
+store-build cadence. Shared dataset `reference_cloud` config only controls
+depth pixel sampling, point capping, random sampling seed, and dataset-specific
+confidence filtering.
 
 ## Source I/O Contracts
 

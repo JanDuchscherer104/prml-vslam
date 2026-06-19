@@ -21,8 +21,14 @@ from prml_vslam.pipeline.sweep import (
     expand_sweep,
     load_sweep_config,
 )
-from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    TumRgbdSourceConfig,
+    normalized_profile_for_source_config,
+)
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.datasets.contracts import DatasetId
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -180,6 +186,32 @@ def test_sweep_config_accepts_same_sequence_id_different_dataset() -> None:
     assert len(cfg.datasets) == 2
 
 
+def test_sweep_dataset_rejects_ambiguous_normalized_sampling() -> None:
+    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+        SweepDataset.model_validate(
+            {
+                "dataset_id": "tum_rgbd",
+                "sequence_id": "freiburg1_xyz",
+                "normalized_frame_stride": 2,
+                "normalized_target_fps": 30.0,
+            }
+        )
+
+
+@pytest.mark.parametrize("config_type", [AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig])
+def test_dataset_source_configs_reject_ambiguous_normalized_sampling(
+    config_type: type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],
+) -> None:
+    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+        config_type.model_validate(
+            {
+                "sequence_id": "sequence",
+                "normalized_frame_stride": 2,
+                "normalized_target_fps": 30.0,
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "config_path",
     sorted(Path(".configs/sweeps").glob("*sweep.toml")),
@@ -218,6 +250,53 @@ def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
     }
 
     assert datastore_keys == full_sweep_keys
+
+
+def test_full_sweeps_match_benchmark_datastore_profiles() -> None:
+    datastore_sources = {
+        (row["source_id"], row["sequence_id"]): row
+        for row in tomllib.loads(Path(".configs/datasets/benchmark-vslam-datastore.toml").read_text(encoding="utf-8"))[
+            "sources"
+        ]
+    }
+    dataset_ids = {
+        "advio": DatasetId.ADVIO,
+        "record3d_dataset": DatasetId.RECORD3D,
+        "tum_rgbd": DatasetId.TUM_RGBD,
+    }
+    config_types: dict[
+        str,
+        type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],
+    ] = {
+        "advio": AdvioSourceConfig,
+        "record3d_dataset": Record3DDatasetSourceConfig,
+        "tum_rgbd": TumRgbdSourceConfig,
+    }
+
+    for sweep_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml")):
+        for item in expand_sweep(load_sweep_config(sweep_path)):
+            key = (item.dataset.dataset_id, item.dataset.sequence_id)
+            datastore_config = config_types[key[0]].model_validate(datastore_sources[key])
+            run_config = build_run_config_from_sweep_item(item)
+            source_config = run_config.stages.source.backend
+            assert isinstance(source_config, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig)
+            dataset_id = dataset_ids[key[0]]
+
+            run_profile = normalized_profile_for_source_config(
+                dataset_id=dataset_id,
+                sequence_id=key[1],
+                source_id=key[0],
+                payload=source_config.model_dump(mode="json"),
+            )
+            datastore_profile = normalized_profile_for_source_config(
+                dataset_id=dataset_id,
+                sequence_id=key[1],
+                source_id=key[0],
+                payload=datastore_config.model_dump(mode="json"),
+                include_frame_selection=True,
+            )
+
+            assert run_profile.source_profile == datastore_profile.source_profile
 
 
 def test_full_vista_sweep_uses_bounded_frame_count() -> None:
