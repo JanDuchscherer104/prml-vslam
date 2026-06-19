@@ -55,11 +55,14 @@ from prml_vslam.sources.datasets.advio import (
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import (
     NormalizedDatasetBuildConfig,
+    dataset_id_for_source_config,
     dataset_service,
     default_frame_selection_for_dataset,
     normalize_dataset_entries,
     normalize_dataset_entry,
     normalize_dataset_source_configs,
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
     parse_dataset_id,
 )
 from prml_vslam.sources.datasets.normalized_query import NormalizedSequenceRecord, query_normalized_dataset
@@ -783,6 +786,7 @@ def run_sweep_config(
     try:
         config = load_sweep_config(sweep_path, path_config)
         items = expand_sweep(config, path_config)
+        _preflight_sweep_normalized_entries(items, path_config=path_config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
@@ -823,6 +827,42 @@ def run_sweep_config(
         raise typer.Exit(code=1)
 
     console.info("Sweep complete: %d/%d runs succeeded.", total - len(failures), total)
+
+
+def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathConfig) -> None:
+    """Verify dataset-backed sweep runs can resolve a normalized datastore entry."""
+    from prml_vslam.pipeline.sweep import build_run_config_from_sweep_item
+
+    failures: list[str] = []
+    for item in items:
+        try:
+            run_cfg = build_run_config_from_sweep_item(item)
+            source_backend = run_cfg.stages.source.backend
+            if not isinstance(source_backend, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig):
+                continue
+            dataset_id = dataset_id_for_source_config(source_backend)
+            service = dataset_service(dataset_id, path_config)
+            profile = normalized_profile_for_dataset(
+                dataset_id=dataset_id,
+                service=service,
+                source_config=source_backend,
+            )
+            normalized_store_for_service(dataset_id, path_config).resolve_entry(
+                profile,
+                frame_selection=FrameSelectionConfig(
+                    frame_stride=source_backend.frame_stride,
+                    target_fps=source_backend.target_fps,
+                ),
+            )
+        except Exception as exc:
+            failures.append(f"{item.run_id}: {exc}")
+    if failures:
+        joined = "\n- ".join(failures)
+        raise FileNotFoundError(
+            "Sweep normalized datastore preflight failed. Build the missing compatible entries first with "
+            "`prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml`.\n"
+            f"- {joined}"
+        )
 
 
 @app.command("eval-trajectory")

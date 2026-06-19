@@ -206,6 +206,20 @@ def test_checked_in_sweep_method_keys_match_template_backend_ids(config_path: Pa
         assert item.run_id.endswith(f"-{item.method_id}")
 
 
+def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
+    datastore_sources = tomllib.loads(
+        Path(".configs/datasets/benchmark-vslam-datastore.toml").read_text(encoding="utf-8")
+    )["sources"]
+    datastore_keys = {(row["source_id"], row["sequence_id"]) for row in datastore_sources}
+    full_sweep_keys = {
+        (row["dataset_id"], row["sequence_id"])
+        for config_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml"))
+        for row in tomllib.loads(config_path.read_text(encoding="utf-8"))["datasets"]
+    }
+
+    assert datastore_keys == full_sweep_keys
+
+
 # ---------------------------------------------------------------------------
 # Template loading
 # ---------------------------------------------------------------------------

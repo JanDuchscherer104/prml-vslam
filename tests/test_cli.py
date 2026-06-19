@@ -839,6 +839,7 @@ def test_run_sweep_config_fail_fast_stops_on_first_failure(
         raise typer.Exit(code=1)
 
     monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main._preflight_sweep_normalized_entries", lambda items, *, path_config: None)
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
 
     result = runner.invoke(app, ["run-sweep-config", str(sweep), "--fail-fast"])
@@ -859,6 +860,7 @@ def test_run_sweep_config_continue_on_failure_attempts_all_runs(
         raise typer.Exit(code=1)
 
     monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main._preflight_sweep_normalized_entries", lambda items, *, path_config: None)
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
 
     result = runner.invoke(app, ["run-sweep-config", str(sweep), "--continue-on-failure"])
@@ -877,8 +879,29 @@ def test_run_sweep_config_exits_zero_when_all_succeed(
         pass  # success
 
     monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main._preflight_sweep_normalized_entries", lambda items, *, path_config: None)
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
 
     result = runner.invoke(app, ["run-sweep-config", str(sweep)])
 
     assert result.exit_code == 0
+
+
+def test_run_sweep_config_preflights_normalized_datastore_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sweep, _, _ = _write_sweep_fixtures(tmp_path)
+    executed: list[str] = []
+
+    def fake_run_config_loaded(*, run_cfg, path_config):
+        executed.append(run_cfg.experiment_name)
+
+    monkeypatch.setattr("prml_vslam.main._run_config_loaded", fake_run_config_loaded)
+    monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    result = runner.invoke(app, ["run-sweep-config", str(sweep)])
+
+    assert result.exit_code == 1
+    assert "Sweep normalized datastore preflight failed" in result.output
+    assert executed == []
