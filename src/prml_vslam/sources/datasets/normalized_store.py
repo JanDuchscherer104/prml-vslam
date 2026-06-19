@@ -333,9 +333,12 @@ class NormalizedDatasetStore:
         observation_sequence = PreparedBenchmarkInputs.model_validate_json(
             entry.benchmark_inputs_path.read_text(encoding="utf-8")
         ).default_observation_sequence()
+        observation_index = (
+            None if observation_sequence is None else load_observation_sequence_index(observation_sequence.index_path)
+        )
         timestamps_ns = (
-            [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
-            if observation_sequence is not None
+            [row.timestamp_ns for row in observation_index.rows]
+            if observation_index is not None
             else load_timestamps_ns(manifest.timestamps_path)
         )
         selected_indices, sampling_payload = _selected_indices_and_sampling_payload(timestamps_ns, frame_selection)
@@ -347,12 +350,18 @@ class NormalizedDatasetStore:
             if observation_sequence is not None
             else None
         )
+        selected_source_frame_indices = selected_indices
+        if observation_index is not None:
+            selected_source_frame_indices = [
+                row.provenance.source_frame_index if row.provenance.source_frame_index is not None else row.seq
+                for row in (observation_index.rows[index] for index in selected_indices)
+            ]
         timestamp_payload: JsonObject = {
             "timestamps_ns": [timestamps_ns[index] for index in selected_indices],
             **sampling_payload,
         }
         write_json(selected_timestamps_path, timestamp_payload)
-        write_json(selected_indices_path, {"source_frame_indices": selected_indices})
+        write_json(selected_indices_path, {"source_frame_indices": selected_source_frame_indices})
         return manifest.model_copy(
             update={
                 "timestamps_path": selected_timestamps_path.resolve(),

@@ -59,7 +59,7 @@ def _load_manifest_rgb_inputs(
         if max_frames is not None:
             timestamps_ns = timestamps_ns[:max_frames]
             source_frame_indices = source_frame_indices[:max_frames]
-        frames = list(iter_rgb_video_frames(sequence.video_path, source_frame_indices))
+        frames: list[Path | np.ndarray] = list(iter_rgb_video_frames(sequence.video_path, source_frame_indices))
         if len(frames) != len(timestamps_ns):
             raise RuntimeError(
                 "Normalized offline inputs are inconsistent: "
@@ -72,7 +72,7 @@ def _load_manifest_rgb_inputs(
             "Offline observation loading requires either `SequenceManifest.video_path` or `SequenceManifest.rgb_dir`. "
             "Materialize the source stage before invoking downstream offline stages."
         )
-    image_paths = sorted(sequence.rgb_dir.glob("*.png"))
+    image_paths: list[Path | np.ndarray] = sorted(sequence.rgb_dir.glob("*.png"))
     if sequence.source_frame_indices_path is None:
         source_frame_indices = list(range(len(image_paths)))
     else:
@@ -112,7 +112,7 @@ def _load_observation_index_rgb_inputs(
     rows = load_observation_sequence_index(sequence.observation_index_path).rows
     if max_frames is not None:
         rows = rows[:max_frames]
-    image_paths = []
+    image_paths: list[Path | np.ndarray] = []
     timestamps_ns = []
     source_frame_indices = []
     payload_root = sequence.rgb_dir.parent
