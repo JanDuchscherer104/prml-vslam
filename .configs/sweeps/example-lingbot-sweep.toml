@@ -20,11 +20,11 @@
 # and ADVIO sequences use frame_stride=10 to stay comfortably within that range.
 #
 # Expanded run IDs (in execution order):
-#   example-lingbot-tum_rgbd-freiburg3_large_cabinet-lingbot
-#   example-lingbot-tum_rgbd-freiburg1_desk-lingbot
-#   example-lingbot-advio-advio-15-lingbot
-#   example-lingbot-advio-advio-01-lingbot
-#   example-lingbot-record3d_dataset-2026-06-03--18-29-08-lingbot
+#   example-lingbot-tum_rgbd-freiburg3_large_cabinet-lingbot_map
+#   example-lingbot-tum_rgbd-freiburg1_desk-lingbot_map
+#   example-lingbot-advio-advio-15-lingbot_map
+#   example-lingbot-advio-advio-01-lingbot_map
+#   example-lingbot-record3d_dataset-2026-06-03--18-29-08-lingbot_map
 
 [sweep]
 name       = "example-lingbot"
@@ -74,10 +74,10 @@ evaluate_trajectory = true
 dataset_id          = "record3d_dataset"
 sequence_id         = "2026-06-03--18-29-08"
 frame_stride        = 5
-baseline_source     = "ground_truth"
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 
 # ── Methods ──────────────────────────────────────────────────────────────────
-[methods.lingbot]
+[methods.lingbot_map]
 config_path = ".configs/templates/lingbot-slam.toml"
