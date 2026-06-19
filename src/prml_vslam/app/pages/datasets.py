@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
@@ -15,7 +14,7 @@ from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId, DatasetSummary, LocalSceneStatus
+from prml_vslam.sources.datasets.contracts import AdvioPoseSource, DatasetId, DatasetSummary, LocalSceneStatus
 from prml_vslam.sources.datasets.normalization import (
     open_normalized_dataset_stream,
     source_config_for_normalization,
@@ -34,6 +33,7 @@ from prml_vslam.sources.datasets.record3d import (
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
     TumRgbdDownloadRequest,
+    TumRgbdPoseSource,
 )
 from prml_vslam.utils import JsonObject, PathConfig
 
@@ -79,6 +79,7 @@ class _TumRgbdDownloadFormData:
 
 
 DownloadRequestT = TypeVar("DownloadRequestT", AdvioDownloadRequest, TumRgbdDownloadRequest)
+DownloadFormT = TypeVar("DownloadFormT", AdvioDownloadFormData, Record3DDownloadFormData, _TumRgbdDownloadFormData)
 
 
 def render(context: AppContext) -> None:
@@ -197,8 +198,8 @@ def _render_download_card(
     *,
     dataset_root: Path,
     download_label: str,
-    render_form: Callable[[], AdvioDownloadFormData | Record3DDownloadFormData | _TumRgbdDownloadFormData],
-) -> AdvioDownloadFormData | Record3DDownloadFormData | _TumRgbdDownloadFormData:
+    render_form: Callable[[], DownloadFormT],
+) -> DownloadFormT:
     with st.container(border=True):
         st.subheader("Download Scenes")
         st.caption(f"Dataset root: `{dataset_root}`")
@@ -412,7 +413,7 @@ def _handle_tum_rgbd_preview_action(
     *,
     context: AppContext,
     sequence_id: str,
-    pose_source: StrEnum,
+    pose_source: TumRgbdPoseSource,
     include_depth: bool,
     start_requested: bool,
     stop_requested: bool,
@@ -462,7 +463,7 @@ def _handle_record3d_dataset_preview_action(
     *,
     context: AppContext,
     sequence_id: str,
-    pose_source: StrEnum,
+    pose_source: Record3DDatasetPoseSource,
     include_depth: bool,
     start_requested: bool,
     stop_requested: bool,
@@ -675,7 +676,7 @@ def _render_advio_loop_preview(context: AppContext, normalized: NormalizedDatase
             context,
             AdvioPreviewFormData(
                 sequence_id=int(str(selected_id).split("-", maxsplit=1)[1]),
-                pose_source=pose_source,
+                pose_source=cast(AdvioPoseSource, pose_source),
                 normalize_video_orientation=option_value,
                 start_requested=start,
                 stop_requested=stop,
@@ -698,7 +699,7 @@ def _render_tum_rgbd_loop_preview(context: AppContext, normalized: NormalizedDat
         action=lambda selected_id, pose_source, option_value, start, stop: _handle_tum_rgbd_preview_action(
             context=context,
             sequence_id=str(selected_id),
-            pose_source=pose_source,
+            pose_source=cast(TumRgbdPoseSource, pose_source),
             include_depth=option_value,
             start_requested=start,
             stop_requested=stop,
@@ -723,7 +724,7 @@ def _render_record3d_loop_preview(
         action=lambda selected_id, pose_source, option_value, start, stop: _handle_record3d_dataset_preview_action(
             context=context,
             sequence_id=str(selected_id),
-            pose_source=pose_source,
+            pose_source=cast(Record3DDatasetPoseSource, pose_source),
             include_depth=option_value,
             start_requested=start,
             stop_requested=stop,
@@ -736,26 +737,27 @@ def _render_loop_preview_impl(
     *,
     records: list[NormalizedSequenceRecord],
     page_state: AdvioPageState | TumRgbdPageState | Record3DDatasetPageState,
-    pose_source_options: Callable[[int | str], list[StrEnum]] | None,
+    pose_source_options: Callable[[str], Sequence[AdvioPoseSource | TumRgbdPoseSource | Record3DDatasetPoseSource]]
+    | None,
     caption: str,
     option_label: str,
     option_key: str,
     initial_option_value: bool,
     action_key_prefix: str,
-    action: Callable[[int | str, StrEnum, bool, bool, bool], str | None],
+    action: Callable[
+        [str, AdvioPoseSource | TumRgbdPoseSource | Record3DDatasetPoseSource, bool, bool, bool], str | None
+    ],
     sync_snapshot: Callable[[], AdvioPreviewSnapshot],
 ) -> None:
-    previewable_ids = [record.sequence_id for record in records]
+    previewable_ids: list[str] = [record.sequence_id for record in records]
     with st.container(border=True):
         st.subheader("Loop Preview")
         st.caption(caption)
         if not previewable_ids:
             st.info("Build at least one normalized entry to unlock loop preview.")
             return
-        selected_id = (
-            page_state.preview_sequence_id if page_state.preview_sequence_id in previewable_ids else previewable_ids[0]
-        )
-        pose_source = page_state.preview_pose_source
+        state_sequence_id = _preview_state_sequence_id(page_state.preview_sequence_id)
+        selected_id: str = state_sequence_id if state_sequence_id in previewable_ids else previewable_ids[0]
         selected_id = st.selectbox(
             "Preview Scene",
             options=previewable_ids,
@@ -765,10 +767,10 @@ def _render_loop_preview_impl(
             ),
             key=f"{action_key_prefix}:scene",
         )
-        available_pose_sources = (
-            [page_state.preview_pose_source] if pose_source_options is None else pose_source_options(selected_id)
+        available_pose_sources: list[AdvioPoseSource | TumRgbdPoseSource | Record3DDatasetPoseSource] = (
+            [page_state.preview_pose_source] if pose_source_options is None else list(pose_source_options(selected_id))
         )
-        pose_source = (
+        pose_source: AdvioPoseSource | TumRgbdPoseSource | Record3DDatasetPoseSource = (
             page_state.preview_pose_source
             if page_state.preview_pose_source in available_pose_sources
             else available_pose_sources[0]
@@ -814,9 +816,10 @@ def _render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
             positions_xyz=snapshot.preview_trajectory_xyz,
             timestamps_s=snapshot.preview_trajectory_time_s if len(snapshot.preview_trajectory_time_s) else None,
             trajectory_empty_message="No camera trajectory is available for the selected pose source yet.",
-            details_payload={}
-            if snapshot.preview_packet is None
-            else _preview_frame_details(snapshot, snapshot.preview_packet),
+            details_payload=cast(
+                dict[str, object],
+                {} if snapshot.preview_packet is None else _preview_frame_details(snapshot, snapshot.preview_packet),
+            ),
             intrinsics_missing_message="Camera intrinsics are not available for the current packet.",
         ),
     )
@@ -839,13 +842,16 @@ def _preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
     pose_label = (
         "No pose overlay"
         if snapshot.pose_source is None or snapshot.pose_source.value == "none"
-        else snapshot.pose_source.label
+        else str(getattr(snapshot.pose_source, "label", snapshot.pose_source.value))
     )
     return f"Sequence: {snapshot.sequence_label} · Pose Source: {pose_label}"
 
 
 def _render_preview_frame(packet: Observation) -> None:
     st.markdown("**RGB Frame**")
+    if packet.rgb is None:
+        st.info("RGB frame is not available for the current packet.")
+        return
     st.image(packet.rgb, channels="RGB", clamp=True)
     if packet.depth_m is not None:
         st.markdown("**Depth Frame**")
@@ -868,7 +874,7 @@ def _render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
 
 
 def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: Observation) -> JsonObject:
-    pose = (
+    pose: JsonObject | None = (
         None
         if packet.T_world_camera is None
         else {
@@ -891,5 +897,11 @@ def _preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: Observation) 
         "loop_index": packet.loop_index,
         "video_rotation_degrees": packet.provenance.video_rotation_degrees,
         "pose": pose,
-        "provenance": packet.provenance.compact_payload(),
+        "provenance": cast(JsonObject, packet.provenance.compact_payload()),
     }
+
+
+def _preview_state_sequence_id(value: int | str | None) -> str | None:
+    if isinstance(value, int):
+        return f"advio-{value:02d}"
+    return value
