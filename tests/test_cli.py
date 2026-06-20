@@ -19,8 +19,8 @@ from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import build_run_config
 from prml_vslam.sources.config import Record3DDatasetSourceConfig, VideoSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioDownloadRequest
+from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalization import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.normalized_query import NormalizedDatasetQuery, NormalizedSequenceRecord
 from prml_vslam.sources.datasets.normalized_store import STORE_SCHEMA_VERSION, NormalizedDatasetEntry
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
@@ -465,12 +465,17 @@ def test_dataset_normalize_accepts_typed_source_config_toml(monkeypatch, tmp_pat
 
 def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
-    build_config = NormalizedDatasetBuildConfig(
-        workers=4,
-        sources=[
-            Record3DDatasetSourceConfig(sequence_id="scene-a", target_fps=30.0),
-            Record3DDatasetSourceConfig(sequence_id="scene-b", frame_stride=2),
-        ],
+    build_config = NormalizedDatasetBuildConfig.model_validate(
+        {
+            "workers": 4,
+            "sources": [
+                {
+                    "source_id": "record3d_dataset",
+                    "sequence_ids": ["scene-a", "scene-b"],
+                    "target_fps": 30.0,
+                }
+            ],
+        }
     )
     config_path = tmp_path / "benchmark-vslam-datastore.toml"
     build_config.save_toml(config_path)
@@ -492,6 +497,7 @@ def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_
 
     assert result.exit_code == 0
     assert [source.sequence_id for source in captured["source_configs"]] == ["scene-a", "scene-b"]
+    assert {source.target_fps for source in captured["source_configs"]} == {30.0}
     assert captured["workers"] == 4
     assert "'source_count': 2" in result.stdout
     assert "'workers': 2" in result.stdout

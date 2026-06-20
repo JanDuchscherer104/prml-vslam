@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import TypeAdapter
 
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
@@ -27,26 +27,8 @@ from prml_vslam.sources.datasets.normalized_store import (
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService, TumRgbdPoseSource
 from prml_vslam.sources.replay import ObservationStream
-from prml_vslam.utils import BaseConfig, JsonObject
+from prml_vslam.utils import JsonObject
 from prml_vslam.utils.path_config import PathConfig
-
-
-class NormalizedDatasetBuildConfig(BaseConfig):
-    """TOML-owned source list for generating normalized datastore entries."""
-
-    workers: int | None = Field(default=None, ge=1)
-    sources: list[
-        Annotated[
-            AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
-            Field(discriminator="source_id"),
-        ]
-    ] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_dataset_sources(self) -> NormalizedDatasetBuildConfig:
-        for source in self.sources:
-            dataset_id_for_source_config(source)
-        return self
 
 
 def parse_dataset_id(value: str) -> DatasetId:

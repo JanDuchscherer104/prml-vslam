@@ -28,6 +28,7 @@ from prml_vslam.sources.config import (
     normalized_profile_for_source_config,
 )
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
 
 # ---------------------------------------------------------------------------
@@ -212,6 +213,130 @@ def test_dataset_source_configs_reject_ambiguous_normalized_sampling(
         )
 
 
+def test_normalized_dataset_build_config_rejects_empty_sequence_ids() -> None:
+    with pytest.raises(ValidationError, match="sequence_ids"):
+        NormalizedDatasetBuildConfig.model_validate(
+            {
+                "sources": [
+                    {
+                        "source_id": "tum_rgbd",
+                        "sequence_ids": [],
+                    }
+                ]
+            }
+        )
+
+
+def test_normalized_dataset_build_config_rejects_ambiguous_sampling() -> None:
+    with pytest.raises(ValidationError, match="frame_stride.*target_fps"):
+        NormalizedDatasetBuildConfig.model_validate(
+            {
+                "sources": [
+                    {
+                        "source_id": "tum_rgbd",
+                        "sequence_ids": ["freiburg1_xyz"],
+                        "frame_stride": 2,
+                        "target_fps": 30.0,
+                    }
+                ]
+            }
+        )
+
+
+def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets() -> None:
+    cfg = NormalizedDatasetBuildConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "source_id": "advio",
+                    "sequence_ids": ["advio-01", "advio-02"],
+                    "target_fps": 15.0,
+                    "rgb_max_width_px": 280,
+                    "rgb_dimension_multiple": 7,
+                },
+                {
+                    "source_id": "tum_rgbd",
+                    "sequence_ids": ["freiburg1_xyz"],
+                    "target_fps": 30.0,
+                    "rgb_max_width_px": 392,
+                    "rgb_dimension_multiple": 14,
+                    "reference_cloud": {
+                        "depth_stride_px": 6,
+                        "max_points": 1234,
+                        "random_seed": 19,
+                    },
+                },
+                {
+                    "source_id": "record3d_dataset",
+                    "sequence_ids": ["scene-a"],
+                    "target_fps": 24.0,
+                    "rgb_max_width_px": 448,
+                    "rgb_dimension_multiple": 28,
+                    "reference_cloud": {
+                        "depth_stride_px": 10,
+                        "max_points": 4321,
+                        "random_seed": 23,
+                        "min_confidence": 2,
+                    },
+                },
+            ]
+        }
+    )
+
+    advio_a, advio_b, tum, record3d = cfg.source_configs()
+
+    assert isinstance(advio_a, AdvioSourceConfig)
+    assert isinstance(advio_b, AdvioSourceConfig)
+    assert [advio_a.sequence_id, advio_b.sequence_id] == ["advio-01", "advio-02"]
+    assert {advio_a.target_fps, advio_b.target_fps} == {15.0}
+    assert {advio_a.rgb_max_width_px, advio_b.rgb_max_width_px} == {280}
+    assert {advio_a.rgb_dimension_multiple, advio_b.rgb_dimension_multiple} == {7}
+
+    assert isinstance(tum, TumRgbdSourceConfig)
+    assert tum.sequence_id == "freiburg1_xyz"
+    assert tum.target_fps == 30.0
+    assert tum.rgb_max_width_px == 392
+    assert tum.rgb_dimension_multiple == 14
+    assert tum.reference_cloud.depth_stride_px == 6
+    assert tum.reference_cloud.max_points == 1234
+    assert tum.reference_cloud.random_seed == 19
+
+    assert isinstance(record3d, Record3DDatasetSourceConfig)
+    assert record3d.sequence_id == "scene-a"
+    assert record3d.target_fps == 24.0
+    assert record3d.rgb_max_width_px == 448
+    assert record3d.rgb_dimension_multiple == 28
+    assert record3d.reference_cloud.depth_stride_px == 10
+    assert record3d.reference_cloud.max_points == 4321
+    assert record3d.reference_cloud.random_seed == 23
+    assert record3d.reference_cloud.min_confidence == 2
+
+
+def test_normalized_dataset_build_config_expands_independent_reference_cloud_configs() -> None:
+    cfg = NormalizedDatasetBuildConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "source_id": "tum_rgbd",
+                    "sequence_ids": ["freiburg1_xyz", "freiburg1_room"],
+                    "reference_cloud": {
+                        "depth_stride_px": 6,
+                        "max_points": 1234,
+                        "random_seed": 19,
+                    },
+                }
+            ]
+        }
+    )
+
+    first, second = cfg.source_configs()
+
+    assert isinstance(first, TumRgbdSourceConfig)
+    assert isinstance(second, TumRgbdSourceConfig)
+    first.reference_cloud.max_points = 99
+    assert second.reference_cloud.max_points == 1234
+
+
 @pytest.mark.parametrize(
     "config_path",
     sorted(Path(".configs/sweeps").glob("*sweep.toml")),
@@ -239,10 +364,10 @@ def test_checked_in_sweep_method_keys_match_template_backend_ids(config_path: Pa
 
 
 def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
-    datastore_sources = tomllib.loads(
-        Path(".configs/datasets/benchmark-vslam-datastore.toml").read_text(encoding="utf-8")
-    )["sources"]
-    datastore_keys = {(row["source_id"], row["sequence_id"]) for row in datastore_sources}
+    datastore_sources = NormalizedDatasetBuildConfig.from_toml(
+        Path(".configs/datasets/benchmark-vslam-datastore.toml")
+    ).source_configs()
+    datastore_keys = {(source.source_id, source.sequence_id) for source in datastore_sources}
     full_sweep_keys = {
         (row["dataset_id"], row["sequence_id"])
         for config_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml"))
@@ -254,29 +379,21 @@ def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
 
 def test_full_sweeps_match_benchmark_datastore_profiles() -> None:
     datastore_sources = {
-        (row["source_id"], row["sequence_id"]): row
-        for row in tomllib.loads(Path(".configs/datasets/benchmark-vslam-datastore.toml").read_text(encoding="utf-8"))[
-            "sources"
-        ]
+        (source.source_id, source.sequence_id): source
+        for source in NormalizedDatasetBuildConfig.from_toml(
+            Path(".configs/datasets/benchmark-vslam-datastore.toml")
+        ).source_configs()
     }
     dataset_ids = {
         "advio": DatasetId.ADVIO,
         "record3d_dataset": DatasetId.RECORD3D,
         "tum_rgbd": DatasetId.TUM_RGBD,
     }
-    config_types: dict[
-        str,
-        type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],
-    ] = {
-        "advio": AdvioSourceConfig,
-        "record3d_dataset": Record3DDatasetSourceConfig,
-        "tum_rgbd": TumRgbdSourceConfig,
-    }
 
     for sweep_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml")):
         for item in expand_sweep(load_sweep_config(sweep_path)):
             key = (item.dataset.dataset_id, item.dataset.sequence_id)
-            datastore_config = config_types[key[0]].model_validate(datastore_sources[key])
+            datastore_config = datastore_sources[key]
             run_config = build_run_config_from_sweep_item(item)
             source_config = run_config.stages.source.backend
             assert isinstance(source_config, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig)
