@@ -184,6 +184,12 @@ statistics and metadata tables. Runtime sampling options such as
 `frame_stride` and `target_fps` remain read-time policy and do not create
 stride-specific stored payloads.
 
+Batch build TOML groups shared normalize-time settings by dataset and expands
+`sequence_ids` into concrete per-sequence source configs before ingestion. The
+checked-in benchmark datastore config therefore declares each dataset's common
+RGB, frame-selection, and reference-cloud policy once instead of repeating it
+for every scene.
+
 Runtime readers first request the exact profile key. If that profile is missing,
 they may reuse the only current-schema entry for the same dataset, sequence, and
 source id with a warning. Multiple compatible profiles remain ambiguous and
@@ -215,6 +221,14 @@ ADVIO normalizes display-oriented replay frames into a PNG sequence under
 keeping the same file-backed contract as TUM RGB-D and Record3D, ADVIO defaults
 to a method-neutral cache raster with maximum width 392 px and dimensions rounded
 to multiples of 14; intrinsics are scaled to that stored raster.
+
+ADVIO benchmark trajectories are persisted in the dataset-owned benchmark frame
+prepared by `AdvioSequence`. In particular, GT-aligned ARCore/ARKit trajectories
+keep the similarity alignment transform written by the ADVIO adapter instead of
+being independently rebased to each trajectory's first pose during normalized
+store publication. The ADVIO normalized profile includes the trajectory
+convention so stale entries created with the older first-pose-rebased behavior
+are treated as rebuild-required.
 
 New entries use canonical roots only: source inputs under `<entry>/input/`,
 reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds

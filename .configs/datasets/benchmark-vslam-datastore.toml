@@ -6,98 +6,16 @@
 
 [[sources]]
 source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-17-10"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-20-22"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-24-27"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-26-32"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-27-25"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-29-08"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-32-27"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-min_confidence = 1
-
-[[sources]]
-source_id = "record3d_dataset"
-sequence_id = "2026-06-03--18-35-44"
+sequence_ids = [
+  "2026-06-03--18-17-10",
+  "2026-06-03--18-20-22",
+  "2026-06-03--18-24-27",
+  "2026-06-03--18-26-32",
+  "2026-06-03--18-27-25",
+  "2026-06-03--18-29-08",
+  "2026-06-03--18-32-27",
+  "2026-06-03--18-35-44",
+]
 target_fps = 30.0
 rgb_max_width_px = 392
 rgb_dimension_multiple = 14
@@ -110,223 +28,27 @@ min_confidence = 1
 
 [[sources]]
 source_id = "tum_rgbd"
-sequence_id = "freiburg1_360"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_desk"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_desk2"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_floor"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_plant"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_room"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_rpy"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_teddy"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg1_xyz"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_360_hemisphere"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_360_kidnap"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_desk"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_large_with_loop"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_rpy"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg2_xyz"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg3_cabinet"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg3_large_cabinet"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg3_long_office_household"
-target_fps = 30.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[sources.reference_cloud]
-depth_stride_px = 8
-max_points = 100000
-random_seed = 17
-
-[[sources]]
-source_id = "tum_rgbd"
-sequence_id = "freiburg3_teddy"
+sequence_ids = [
+  "freiburg1_360",
+  "freiburg1_desk",
+  "freiburg1_desk2",
+  "freiburg1_floor",
+  "freiburg1_plant",
+  "freiburg1_room",
+  "freiburg1_rpy",
+  "freiburg1_teddy",
+  "freiburg1_xyz",
+  "freiburg2_360_hemisphere",
+  "freiburg2_360_kidnap",
+  "freiburg2_desk",
+  "freiburg2_large_with_loop",
+  "freiburg2_rpy",
+  "freiburg2_xyz",
+  "freiburg3_cabinet",
+  "freiburg3_large_cabinet",
+  "freiburg3_long_office_household",
+  "freiburg3_teddy",
+]
 target_fps = 30.0
 rgb_max_width_px = 392
 rgb_dimension_multiple = 14
@@ -338,161 +60,31 @@ random_seed = 17
 
 [[sources]]
 source_id = "advio"
-sequence_id = "advio-01"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-02"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-03"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-04"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-05"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-06"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-07"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-08"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-09"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-10"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-11"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-12"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-13"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-14"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-15"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-16"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-17"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-18"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-19"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-20"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-21"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-22"
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_id = "advio-23"
+sequence_ids = [
+  "advio-01",
+  "advio-02",
+  "advio-03",
+  "advio-04",
+  "advio-05",
+  "advio-06",
+  "advio-07",
+  "advio-08",
+  "advio-09",
+  "advio-10",
+  "advio-11",
+  "advio-12",
+  "advio-13",
+  "advio-14",
+  "advio-15",
+  "advio-16",
+  "advio-17",
+  "advio-18",
+  "advio-19",
+  "advio-20",
+  "advio-21",
+  "advio-22",
+  "advio-23",
+]
 target_fps = 15.0
 rgb_max_width_px = 392
 rgb_dimension_multiple = 14

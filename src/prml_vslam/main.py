@@ -52,9 +52,9 @@ from prml_vslam.sources.datasets.advio import (
     AdvioPoseFrameMode,
     AdvioPoseSource,
 )
+from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalization import (
-    NormalizedDatasetBuildConfig,
     dataset_id_for_source_config,
     dataset_service,
     default_frame_selection_for_dataset,
@@ -1254,7 +1254,7 @@ def dataset_normalize(
             file_okay=True,
             dir_okay=False,
             readable=True,
-            help="TOML build config with one or more normalized dataset source profiles.",
+            help="TOML build config with dataset groups and shared normalize-time settings.",
         ),
     ] = None,
     source_config_path: Annotated[
@@ -1321,10 +1321,11 @@ def dataset_normalize(
             )
         try:
             build_config = NormalizedDatasetBuildConfig.from_toml(config_path)
+            source_configs = build_config.source_configs()
             worker_count = workers or build_config.workers or (os.cpu_count() or 1)
             entries = normalize_dataset_source_configs(
                 path_config=path_config,
-                source_configs=build_config.sources,
+                source_configs=source_configs,
                 workers=worker_count,
             )
         except (ValueError, ValidationError) as exc:
@@ -1332,8 +1333,8 @@ def dataset_normalize(
         console.plog(
             {
                 "config_path": config_path.as_posix(),
-                "source_count": len(build_config.sources),
-                "workers": min(worker_count, len(build_config.sources)),
+                "source_count": len(source_configs),
+                "workers": min(worker_count, len(source_configs)),
                 "entries": [entry.model_dump(mode="json") for entry in entries],
             }
         )
