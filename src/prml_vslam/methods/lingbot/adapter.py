@@ -103,6 +103,7 @@ class LingbotMapSlamBackend(SlamBackend):
                 backend_config=config,
                 output_policy=output_policy,
                 artifact_root=artifact_root,
+                require_rgb_path=False,
             )
         finally:
             self._streaming_frames = None
@@ -132,6 +133,7 @@ class LingbotMapSlamBackend(SlamBackend):
             backend_config=config,
             output_policy=output_policy,
             artifact_root=artifact_root,
+            require_rgb_path=True,
         )
 
     def _run_frames(
@@ -141,27 +143,26 @@ class LingbotMapSlamBackend(SlamBackend):
         backend_config: LingbotMapSlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
+        require_rgb_path: bool,
     ) -> SlamArtifacts:
         if not frames:
             raise RuntimeError("LingBot-Map requires at least one RGB observation.")
 
         runtime = _LingbotRuntime(backend_config, path_config=self._path_config)
-        if all(frame.rgb_path is not None for frame in frames):
-            image_paths: list[Path] = []
-            for frame in frames:
-                if frame.rgb_path is None:
-                    raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
-                image_paths.append(frame.rgb_path)
+        if require_rgb_path:
+            if not all(frame.rgb_path is not None for frame in frames):
+                raise RuntimeError("LingBot offline inference requires path-backed RGB observations.")
+            image_paths = [frame.rgb_path for frame in frames if frame.rgb_path is not None]
             predictions, processed_images = runtime.infer_paths(image_paths)
-        elif all(frame.rgb is not None for frame in frames):
+        else:
+            if not all(frame.rgb is not None for frame in frames):
+                raise RuntimeError("LingBot streaming inference requires RGB observations.")
             images_rgb: list[np.ndarray] = []
             for frame in frames:
                 if frame.rgb is None:
-                    raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
+                    raise RuntimeError("LingBot streaming inference requires RGB observations.")
                 images_rgb.append(np.asarray(frame.rgb, dtype=np.uint8))
             predictions, processed_images = runtime.infer(images_rgb)
-        else:
-            raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
         return _build_lingbot_artifacts(
             predictions=predictions,
             processed_images=processed_images,
