@@ -58,10 +58,7 @@ class AdvioStreamingSourceConfig(FrameSelectionConfig, BaseConfig):
 
         return DatasetSequenceSource(
             sequence_id=self.sequence_id,
-            frame_selection=FrameSelectionConfig(
-                frame_stride=self.frame_stride,
-                target_fps=self.target_fps,
-            ),
+            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             label=lambda sequence_id: sequence(sequence_id).scene.display_name,
             manifest=lambda sequence_id, output_dir, frame_selection: sequence(sequence_id).to_sequence_manifest(
                 output_dir=output_dir,
