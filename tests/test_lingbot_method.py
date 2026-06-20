@@ -419,25 +419,33 @@ def test_lingbot_checkpoint_pos_embed_can_be_dropped_for_smaller_image_grid() ->
 
 def test_lingbot_backend_caps_max_frames_before_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake_pose_decoder(monkeypatch, num_frames=2)
-    captured: dict[str, int] = {}
-    rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+    captured: dict[str, Any] = {}
+    image_paths = [tmp_path / f"{idx:06d}.png" for idx in range(4)]
     observations = [
-        Observation(seq=idx, timestamp_ns=idx * 1_000_000_000, provenance=ObservationProvenance(), rgb=rgb)
-        for idx in range(4)
+        Observation(
+            seq=idx,
+            timestamp_ns=idx * 1_000_000_000,
+            provenance=ObservationProvenance(),
+            rgb_path=image_path,
+        )
+        for idx, image_path in enumerate(image_paths)
     ]
 
     class FakeRuntime:
         def __init__(self, _config: LingbotMapSlamBackendConfig, *, path_config: PathConfig) -> None:
             del path_config
 
-        def infer(self, images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], np.ndarray]:
-            captured["num_images"] = len(images_rgb)
+        def infer_paths(self, paths: list[Path]) -> tuple[dict[str, Any], np.ndarray]:
+            captured["paths"] = paths
             predictions = {
                 "pose_enc": np.zeros((1, 2, 9), dtype=np.float32),
                 "depth": np.ones((1, 2, 2, 2, 1), dtype=np.float32),
             }
             processed_images = np.zeros((1, 2, 3, 2, 2), dtype=np.float32)
             return predictions, processed_images
+
+        def infer(self, _images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], np.ndarray]:
+            raise AssertionError("Offline LingBot observations must use RGB paths.")
 
     monkeypatch.setattr(lingbot_adapter, "_LingbotRuntime", FakeRuntime)
     config = LingbotMapSlamBackendConfig(max_frames=2)
@@ -451,7 +459,7 @@ def test_lingbot_backend_caps_max_frames_before_runtime(tmp_path: Path, monkeypa
         artifact_root=tmp_path,
     )
 
-    assert captured["num_images"] == 2
+    assert captured["paths"] == image_paths[:2]
     assert artifacts.num_keyframes == 2
 
 
@@ -518,14 +526,14 @@ def test_lingbot_run_observations_uses_paths_when_available(
     assert artifacts.num_keyframes == 2
 
 
-def test_lingbot_run_observations_rejects_mixed_rgb_payloads(tmp_path: Path) -> None:
+def test_lingbot_run_observations_rejects_missing_rgb_paths(tmp_path: Path) -> None:
     config = LingbotMapSlamBackendConfig()
     observations = [
         Observation(seq=0, timestamp_ns=0, provenance=ObservationProvenance(), rgb_path=tmp_path / "000000.png"),
         Observation(seq=1, timestamp_ns=1, provenance=ObservationProvenance()),
     ]
 
-    with pytest.raises(RuntimeError, match="inconsistent RGB payloads"):
+    with pytest.raises(RuntimeError, match="path-backed RGB observations"):
         LingbotMapSlamBackend(config).run_observations(
             observations,
             benchmark_inputs=None,
