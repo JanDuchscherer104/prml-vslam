@@ -14,15 +14,14 @@ def _build_offline_input(context: PipelineExecutionContext) -> SlamOfflineStageI
     slam_config = context.run_config.stages.slam
     if slam_config.backend is None:
         raise RuntimeError("SLAM runtime requires `[stages.slam.backend]`.")
-    source_output = context.results.require_source_output()
     return SlamOfflineStageInput(
         backend=slam_config.backend,
         outputs=slam_config.outputs,
         artifact_root=context.plan.artifact_root,
         path_config=context.path_config,
         baseline_source=context.run_config.stages.evaluate_trajectory.evaluation.baseline_source,
-        sequence_manifest=source_output.sequence_manifest,
-        benchmark_inputs=source_output.benchmark_inputs,
+        sequence_manifest=context.results.require_sequence_manifest(),
+        benchmark_inputs=context.results.require_benchmark_inputs(),
         preserve_native_rerun=context.run_config.visualization.preserve_native_rerun,
     )
 

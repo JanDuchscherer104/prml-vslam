@@ -29,7 +29,6 @@ from prml_vslam.methods.stage.backend_config import (
     SlamOutputPolicy,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
-from prml_vslam.sources.observation_reader import iter_sequence_manifest_observations, load_sequence_manifest_rgb_inputs
 from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
 from prml_vslam.utils.geometry import (
     depth_map_to_world_points,
@@ -125,7 +124,7 @@ class LingbotMapSlamBackend(SlamBackend):
         config = _expect_lingbot_config(backend_config)
         _validate_output_policy(output_policy)
 
-        frames = [frame for frame in observations if frame.rgb is not None]
+        frames = list(observations)
         if config.max_frames is not None:
             frames = frames[: config.max_frames]
         return self._run_frames(
@@ -133,43 +132,6 @@ class LingbotMapSlamBackend(SlamBackend):
             backend_config=config,
             output_policy=output_policy,
             artifact_root=artifact_root,
-        )
-
-    def run_sequence(
-        self,
-        sequence_manifest: SequenceManifest,
-        benchmark_inputs: PreparedBenchmarkInputs | None,
-        baseline_source: ReferenceSource,
-        *,
-        backend_config: SlamBackendConfig,
-        output_policy: SlamOutputPolicy,
-        artifact_root: Path,
-    ) -> SlamArtifacts:
-        """Run LingBot-Map directly over normalized source RGB paths."""
-        del benchmark_inputs, baseline_source
-        config = _expect_lingbot_config(backend_config)
-        _validate_output_policy(output_policy)
-
-        image_paths, _timestamps_ns = load_sequence_manifest_rgb_inputs(
-            sequence=sequence_manifest,
-            max_frames=config.max_frames,
-        )
-        observations = list(
-            iter_sequence_manifest_observations(
-                sequence_manifest,
-                max_frames=config.max_frames,
-                load_rgb=False,
-            )
-        )
-        runtime = _LingbotRuntime(config, path_config=self._path_config)
-        predictions, processed_images = runtime.infer_paths(image_paths)
-        return _build_lingbot_artifacts(
-            predictions=predictions,
-            processed_images=processed_images,
-            observations=observations,
-            artifact_root=artifact_root,
-            output_policy=output_policy,
-            config=config,
         )
 
     def _run_frames(
@@ -184,7 +146,22 @@ class LingbotMapSlamBackend(SlamBackend):
             raise RuntimeError("LingBot-Map requires at least one RGB observation.")
 
         runtime = _LingbotRuntime(backend_config, path_config=self._path_config)
-        predictions, processed_images = runtime.infer([np.asarray(frame.rgb, dtype=np.uint8) for frame in frames])
+        if all(frame.rgb_path is not None for frame in frames):
+            image_paths: list[Path] = []
+            for frame in frames:
+                if frame.rgb_path is None:
+                    raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
+                image_paths.append(frame.rgb_path)
+            predictions, processed_images = runtime.infer_paths(image_paths)
+        elif all(frame.rgb is not None for frame in frames):
+            images_rgb: list[np.ndarray] = []
+            for frame in frames:
+                if frame.rgb is None:
+                    raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
+                images_rgb.append(np.asarray(frame.rgb, dtype=np.uint8))
+            predictions, processed_images = runtime.infer(images_rgb)
+        else:
+            raise RuntimeError("LingBot observations contain inconsistent RGB payloads.")
         return _build_lingbot_artifacts(
             predictions=predictions,
             processed_images=processed_images,
@@ -440,7 +417,9 @@ def _prepare_lingbot_cuda_jit_env() -> None:
 
     nvcc = cuda_home / "bin" / "nvcc"
     if nvcc.exists():
-        os.environ.setdefault("CUDA_HOME", str(cuda_home))
+        current_cuda_home = os.environ.get("CUDA_HOME")
+        if current_cuda_home is None or not _has_lingbot_cuda_jit_inputs(Path(current_cuda_home)):
+            os.environ["CUDA_HOME"] = str(cuda_home)
 
     compiler_bin = cuda_home / "bin"
     cc = compiler_bin / "x86_64-conda-linux-gnu-gcc"
@@ -458,9 +437,19 @@ def _prepare_lingbot_cuda_jit_env() -> None:
 def _resolve_lingbot_cuda_home() -> Path | None:
     for variable in ("CUDA_HOME", "CUDA_PATH", "CONDA_PREFIX"):
         value = os.environ.get(variable)
-        if value:
+        if value and _has_lingbot_cuda_jit_inputs(Path(value)):
             return Path(value)
     return None
+
+
+def _has_lingbot_cuda_jit_inputs(cuda_home: Path) -> bool:
+    return (cuda_home / "bin" / "nvcc").exists() or any(
+        (stub_dir / "libcuda.so").exists()
+        for stub_dir in (
+            cuda_home / "lib" / "stubs",
+            cuda_home / "targets" / "x86_64-linux" / "lib" / "stubs",
+        )
+    )
 
 
 def _prepend_flashinfer_stub_ldflags(cuda_home: Path) -> None:
