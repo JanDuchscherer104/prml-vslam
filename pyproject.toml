@@ -28,7 +28,7 @@ dependencies = [
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
   "rerun-sdk==0.24.1",
-  "pandas",
+  "pandas==2.3.3",
 ]
 
   [project.optional-dependencies]
