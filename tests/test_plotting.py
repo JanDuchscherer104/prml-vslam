@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 import pytest
 from evo.core.trajectory import PoseTrajectory3D
 
@@ -20,11 +21,13 @@ from prml_vslam.plotting.artifact_diagnostics import (
     build_native_timing_figure,
     build_view_graph_figure,
 )
+from prml_vslam.plotting.datasets import build_reference_cloud_scene_figure, build_trajectory_metric_figure
 from prml_vslam.plotting.metrics import build_trajectory_figure
 from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure, pointmap_preview_image
 from prml_vslam.plotting.record3d import build_live_trajectory_figure
 from prml_vslam.plotting.trajectories import build_bev_trajectory_figure, build_height_profile_figure
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode
+from prml_vslam.utils.geometry import write_point_cloud_ply
 
 
 @dataclass(slots=True)
@@ -150,6 +153,74 @@ def test_advio_plotting_supports_dataset_specific_axes() -> None:
     assert np.array_equal(np.asarray(bev.data[0].y), np.asarray([2.0, 3.0, 4.0]))
     assert height.layout.yaxis.title.text == "Y (m)"
     assert np.array_equal(np.asarray(height.data[0].y), np.asarray([1.0, 2.0, 3.0]))
+
+
+def test_dataset_trajectory_metric_figure_uses_scene_subject_labels() -> None:
+    frame = pd.DataFrame.from_records(
+        [
+            {
+                "sequence_id": "scene-a",
+                "subject": "ground_truth/source_native",
+                "trajectory_mean_speed_m_s": "0.4",
+                "trajectory_mean_curvature_rad_m": "0.12",
+            },
+            {
+                "sequence_id": "scene-a",
+                "subject": "arkit/aligned",
+                "trajectory_mean_speed_m_s": "0.7",
+                "trajectory_mean_curvature_rad_m": "0.18",
+            },
+            {
+                "sequence_id": "scene-b",
+                "subject": "arkit/aligned",
+                "trajectory_mean_speed_m_s": "1.1",
+                "trajectory_mean_curvature_rad_m": "0.35",
+            },
+        ]
+    )
+
+    speed = build_trajectory_metric_figure(
+        frame,
+        value_column="trajectory_mean_speed_m_s",
+        title="Mean Speed per Scene",
+        yaxis_title="Mean Speed (m/s)",
+    )
+    curvature = build_trajectory_metric_figure(
+        frame,
+        value_column="trajectory_mean_curvature_rad_m",
+        title="Mean Curvature per Scene",
+        yaxis_title="Mean Curvature (rad/m)",
+    )
+
+    assert [trace.name for trace in speed.data] == ["ground_truth/source_native", "arkit/aligned"]
+    assert list(speed.data[0].x) == ["scene-a"]
+    assert list(speed.data[1].x) == ["scene-a", "scene-b"]
+    assert list(speed.data[0].y) == [0.4]
+    assert list(speed.data[1].y) == [0.7, 1.1]
+    assert speed.data[0].marker.color != speed.data[1].marker.color
+    assert speed.layout.barmode == "group"
+    assert speed.layout.showlegend is True
+    assert [trace.name for trace in curvature.data] == [trace.name for trace in speed.data]
+    assert list(curvature.data[0].y) == [0.12]
+    assert list(curvature.data[1].y) == [0.18, 0.35]
+
+
+def test_reference_cloud_scene_figure_samples_cloud_and_overlays_trajectory(tmp_path) -> None:
+    cloud_path = write_point_cloud_ply(
+        tmp_path / "cloud.ply",
+        np.asarray([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], dtype=np.float64),
+    )
+    trajectory = _pose_trajectory([(0.0, 0.0, 0.0), (2.0, 0.0, 1.0)])
+
+    figure = build_reference_cloud_scene_figure(
+        clouds=[("Reference cloud", cloud_path)],
+        trajectories=[("Ground truth", trajectory)],
+        max_points=2,
+        random_seed=1,
+    )
+
+    assert [trace.name for trace in figure.data] == ["Reference cloud (2/3)", "Ground truth"]
+    assert figure.layout.scene.aspectmode == "data"
 
 
 def test_advio_comparison_trajectories_rebase_provider_tracks() -> None:
