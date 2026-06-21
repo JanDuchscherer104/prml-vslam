@@ -10,7 +10,7 @@ import pandas as pd
 
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudRef, ReferenceTrajectoryRef
 from prml_vslam.sources.datasets.contracts import (
-    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
     AdvioPoseSource,
     DatasetId,
 )
@@ -527,7 +527,7 @@ def _is_query_visible_entry(entry: NormalizedDatasetEntry) -> bool:
     source_profile = entry.profile.get("source_profile")
     return (
         isinstance(source_profile, dict)
-        and source_profile.get("trajectory_convention") == ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+        and source_profile.get("trajectory_convention") == ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
     )
 
 

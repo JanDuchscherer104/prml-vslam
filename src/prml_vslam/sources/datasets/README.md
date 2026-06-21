@@ -222,19 +222,20 @@ keeping the same file-backed contract as TUM RGB-D and Record3D, ADVIO defaults
 to a method-neutral cache raster with maximum width 392 px and dimensions rounded
 to multiples of 14; intrinsics are scaled to that stored raster.
 
-ADVIO datastore entries publish RDF local-first-pose trajectories. Raw ADVIO
-poses are first converted with the dataset adapter's `(x, y, z) -> (z, -y, x)`
-basis, then `NormalizedDatasetStore` rebases persisted source-native GT,
-ARCore, and ARKit trajectories to their own first pose and labels them with
-`*_local_first_pose` frames. ARCore/ARKit source-native trajectories are both
-reference trajectories for baseline lookup and candidate trajectories for
-benchmarking. Post-normalization `*_aligned_to_gt.tum` overlays are diagnostic
-reference trajectories only and are never benchmark candidates. Normalized ADVIO
-manifests keep calibration/intrinsics but set raw pose refs and fixpoints to
-`None`; raw ADVIO pose/fixpoint CSV sidecars are invalid under a normalized
-datastore entry. The ADVIO normalized profile convention is
-`local_first_pose_rdf_v1`, and older or missing conventions are treated as
-rebuild-required instead of compatible defaults.
+ADVIO datastore entries publish RDF fixedpoint/common-start trajectories. Raw
+ADVIO poses are first converted with the dataset adapter's
+`(x, y, z) -> (z, -y, x)` basis. `NormalizedDatasetStore` then registers GT,
+ARCore, and ARKit to ADVIO fixpoints before any local rebasing, crops accepted
+providers to their shared time interval, and expresses them in the GT-derived
+`advio_fixedpoint_common_start_local` frame. Accepted ARCore/ARKit registered
+trajectories are both reference trajectories for baseline lookup and candidate
+trajectories for benchmarking. Post-normalization `*_aligned_to_gt.tum` overlays
+are diagnostic reference trajectories only and are never benchmark candidates.
+Normalized ADVIO manifests keep calibration/intrinsics but set raw pose refs and
+fixpoints to `None`; raw ADVIO pose/fixpoint CSV sidecars are invalid under a
+normalized datastore entry. The ADVIO normalized profile convention is
+`fixedpoint_common_start_local_rdf_v1`, and older or missing conventions are
+treated as rebuild-required instead of compatible defaults.
 
 New entries use canonical roots only: source inputs under `<entry>/input/`,
 reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds

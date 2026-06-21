@@ -114,6 +114,7 @@ class ReferenceCloudCoordinateStatus(StrEnum):
     """Coordinate status for one prepared reference cloud or trajectory."""
 
     SOURCE_NATIVE = "source_native"
+    REGISTERED = "registered"
     ALIGNED = "aligned"
 
 
@@ -176,7 +177,8 @@ class PreparedBenchmarkInputs(BaseData):
             (
                 reference
                 for reference in matching
-                if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+                if reference.coordinate_status
+                in {ReferenceCloudCoordinateStatus.SOURCE_NATIVE, ReferenceCloudCoordinateStatus.REGISTERED}
             ),
             next(iter(matching), None),
         )

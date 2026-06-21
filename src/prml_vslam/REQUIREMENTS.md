@@ -61,10 +61,10 @@ Use this file for package-root ownership rules and cross-package contract constr
   - preserves full-scene dataset fetches and dataset-specific auxiliary/reference
     assets, including ADVIO provider trajectories and TUM RGB-D reference-cloud
     preparation
-  - publishes ADVIO normalized datastore entries only in RDF local-first-pose
-    frames: raw ADVIO pose/fixpoint CSV sidecars are not persisted, ARCore/ARKit
-    source-native local-first-pose trajectories are benchmark candidates, and
-    post-normalization aligned AR overlays are reference-only diagnostics
+  - publishes ADVIO normalized datastore entries only in RDF fixedpoint/common-start
+    frames: raw ADVIO pose/fixpoint CSV sidecars are not persisted, accepted
+    ARCore/ARKit fixedpoint-registered trajectories are benchmark candidates,
+    and post-normalization aligned AR overlays are reference-only diagnostics
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
   - may decimate geometry sent to Rerun observer sinks for viewer performance;
