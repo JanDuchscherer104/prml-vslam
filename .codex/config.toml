@@ -12,6 +12,7 @@ project_doc_fallback_filenames = ["AGENTS.md"]
     [mcp_servers.code-index]
     command = "uvx"
     args    = ["code-index-mcp", "--project-path", "."]
+    cwd     = "."
 
     [mcp_servers.graphify]
     command = "python3"
