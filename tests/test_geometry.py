@@ -253,6 +253,29 @@ def test_load_tum_trajectory_normalizes_rounded_quaternions(tmp_path: Path) -> N
     assert np.allclose(np.linalg.norm(trajectory.orientations_quat_wxyz, axis=1), 1.0)
 
 
+def test_load_tum_trajectory_can_canonicalize_unsorted_duplicate_timestamps(tmp_path: Path) -> None:
+    path = tmp_path / "canonicalized.tum"
+    path.write_text(
+        "\n".join(
+            [
+                "1.0 10.0 0.0 0.0 0.0 0.0 0.0 1.0",
+                "0.0 1.0 0.0 0.0 0.0 0.0 0.0 1.0",
+                "1.0 99.0 0.0 0.0 0.0 0.0 0.0 1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="timestamps"):
+        load_tum_trajectory(path)
+
+    trajectory = load_tum_trajectory(path, canonicalize_timestamps=True)
+
+    assert trajectory.timestamps.tolist() == [0.0, 1.0]
+    assert trajectory.positions_xyz[:, 0].tolist() == [1.0, 10.0]
+
+
 def test_empty_tum_trajectory_roundtrips_through_shared_helpers(tmp_path: Path) -> None:
     path = tmp_path / "trajectory.tum"
 

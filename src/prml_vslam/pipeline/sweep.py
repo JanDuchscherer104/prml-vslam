@@ -12,9 +12,10 @@ Schema overview::
     output_dir = ".artifacts/sweeps"
 
     [[datasets]]
-    dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio"
+    dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio" | "record3d_dataset"
     sequence_id         = "freiburg1_xyz"
     frame_stride        = 1
+    normalized_target_fps = 30.0
     baseline_source     = "ground_truth"
     align_ground        = false
     align_trajectory    = true
@@ -52,7 +53,12 @@ from prml_vslam.pipeline.config import RunConfig, StageBundle
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+)
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig
@@ -145,14 +151,27 @@ def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfi
             return TumRgbdSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
             )
         case "advio":
             return AdvioSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
+            )
+        case "record3d_dataset":
+            return Record3DDatasetSourceConfig(
+                sequence_id=dataset.sequence_id,
+                frame_stride=dataset.frame_stride,
+                normalized_frame_stride=dataset.normalized_frame_stride,
+                normalized_target_fps=dataset.normalized_target_fps,
             )
         case _:
-            raise ValueError(f"Unknown dataset_id {dataset.dataset_id!r}. Supported values: tum_rgbd, advio.")
+            raise ValueError(
+                f"Unknown dataset_id {dataset.dataset_id!r}. Supported values: tum_rgbd, advio, record3d_dataset."
+            )
 
 
 class SweepMeta(BaseConfig):
@@ -188,10 +207,12 @@ class SweepDataset(BaseConfig):
     all source and downstream decisions; method templates may not override them.
 
     Attributes:
-        dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``.
+        dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``.
         sequence_id: Dataset-specific sequence slug passed to the source backend.
         frame_stride: Frame sub-sampling stride forwarded to the source backend.
             ``1`` means every frame; ``2`` means every other frame, etc.
+        normalized_frame_stride: Normalize-time frame stride used by the persisted datastore profile.
+        normalized_target_fps: Normalize-time target FPS used by the persisted datastore profile.
         baseline_source: Reference trajectory used by trajectory evaluation.
         align_ground: Enable ground-alignment stage.
         align_trajectory: Enable trajectory Sim(3)-alignment stage.
@@ -204,13 +225,19 @@ class SweepDataset(BaseConfig):
     model_config = ConfigDict(extra="ignore")
 
     dataset_id: str
-    """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``."""
+    """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``."""
 
     sequence_id: str
     """Dataset-specific sequence slug."""
 
     frame_stride: int = Field(default=1, ge=1)
     """Frame sub-sampling stride forwarded to the source backend."""
+
+    normalized_frame_stride: int | None = Field(default=None, ge=1)
+    """Normalize-time frame stride used by the persisted datastore profile."""
+
+    normalized_target_fps: float | None = Field(default=None, gt=0.0)
+    """Normalize-time target FPS used by the persisted datastore profile."""
 
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
     """Reference trajectory source used by the trajectory-evaluation stage."""
@@ -240,6 +267,13 @@ class SweepDataset(BaseConfig):
         _assert_slug(self.sequence_id, "sequence_id")
         return self
 
+    @model_validator(mode="after")
+    def validate_single_normalized_sampling_mode(self) -> Self:
+        """Keep stored-profile sampling unambiguous."""
+        if self.normalized_target_fps is not None and self.normalized_frame_stride not in (None, 1):
+            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
+        return self
+
 
 class SweepMethod(BaseConfig):
     """Reference to a method template TOML file.
@@ -265,7 +299,7 @@ class SweepConfig(BaseConfig):
 
     * ``[sweep]`` — identity and output routing.
     * ``[[datasets]]`` — one or more dataset entries (array of tables).
-    * ``[methods.<id>]`` — one or more method entries keyed by method ID.
+    * ``[methods.<id>]`` — one or more method entries keyed by the template backend method ID.
 
     The sweeper cross-joins datasets × methods in declaration order and derives
     a deterministic run ID for each combination.
@@ -273,7 +307,7 @@ class SweepConfig(BaseConfig):
     Attributes:
         sweep: Sweep identity and output directory.
         datasets: Ordered list of dataset entries (at least one required).
-        methods: Mapping of method ID → method reference (at least one required).
+        methods: Mapping of backend method ID → method reference (at least one required).
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -285,7 +319,7 @@ class SweepConfig(BaseConfig):
     """Ordered dataset entries.  At least one is required."""
 
     methods: dict[str, SweepMethod] = Field(min_length=1)
-    """Method ID → template reference.  At least one is required."""
+    """Backend method ID → template reference.  At least one is required."""
 
     @model_validator(mode="after")
     def validate_method_ids_are_slugs(self) -> Self:
@@ -327,7 +361,7 @@ class SweepRunItem(BaseConfig):
         sweep_name: Name of the originating sweep (from ``[sweep].name``).
         output_dir: Artifact root directory (from ``[sweep].output_dir``).
         dataset: Dataset entry that drives source and downstream stage policy.
-        method_id: Method key from ``[methods]``.
+        method_id: Backend method ID from ``[methods]``.
         slam_stage: Validated SLAM stage config extracted from the method template.
     """
 
@@ -346,7 +380,7 @@ class SweepRunItem(BaseConfig):
     """Dataset entry owning source selection and downstream stage flags."""
 
     method_id: str
-    """Method key as declared in ``[methods]``."""
+    """Backend method ID as declared in ``[methods]``."""
 
     slam_stage: SlamStageConfig
     """SLAM stage config extracted verbatim from the method template."""
@@ -415,6 +449,15 @@ def expand_sweep(
         for method_id, method in config.methods.items():
             template_path = _resolve_path(method.config_path, path_config)
             slam_stage = _load_slam_stage_from_template(template_path)
+            backend = slam_stage.backend
+            if backend is None:
+                raise ValueError(f"Method template {template_path} has no [stages.slam.backend] section.")
+            backend_method_id = backend.method_id.value
+            if method_id != backend_method_id:
+                raise ValueError(
+                    f"Sweep method key {method_id!r} does not match template backend method_id "
+                    f"{backend_method_id!r} in {template_path}. Use [methods.{backend_method_id}]."
+                )
 
             run_id = _build_run_id(
                 sweep_name=config.sweep.name,
@@ -478,7 +521,10 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
             source=SourceStageConfig(backend=source_backend),
             slam=item.slam_stage,
             align_ground=GroundAlignmentStageConfig(enabled=ds.align_ground),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=ds.align_trajectory),
+            align_trajectory=TrajectoryAlignmentStageConfig(
+                enabled=ds.align_trajectory,
+                baseline_source=ds.baseline_source,
+            ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=ds.evaluate_trajectory,
                 evaluation=trajectory_policy,

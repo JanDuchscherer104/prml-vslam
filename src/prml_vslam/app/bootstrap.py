@@ -14,6 +14,7 @@ from prml_vslam.eval.query import TrajectoryEvaluationQueryService
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
+from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
@@ -34,6 +35,7 @@ class AppContext:
     path_config: PathConfig
     advio_service: AdvioDatasetService
     tum_rgbd_service: TumRgbdDatasetService
+    record3d_dataset_service: Record3DDatasetService
     trajectory_evaluation_query: TrajectoryEvaluationQueryService
     record3d_runtime: Record3DStreamRuntimeController
     advio_runtime: AdvioPreviewRuntimeController
@@ -59,6 +61,7 @@ def build_context() -> AppContext:
         path_config=path_config,
         advio_service=AdvioDatasetService(path_config),
         tum_rgbd_service=TumRgbdDatasetService(path_config),
+        record3d_dataset_service=Record3DDatasetService(path_config),
         trajectory_evaluation_query=TrajectoryEvaluationQueryService(path_config),
         record3d_runtime=store.load_record3d_runtime(),
         advio_runtime=store.load_advio_runtime(),
@@ -122,6 +125,7 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         (AppPageId.RECORD3D, context.record3d_runtime, context.state.record3d, "is_running"),
         (AppPageId.DATASETS, context.advio_runtime, context.state.advio, "preview_is_running"),
         (AppPageId.DATASETS, context.advio_runtime, context.state.tum_rgbd, "preview_is_running"),
+        (AppPageId.DATASETS, context.advio_runtime, context.state.record3d_dataset, "preview_is_running"),
     ):
         if page_id is active_page_id or not getattr(page_state, field_name):
             continue

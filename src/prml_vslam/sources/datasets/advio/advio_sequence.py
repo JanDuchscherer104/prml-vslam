@@ -11,7 +11,13 @@ from evo.tools import file_interface
 from numpy.typing import NDArray
 from pydantic import Field
 
-from prml_vslam.interfaces import CAMERA_RDF_FRAME, ObservationProvenance
+from prml_vslam.interfaces import (
+    CAMERA_RDF_FRAME,
+    ObservationIndexEntry,
+    ObservationProvenance,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
+)
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
     AdvioRawPoseRefs,
@@ -23,18 +29,29 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.contracts import (
     AdvioPoseSource,
+    AdvioServingConfig,
     DatasetId,
-    DatasetServingConfig,
     FrameSelectionConfig,
     selected_advio_pose_source,
+)
+from prml_vslam.sources.datasets.rgb_preprocessing import (
+    preprocess_rgb_for_normalized_store,
+    scale_intrinsics_for_rgb_preprocessing,
+    write_preprocessed_rgb_png,
 )
 from prml_vslam.sources.replay import ObservationStream, PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import BaseData, Console, JsonObject
 from prml_vslam.utils.geometry import apply_similarity_to_trajectory, yaw_similarity_align
+from prml_vslam.utils.serialization import write_json
 
 from . import advio_layout, advio_loading
 from .advio_frames import advio_basis_metadata, transform_advio_trajectory_to_rdf, write_advio_rdf_tum
-from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioSceneMetadata, AdvioSequenceConfig
+from .advio_models import (
+    ADVIO_SEQUENCE_COUNT,
+    AdvioCatalog,
+    AdvioSceneMetadata,
+    AdvioSequenceConfig,
+)
 from .advio_replay_adapter import (
     _poses_for_frame_timestamps,
     advio_pose_frames,
@@ -161,7 +178,7 @@ class AdvioSequence(BaseData):
         *,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
-        dataset_serving: DatasetServingConfig | None = None,
+        dataset_serving: AdvioServingConfig | None = None,
     ) -> SequenceManifest:
         del frame_selection
         paths = self._resolve_paths(require_arcore=False)
@@ -195,12 +212,19 @@ class AdvioSequence(BaseData):
         *,
         output_dir: Path | None = None,
         frame_selection: FrameSelectionConfig | None = None,
+        dataset_serving: AdvioServingConfig | None = None,
+        rgb_max_width_px: int = 392,
+        rgb_dimension_multiple: int = 14,
     ) -> PreparedBenchmarkInputs:
         """Materialize benchmark-owned reference trajectories for one sequence."""
-        del frame_selection
         paths = self._resolve_paths(require_arcore=False)
         evaluation_dir = paths.sequence_dir / "evaluation" if output_dir is None else output_dir
         evaluation_dir.mkdir(parents=True, exist_ok=True)
+        effective_serving = (
+            dataset_serving
+            if dataset_serving is not None
+            else AdvioServingConfig(dataset_id="advio", pose_source=AdvioPoseSource.GROUND_TRUTH)
+        )
         references = [
             ReferenceTrajectoryRef(
                 source=ReferenceSource.GROUND_TRUTH,
@@ -238,12 +262,24 @@ class AdvioSequence(BaseData):
                 target_path=evaluation_dir / "arkit.tum",
                 ground_truth_rdf=ground_truth_rdf,
             )
-        return PreparedBenchmarkInputs(reference_trajectories=references, candidate_trajectories=candidates)
+        references.extend(candidates)
+        observation_sequence = self._prepare_observation_sequence(
+            output_dir=evaluation_dir / "observations",
+            frame_selection=frame_selection or FrameSelectionConfig(),
+            dataset_serving=effective_serving,
+            rgb_max_width_px=rgb_max_width_px,
+            rgb_dimension_multiple=rgb_dimension_multiple,
+        )
+        return PreparedBenchmarkInputs(
+            reference_trajectories=references,
+            candidate_trajectories=candidates,
+            observation_sequences=[observation_sequence],
+        )
 
     def open_stream(
         self,
         *,
-        dataset_serving: DatasetServingConfig | None = None,
+        dataset_serving: AdvioServingConfig | None = None,
         pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
         stride: int = 1,
         loop: bool = True,
@@ -257,7 +293,7 @@ class AdvioSequence(BaseData):
         effective_serving = (
             dataset_serving
             if dataset_serving is not None
-            else DatasetServingConfig(dataset_id="advio", pose_source=pose_source)
+            else AdvioServingConfig(dataset_id="advio", pose_source=pose_source)
         )
         pose_target_frame, _native_pose_source_frame = advio_pose_frames(
             pose_source=effective_serving.pose_source,
@@ -288,6 +324,97 @@ class AdvioSequence(BaseData):
                 pose_source=effective_serving.pose_source.value,
             ),
             normalize_video_orientation=normalize_video_orientation,
+        )
+
+    def _prepare_observation_sequence(
+        self,
+        *,
+        output_dir: Path,
+        frame_selection: FrameSelectionConfig,
+        dataset_serving: AdvioServingConfig,
+        rgb_max_width_px: int,
+        rgb_dimension_multiple: int,
+    ) -> ObservationSequenceRef:
+        """Persist display-oriented ADVIO replay packets as normalized observations."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        rgb_dir = output_dir / "rgb"
+        rgb_dir.mkdir(parents=True, exist_ok=True)
+        paths = self._resolve_paths(require_arcore=False)
+        timestamps_ns = advio_loading.load_advio_frame_timestamps_ns(paths.frame_timestamps_path).tolist()
+        stream = self.open_stream(
+            dataset_serving=dataset_serving,
+            stride=frame_selection.stride_for_timestamps_ns(timestamps_ns),
+            loop=False,
+            replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+            normalize_video_orientation=True,
+        )
+        rows: list[ObservationIndexEntry] = []
+        stream.connect()
+        try:
+            while True:
+                try:
+                    observation = stream.wait_for_observation()
+                except EOFError:
+                    break
+                if observation.rgb is None:
+                    raise RuntimeError("ADVIO replay yielded an observation without RGB payload.")
+                preprocessed = preprocess_rgb_for_normalized_store(
+                    observation.rgb,
+                    max_width_px=rgb_max_width_px,
+                    dimension_multiple=rgb_dimension_multiple,
+                )
+                rgb_path = rgb_dir / f"{len(rows):06d}.png"
+                write_preprocessed_rgb_png(rgb_path, preprocessed.rgb)
+                source_frame_index = observation.source_frame_index
+                provenance = observation.provenance.model_copy(
+                    update={
+                        "raster_space": "display_downscaled",
+                        "source_frame_index": source_frame_index,
+                        "original_width": preprocessed.original_width,
+                        "original_height": preprocessed.original_height,
+                    }
+                )
+                if observation.intrinsics is None:
+                    raise RuntimeError("ADVIO replay yielded an observation without intrinsics.")
+                rows.append(
+                    ObservationIndexEntry(
+                        seq=len(rows),
+                        timestamp_ns=observation.timestamp_ns,
+                        rgb_path=rgb_path.relative_to(output_dir),
+                        T_world_camera=observation.T_world_camera,
+                        intrinsics=scale_intrinsics_for_rgb_preprocessing(observation.intrinsics, preprocessed),
+                        provenance=provenance,
+                    )
+                )
+        finally:
+            stream.disconnect()
+        index = ObservationSequenceIndex(
+            source_id="advio",
+            sequence_id=self.scene.sequence_slug,
+            world_frame=rows[0].provenance.world_frame if rows else "world",
+            raster_space="display_downscaled",
+            observation_count=len(rows),
+            rows=rows,
+        )
+        write_json(
+            output_dir / "rgb.metadata.json",
+            {
+                "raster_space": "display_downscaled",
+                "source_raster_space": "display",
+                "rgb_max_width_px": rgb_max_width_px,
+                "dimension_multiple": rgb_dimension_multiple,
+            },
+        )
+        index_path = output_dir / "observations.json"
+        write_json(index_path, index)
+        return ObservationSequenceRef(
+            source_id="advio",
+            sequence_id=self.scene.sequence_slug,
+            index_path=index_path.resolve(),
+            payload_root=output_dir.resolve(),
+            observation_count=len(rows),
+            world_frame=index.world_frame,
+            raster_space="display_downscaled",
         )
 
 

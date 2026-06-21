@@ -81,11 +81,17 @@ sequenceDiagram
             Page-->>Browser: Render metrics, images, Plotly trajectory
         end
     else Metrics page
-        Page->>Query: resolve_selection(...) / discover_runs(...)
-        Query->>Query: Resolve dataset and run artifacts
-        Query->>Query: Load TrajectoryEvaluationManifest + metrics_long.csv
-        Query-->>Page: Run coverage and metric rows
-        Page-->>Browser: Render aggregated tables and persisted-error plots
+        Page->>Service: discover_runs(...) / resolve_selection(...)
+        Service->>Service: Resolve dataset and run artifacts
+        alt User presses Compute
+            Page->>Service: compute_evaluation(...)
+            Service->>Service: Run explicit evo evaluation
+            Service-->>Page: EvaluationArtifact
+        else Persisted result exists
+            Page->>Service: load_evaluation(...)
+            Service-->>Page: EvaluationArtifact
+        end
+        Page-->>Browser: Render metrics, figures, provenance
     else Datasets page
         Page->>Service: summarize() / scene_rows()
         Service->>Service: Read committed dataset catalogs and local dataset roots
@@ -198,7 +204,7 @@ sequenceDiagram
     Preview transport integrations.
 
 - `prml_vslam.sources.datasets`
-  - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
+  - Owns ADVIO metadata, local dataset normalization, and full-scene download semantics.
   - The app renders dataset summaries and forwards explicit user actions into dataset-owned services.
 
 - `prml_vslam.utils`

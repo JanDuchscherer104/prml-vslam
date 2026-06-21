@@ -11,13 +11,12 @@ import numpy as np
 import open3d as o3d
 from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 from evo.tools import file_interface  # type: ignore[import-untyped]
+from numpy.typing import NDArray
 from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.utils.console import get_console
 
 if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
 
@@ -59,17 +58,56 @@ def write_tum_trajectory(
     return trajectory_path.resolve()
 
 
-def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
+def load_tum_trajectory(path: Path, *, canonicalize_timestamps: bool = False) -> PoseTrajectory3D:
     """Load a TUM trajectory file into an `evo` pose trajectory."""
     if path.stat().st_size == 0:
         raise ValueError(f"TUM trajectory file '{path}' is empty.")
 
-    trajectory = file_interface.read_tum_trajectory_file(path)
+    trajectory = (
+        _read_canonical_tum_trajectory(path)
+        if canonicalize_timestamps
+        else file_interface.read_tum_trajectory_file(path)
+    )
     trajectory = _normalize_trajectory_quaternions(trajectory)
     valid, details = trajectory.check()
     if not valid:
         raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
     return trajectory
+
+
+def trajectory_relative_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
+    """Express every pose relative to the first pose."""
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
+    if not poses:
+        return trajectory
+    T_first_world = np.linalg.inv(poses[0])
+    return PoseTrajectory3D(
+        poses_se3=[T_first_world @ pose for pose in poses],
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
+
+
+def _read_canonical_tum_trajectory(path: Path) -> PoseTrajectory3D:
+    rows_by_timestamp: dict[float, list[float]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split()
+        if len(fields) < 8:
+            raise ValueError(f"Invalid TUM trajectory row in {path}: {line!r}")
+        timestamp = float(fields[0])
+        if timestamp not in rows_by_timestamp:
+            rows_by_timestamp[timestamp] = [float(field) for field in fields[:8]]
+    if not rows_by_timestamp:
+        raise ValueError(f"TUM trajectory file '{path}' is empty.")
+
+    rows = [rows_by_timestamp[timestamp] for timestamp in sorted(rows_by_timestamp)]
+    return PoseTrajectory3D(
+        positions_xyz=np.asarray([row[1:4] for row in rows], dtype=np.float64),
+        orientations_quat_wxyz=np.asarray([[row[7], row[4], row[5], row[6]] for row in rows], dtype=np.float64),
+        timestamps=np.asarray([row[0] for row in rows], dtype=np.float64),
+    )
 
 
 def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:

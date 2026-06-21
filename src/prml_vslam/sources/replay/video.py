@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable, Iterator
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 import av
 import numpy as np
+from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 
@@ -211,6 +214,51 @@ class PyAvVideoObservationSource:
         return poses_by_frame[frame_index]
 
 
+def write_rgb_video(path: Path, frames: Iterable[NDArray[np.uint8]], *, fps: float = 15.0) -> Path:
+    """Encode RGB frames into a compact normalized video payload."""
+    iterator = iter(frames)
+    try:
+        first_frame = _as_rgb_frame(next(iterator))
+    except StopIteration:
+        raise ValueError("Cannot write an empty RGB video.") from None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with av.open(str(path), mode="w") as container:
+        stream = container.add_stream("mpeg4", rate=Fraction(max(float(fps), 1.0)).limit_denominator(1000))
+        stream.width = int(first_frame.shape[1])
+        stream.height = int(first_frame.shape[0])
+        stream.pix_fmt = "yuv420p"
+        _encode_rgb_frame(container, stream, first_frame)
+        for frame in iterator:
+            _encode_rgb_frame(container, stream, _as_rgb_frame(frame))
+        for packet in stream.encode():
+            container.mux(packet)
+    return path.resolve()
+
+
+def iter_rgb_video_frames(video_path: Path, frame_indices: Iterable[int] | None = None) -> Iterator[NDArray[np.uint8]]:
+    """Yield RGB frames from a video, optionally filtering by zero-based frame index."""
+    requested = None if frame_indices is None else set(frame_indices)
+    with av.open(str(video_path)) as container:
+        for frame_index, frame in enumerate(container.decode(video=0)):
+            if requested is None or frame_index in requested:
+                yield np.asarray(frame.to_ndarray(format="rgb24"), dtype=np.uint8)
+
+
+def _encode_rgb_frame(
+    container: av.container.OutputContainer, stream: av.video.stream.VideoStream, rgb: NDArray[np.uint8]
+) -> None:
+    video_frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
+    for packet in stream.encode(video_frame):
+        container.mux(packet)
+
+
+def _as_rgb_frame(frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    rgb = np.asarray(frame, dtype=np.uint8)
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError(f"Expected RGB video frame shape (H, W, 3), got {rgb.shape}.")
+    return np.ascontiguousarray(rgb)
+
+
 def read_video_rotation_degrees(video_path: Path) -> int:
     """Read display rotation metadata from a video file.
 
@@ -344,4 +392,9 @@ def _rotate_intrinsics(intrinsics: CameraIntrinsics | None, rotation_degrees: in
     return intrinsics.model_copy(update=update)
 
 
-__all__ = ["PyAvVideoObservationSource", "read_video_rotation_degrees"]
+__all__ = [
+    "PyAvVideoObservationSource",
+    "iter_rgb_video_frames",
+    "read_video_rotation_degrees",
+    "write_rgb_video",
+]

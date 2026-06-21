@@ -1,4 +1,4 @@
-# MASt3R-SLAM sweep across four sequences (2 TUM RGB-D + 2 ADVIO).
+# MASt3R-SLAM sweep across five sequences (2 TUM RGB-D + 2 ADVIO + 1 Record3D).
 #
 # Requires the mast3r extra (conflicts with vista and lingbot — install separately):
 #   mamba activate prml-vslam
@@ -20,6 +20,7 @@
 #   example-mast3r-tum_rgbd-freiburg1_desk-mast3r
 #   example-mast3r-advio-advio-15-mast3r
 #   example-mast3r-advio-advio-01-mast3r
+#   example-mast3r-record3d_dataset-2026-06-03--18-29-08-mast3r
 
 [sweep]
 name       = "example-mast3r"
@@ -30,6 +31,7 @@ output_dir = ".artifacts/sweeps"
 dataset_id          = "tum_rgbd"
 sequence_id         = "freiburg3_large_cabinet"
 frame_stride        = 1
+normalized_target_fps = 30.0
 baseline_source     = "ground_truth"
 align_ground        = true
 align_trajectory    = true
@@ -40,6 +42,7 @@ evaluate_trajectory = true
 dataset_id          = "tum_rgbd"
 sequence_id         = "freiburg1_desk"
 frame_stride        = 1
+normalized_target_fps = 30.0
 baseline_source     = "ground_truth"
 align_trajectory    = true
 evaluate_trajectory = true
@@ -49,6 +52,7 @@ evaluate_trajectory = true
 dataset_id          = "advio"
 sequence_id         = "advio-15"
 frame_stride        = 2
+normalized_target_fps = 15.0
 baseline_source     = "ground_truth"
 align_trajectory    = true
 evaluate_trajectory = true
@@ -58,7 +62,18 @@ evaluate_trajectory = true
 dataset_id          = "advio"
 sequence_id         = "advio-01"
 frame_stride        = 2
+normalized_target_fps = 15.0
 baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 5: Record3D 18-29-08 ─────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 1
+normalized_target_fps = 30.0
+baseline_source     = "arkit"
 align_trajectory    = true
 evaluate_trajectory = true
 

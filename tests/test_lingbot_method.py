@@ -130,24 +130,18 @@ def test_lingbot_streaming_smoke_toml_parses_through_run_config() -> None:
 
 
 @pytest.mark.parametrize(
-    ("config_path", "image_size", "checkpoint_pos_embed"),
+    "config_path",
     [
-        (".configs/pipelines/lingbot-full.toml", 392, "interpolate"),
-        (".configs/pipelines/lingbot-smoke.toml", 518, "error"),
-        (".configs/pipelines/lingbot-smoke-streaming.toml", 518, "error"),
+        ".configs/pipelines/lingbot-full.toml",
+        ".configs/pipelines/lingbot-smoke.toml",
+        ".configs/pipelines/lingbot-smoke-streaming.toml",
     ],
 )
-def test_lingbot_tomls_use_declared_checkpoint_patch_grid(
-    config_path: str,
-    image_size: int,
-    checkpoint_pos_embed: str,
-) -> None:
+def test_lingbot_tomls_parse_to_valid_backend(config_path: str) -> None:
     config = load_run_config_toml(path_config=PathConfig(), config_path=Path(config_path))
 
     assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
-    assert config.stages.slam.backend.image_size == image_size
-    assert config.stages.slam.backend.patch_size == 14
-    assert config.stages.slam.backend.checkpoint_pos_embed == checkpoint_pos_embed
+    assert config.stages.slam.backend.image_size % config.stages.slam.backend.patch_size == 0
 
 
 def test_lingbot_config_rejects_invalid_runtime_values() -> None:

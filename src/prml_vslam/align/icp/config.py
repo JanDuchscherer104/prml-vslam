@@ -9,11 +9,18 @@ from pydantic import ConfigDict, Field
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, TumRgbdSourceConfig
-from prml_vslam.sources.contracts import ReferenceCloudSource
-from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
-    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+)
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudSource
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalization import (
+    dataset_service,
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
 )
 from prml_vslam.utils import PathConfig
 
@@ -74,21 +81,38 @@ def _source_reference_cloud_available(
     path_config: PathConfig,
 ) -> bool:
     if isinstance(source_backend, AdvioSourceConfig):
+        dataset_id = DatasetId.ADVIO
+    elif isinstance(source_backend, Record3DDatasetSourceConfig):
+        dataset_id = DatasetId.RECORD3D
+    elif isinstance(source_backend, TumRgbdSourceConfig):
+        dataset_id = DatasetId.TUM_RGBD
+    else:
         return False
-    if isinstance(source_backend, TumRgbdSourceConfig):
-        return preferred_source in {None, ReferenceCloudSource.TUM_RGBD} and _tum_rgbd_reference_cloud_inputs_available(
-            sequence_id=source_backend.sequence_id,
-            path_config=path_config,
+    try:
+        service = dataset_service(dataset_id, path_config)
+        profile = normalized_profile_for_dataset(
+            dataset_id=dataset_id,
+            service=service,
+            source_config=source_backend,
         )
-    return False
-
-
-def _tum_rgbd_reference_cloud_inputs_available(*, sequence_id: str, path_config: PathConfig) -> bool:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
-    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
+        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+            profile,
+            frame_selection=FrameSelectionConfig(
+                frame_stride=source_backend.frame_stride,
+                target_fps=source_backend.target_fps,
+            ),
+        )
+        benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return False
-    return (sequence_dir / "depth.txt").exists() and (sequence_dir / "depth").is_dir()
+    return any(
+        ref.path.exists()
+        and ref.metadata_path.exists()
+        and (preferred_source is None or ref.source is preferred_source)
+        for ref in benchmark_inputs.reference_clouds
+    )
 
 
 __all__ = ["CloudAlignmentStageConfig"]

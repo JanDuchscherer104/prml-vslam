@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -20,8 +21,13 @@ from prml_vslam.pipeline.sweep import (
     expand_sweep,
     load_sweep_config,
 )
-from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    TumRgbdSourceConfig,
+)
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +61,19 @@ num_gpus = 1.0
     method_id   = "mast3r"
     max_frames  = 50
     random_seed = 43
+"""
+
+_LINGBOT_SLAM_SECTION = """\
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id = "lingbot_map"
 """
 
 
@@ -164,6 +183,205 @@ def test_sweep_config_accepts_same_sequence_id_different_dataset() -> None:
         }
     )
     assert len(cfg.datasets) == 2
+
+
+def test_sweep_dataset_rejects_ambiguous_normalized_sampling() -> None:
+    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+        SweepDataset.model_validate(
+            {
+                "dataset_id": "tum_rgbd",
+                "sequence_id": "freiburg1_xyz",
+                "normalized_frame_stride": 2,
+                "normalized_target_fps": 30.0,
+            }
+        )
+
+
+@pytest.mark.parametrize("config_type", [AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig])
+def test_dataset_source_configs_reject_ambiguous_normalized_sampling(
+    config_type: type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],
+) -> None:
+    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+        config_type.model_validate(
+            {
+                "sequence_id": "sequence",
+                "normalized_frame_stride": 2,
+                "normalized_target_fps": 30.0,
+            }
+        )
+
+
+def test_normalized_dataset_build_config_rejects_empty_sequence_ids() -> None:
+    with pytest.raises(ValidationError, match="sequence_ids"):
+        NormalizedDatasetBuildConfig.model_validate(
+            {
+                "sources": [
+                    {
+                        "source_id": "tum_rgbd",
+                        "sequence_ids": [],
+                    }
+                ]
+            }
+        )
+
+
+def test_normalized_dataset_build_config_rejects_ambiguous_sampling() -> None:
+    with pytest.raises(ValidationError, match="frame_stride.*target_fps"):
+        NormalizedDatasetBuildConfig.model_validate(
+            {
+                "sources": [
+                    {
+                        "source_id": "tum_rgbd",
+                        "sequence_ids": ["freiburg1_xyz"],
+                        "frame_stride": 2,
+                        "target_fps": 30.0,
+                    }
+                ]
+            }
+        )
+
+
+def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets() -> None:
+    cfg = NormalizedDatasetBuildConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "source_id": "advio",
+                    "sequence_ids": ["advio-01", "advio-02"],
+                    "target_fps": 15.0,
+                    "rgb_max_width_px": 280,
+                    "rgb_dimension_multiple": 7,
+                },
+                {
+                    "source_id": "tum_rgbd",
+                    "sequence_ids": ["freiburg1_xyz"],
+                    "target_fps": 30.0,
+                    "rgb_max_width_px": 392,
+                    "rgb_dimension_multiple": 14,
+                    "reference_cloud": {
+                        "depth_stride_px": 6,
+                        "max_points": 1234,
+                        "random_seed": 19,
+                    },
+                },
+                {
+                    "source_id": "record3d_dataset",
+                    "sequence_ids": ["scene-a"],
+                    "target_fps": 24.0,
+                    "rgb_max_width_px": 448,
+                    "rgb_dimension_multiple": 28,
+                    "reference_cloud": {
+                        "depth_stride_px": 10,
+                        "max_points": 4321,
+                        "random_seed": 23,
+                        "min_confidence": 2,
+                    },
+                },
+            ]
+        }
+    )
+
+    advio_a, advio_b, tum, record3d = cfg.source_configs()
+
+    assert isinstance(advio_a, AdvioSourceConfig)
+    assert isinstance(advio_b, AdvioSourceConfig)
+    assert [advio_a.sequence_id, advio_b.sequence_id] == ["advio-01", "advio-02"]
+    assert {advio_a.target_fps, advio_b.target_fps} == {15.0}
+    assert {advio_a.rgb_max_width_px, advio_b.rgb_max_width_px} == {280}
+    assert {advio_a.rgb_dimension_multiple, advio_b.rgb_dimension_multiple} == {7}
+
+    assert isinstance(tum, TumRgbdSourceConfig)
+    assert tum.sequence_id == "freiburg1_xyz"
+    assert tum.target_fps == 30.0
+    assert tum.rgb_max_width_px == 392
+    assert tum.rgb_dimension_multiple == 14
+    assert tum.reference_cloud.depth_stride_px == 6
+    assert tum.reference_cloud.max_points == 1234
+    assert tum.reference_cloud.random_seed == 19
+
+    assert isinstance(record3d, Record3DDatasetSourceConfig)
+    assert record3d.sequence_id == "scene-a"
+    assert record3d.target_fps == 24.0
+    assert record3d.rgb_max_width_px == 448
+    assert record3d.rgb_dimension_multiple == 28
+    assert record3d.reference_cloud.depth_stride_px == 10
+    assert record3d.reference_cloud.max_points == 4321
+    assert record3d.reference_cloud.random_seed == 23
+    assert record3d.reference_cloud.min_confidence == 2
+
+
+def test_normalized_dataset_build_config_expands_independent_reference_cloud_configs() -> None:
+    cfg = NormalizedDatasetBuildConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "source_id": "tum_rgbd",
+                    "sequence_ids": ["freiburg1_xyz", "freiburg1_room"],
+                    "reference_cloud": {
+                        "depth_stride_px": 6,
+                        "max_points": 1234,
+                        "random_seed": 19,
+                    },
+                }
+            ]
+        }
+    )
+
+    first, second = cfg.source_configs()
+
+    assert isinstance(first, TumRgbdSourceConfig)
+    assert isinstance(second, TumRgbdSourceConfig)
+    first.reference_cloud.max_points = 99
+    assert second.reference_cloud.max_points == 1234
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    sorted(Path(".configs/sweeps").glob("*sweep.toml")),
+    ids=lambda path: path.name,
+)
+def test_checked_in_record3d_sweep_entries_use_arkit_baseline(config_path: Path) -> None:
+    datasets = tomllib.loads(config_path.read_text(encoding="utf-8"))["datasets"]
+    record3d_rows = [row for row in datasets if row["dataset_id"] == "record3d_dataset"]
+
+    assert record3d_rows
+    assert {row["baseline_source"] for row in record3d_rows} == {ReferenceSource.ARKIT.value}
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    sorted(Path(".configs/sweeps").glob("*sweep.toml")),
+    ids=lambda path: path.name,
+)
+def test_checked_in_sweep_method_keys_match_template_backend_ids(config_path: Path) -> None:
+    cfg = load_sweep_config(config_path)
+    for item in expand_sweep(cfg):
+        assert item.slam_stage.backend is not None
+        assert item.method_id == item.slam_stage.backend.method_id.value
+        assert item.run_id.endswith(f"-{item.method_id}")
+
+
+def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
+    datastore_sources = NormalizedDatasetBuildConfig.from_toml(
+        Path(".configs/datasets/benchmark-vslam-datastore.toml")
+    ).source_configs()
+    datastore_keys = {(source.source_id, source.sequence_id) for source in datastore_sources}
+    full_sweep_keys = {
+        (row["dataset_id"], row["sequence_id"])
+        for config_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml"))
+        for row in tomllib.loads(config_path.read_text(encoding="utf-8"))["datasets"]
+    }
+
+    assert datastore_keys == full_sweep_keys
+
+
+def test_full_vista_sweep_uses_bounded_frame_count() -> None:
+    cfg = load_sweep_config(Path(".configs/sweeps/full-vista-sweep.toml"))
+    items = expand_sweep(cfg)
+
+    assert items
+    assert {item.method_id for item in items} == {MethodId.VISTA.value}
+    assert {item.slam_stage.backend.max_frames for item in items if item.slam_stage.backend is not None} == {512}
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +496,19 @@ def test_expand_sweep_fails_when_template_has_no_slam_section(tmp_path: Path) ->
         expand_sweep(cfg)
 
 
+def test_expand_sweep_rejects_method_key_backend_method_id_mismatch(tmp_path: Path) -> None:
+    lingbot = _write_template(tmp_path, "lingbot.toml", _LINGBOT_SLAM_SECTION)
+    cfg = SweepConfig.model_validate(
+        {
+            "sweep": {"name": "s", "output_dir": str(tmp_path)},
+            "datasets": [{"dataset_id": "tum_rgbd", "sequence_id": "seq1"}],
+            "methods": {"lingbot": {"config_path": str(lingbot)}},
+        }
+    )
+    with pytest.raises(ValueError, match="Use \\[methods\\.lingbot_map\\]"):
+        expand_sweep(cfg)
+
+
 def test_expand_sweep_item_carries_sweep_metadata(tmp_path: Path) -> None:
     vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
     out = tmp_path / "out"
@@ -336,6 +567,7 @@ def _make_item(
     reconstruction: bool = False,
     align_cloud: bool = False,
     evaluate_cloud: bool = False,
+    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH,
 ) -> SweepRunItem:
     vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
     slam = _load_slam_stage_from_template(vista)
@@ -352,6 +584,7 @@ def _make_item(
         dataset=SweepDataset(
             dataset_id=dataset_id,
             sequence_id=sequence_id,
+            baseline_source=baseline_source,
             align_trajectory=align_trajectory,
             evaluate_trajectory=evaluate_trajectory,
             align_ground=align_ground,
@@ -376,6 +609,13 @@ def test_build_run_config_uses_advio_source_backend(tmp_path: Path) -> None:
     run_cfg = build_run_config_from_sweep_item(item)
     assert isinstance(run_cfg.stages.source.backend, AdvioSourceConfig)
     assert run_cfg.stages.source.backend.sequence_id == "advio-15"
+
+
+def test_build_run_config_uses_record3d_dataset_source_backend(tmp_path: Path) -> None:
+    item = _make_item(tmp_path, dataset_id="record3d_dataset", sequence_id="2026-06-03--18-29-08")
+    run_cfg = build_run_config_from_sweep_item(item)
+    assert isinstance(run_cfg.stages.source.backend, Record3DDatasetSourceConfig)
+    assert run_cfg.stages.source.backend.sequence_id == "2026-06-03--18-29-08"
 
 
 def test_build_run_config_rejects_unknown_dataset_id(tmp_path: Path) -> None:
@@ -448,16 +688,15 @@ def test_build_run_config_carries_slam_stage_verbatim(tmp_path: Path) -> None:
 
 
 def test_build_run_config_baseline_source_propagates(tmp_path: Path) -> None:
-    item = _make_item(tmp_path, evaluate_trajectory=True)
-    item = item.model_copy(
-        update={
-            "dataset": item.dataset.model_copy(
-                update={"baseline_source": ReferenceSource.GROUND_TRUTH, "evaluate_trajectory": True}
-            )
-        }
+    item = _make_item(
+        tmp_path,
+        align_trajectory=True,
+        evaluate_trajectory=True,
+        baseline_source=ReferenceSource.ARKIT,
     )
     run_cfg = build_run_config_from_sweep_item(item)
-    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.GROUND_TRUTH
+    assert run_cfg.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
 
 
 # ---------------------------------------------------------------------------
