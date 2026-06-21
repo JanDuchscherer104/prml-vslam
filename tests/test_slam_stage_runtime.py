@@ -44,6 +44,12 @@ class _FakeBackendConfig(VistaSlamBackendConfig):
         return self._backend
 
 
+class _LazyRgbBackendConfig(_FakeBackendConfig):
+    @property
+    def eager_load_offline_rgb(self) -> bool:
+        return False
+
+
 class _FakeBackend:
     method_id = MethodId.VISTA
 
@@ -182,6 +188,31 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     assert isinstance(result.payload, SlamStageOutput)
     assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
+
+
+def test_slam_runtime_offline_honors_backend_rgb_loading_preference(tmp_path: Path) -> None:
+    run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
+    plan = _plan(tmp_path, run_config)
+    backend = _FakeBackend(plan.artifact_root)
+    backend_config = _LazyRgbBackendConfig(backend)
+    runtime = SlamStageRuntime()
+
+    result = runtime.run_offline(
+        SlamOfflineStageInput(
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            sequence_manifest=_sequence_manifest(tmp_path),
+            benchmark_inputs=None,
+        )
+    )
+
+    assert [observation.rgb for observation in backend.observations] == [None]
+    assert backend.observations[0].rgb_path is not None
+    assert result.stage_key is StageKey.SLAM
+    assert result.outcome.status is StageStatus.COMPLETED
 
 
 def test_slam_runtime_streaming_emits_updates_and_transient_refs(tmp_path: Path) -> None:
