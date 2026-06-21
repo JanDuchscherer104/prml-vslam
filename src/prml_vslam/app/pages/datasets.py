@@ -131,7 +131,14 @@ def _render_tum_rgbd_tab(context: AppContext) -> None:
 def _render_record3d_tab(context: AppContext) -> None:
     sync_record3d_dataset_preview_state(context)
     page_data = build_record3d_page_data(context, Record3DDownloadFormData(request=Record3DDownloadRequest()))
-    _render_links((("Zenodo Record", "https://zenodo.org/records/20591352"),))
+    _render_links(
+        (
+            (
+                "Zenodo Record",
+                "https://zenodo.org/records/20591352",
+            ),
+        )
+    )
     st.caption("Scene metadata is pinned to the Record3D `.r3d` archives used by offline RGB-D evaluation.")
     normalized = load_normalized_dataset_snapshot_for_context(context, DatasetId.RECORD3D)
     page_data.rows = rows_with_normalized_status(page_data.rows, normalized)
