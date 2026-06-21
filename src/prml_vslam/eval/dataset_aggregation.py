@@ -330,10 +330,12 @@ def build_wide_metric_rows(rows: list[TrajectoryMetricResultRow], *, statistic: 
         .reset_index()
         .rename(columns=_WIDE_RENAME)
     )
-    table = pd.concat(
-        [sequence_rows, _build_rmse_aggregate_rows(frame, value_cols) if statistic == "rmse" else pd.DataFrame()],
-        ignore_index=True,
+    aggregate_rows = (
+        _build_rmse_aggregate_rows(frame, value_cols)
+        if statistic == "rmse" and frame["sequence_id"].nunique() > 1
+        else pd.DataFrame()
     )
+    table = pd.concat([sequence_rows, aggregate_rows], ignore_index=True)
     return _wide_frame_to_rows(table, statistic=statistic)
 
 

@@ -22,14 +22,14 @@ class AlignmentUnsupportedError(ValueError):
 
 @dataclass(slots=True)
 class _TrajectoryMetricPreview:
-    """Internal single-metric preview kept until the full evo metric loop lands."""
+    """Internal single-metric preview for trajectory evaluation."""
 
     error_timestamps_s: np.ndarray
     error_values: np.ndarray
-    reference_positions_xyz: np.ndarray
-    estimate_positions_xyz: np.ndarray
     stats: MetricStats
     alignment: TrajectoryAlignmentArtifact
+    reference_positions_xyz: np.ndarray | None = None
+    estimate_positions_xyz: np.ndarray | None = None
 
 
 def compute_trajectory_ape_preview(
@@ -145,12 +145,9 @@ def compute_trajectory_rpe_preview(
     error_values = np.asarray(metric.error, dtype=np.float64)
     if error_values.size == 0:
         raise ValueError("evo RPE produced zero matched trajectory pairs.")
-    n = error_values.size
     return _TrajectoryMetricPreview(
-        error_timestamps_s=np.asarray(associated_reference.timestamps[:n], dtype=np.float64),
+        error_timestamps_s=np.arange(error_values.size, dtype=np.float64),
         error_values=error_values,
-        reference_positions_xyz=np.asarray(associated_reference.positions_xyz[:n], dtype=np.float64),
-        estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz[:n], dtype=np.float64),
         stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
         alignment=alignment,
     )

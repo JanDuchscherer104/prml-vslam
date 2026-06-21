@@ -354,6 +354,40 @@ def test_available_metric_keys_includes_non_rmse_with_rmse_first() -> None:
     ]
 
 
+def test_build_wide_metric_rows_suppresses_single_sequence_aggregate() -> None:
+    rows = [
+        _make_metric_row(run_id="exp-a/vista", sequence_id="advio-20", estimate_source="vista/raw", value=0.1),
+        _make_metric_row(
+            run_id="exp-b/vista",
+            sequence_id="advio-20",
+            estimate_source="vista/raw",
+            value=0.3,
+        ),
+    ]
+
+    table = build_wide_metric_rows(rows)
+
+    assert {row["Run"] for row in table} == {"exp-a/vista", "exp-b/vista"}
+    assert all(row["Sequence"] != "All sequences" for row in table)
+
+
+def test_build_wide_metric_rows_adds_weighted_multi_sequence_aggregate() -> None:
+    rows = [
+        _make_metric_row(
+            run_id="exp-a/vista", sequence_id="advio-20", estimate_source="vista/raw", value=0.1, matched_pairs=1
+        ),
+        _make_metric_row(
+            run_id="exp-a/vista", sequence_id="advio-21", estimate_source="vista/raw", value=0.3, matched_pairs=3
+        ),
+    ]
+
+    aggregate = next(row for row in build_wide_metric_rows(rows) if row["Sequence"] == "All sequences")
+
+    assert aggregate["Run"] == "exp-a/vista"
+    assert aggregate["APE Trans. RMSE (m)"] == pytest.approx(0.2646, abs=1e-4)
+    assert aggregate["APE Pairs"] == 4
+
+
 def test_filter_metric_rows_filters_by_reference_and_estimate_base() -> None:
     rows = [
         _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw"),

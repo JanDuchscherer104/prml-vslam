@@ -6,15 +6,14 @@ artifacts.
 ## Current Scope
 
 - resolve reference and estimate trajectories
-- run explicit `evo` trajectory evaluation, currently centered on translation APE
+- run explicit `evo` trajectory evaluation for translation/rotation APE and RPE
 - persist trajectory evaluation manifests, long-form metric rows, and error-series refs
 - provide the repository-owned trajectory-evaluation stage execution seam used by the pipeline
 
 Persisted trajectory results now carry reference and candidate trajectory
 provenance, long-form statistic rows with evo pose relations, and error-series
-references. The current evaluator still computes translation APE only, but the
-contract now provides a typed place to extend into full evo metric coverage
-without redesigning the artifact payload again.
+references. Error-series artifacts store APE geometry for trajectory overlays
+and scalar RPE values without implying unavailable evo pair geometry.
 
 ## Boundary
 

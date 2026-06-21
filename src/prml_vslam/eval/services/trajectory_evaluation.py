@@ -17,7 +17,7 @@ from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifa
 from prml_vslam.eval.dataset_aggregation import metric_rows_to_frame
 from prml_vslam.eval.services.preview import (
     _EVO_ASSOCIATION_MAX_DIFF_S,
-    AlignmentUnsupportedError,
+    _TrajectoryMetricPreview,
     compute_trajectory_ape_preview,
     compute_trajectory_rpe_preview,
 )
@@ -28,6 +28,7 @@ from prml_vslam.eval.trajectory_contracts import (
     TrajectoryEvaluationCase,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
+    stable_run_id,
 )
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
@@ -168,11 +169,11 @@ class TrajectoryEvaluationService:
         selection: SelectionSnapshot,
         candidate_trajectories: list[ReferenceTrajectoryRef] | None = None,
     ) -> TrajectoryEvaluationManifest:
-        """Compute and persist trajectory APE via the `evo` Python API.
+        """Compute and persist trajectory APE/RPE metrics via the `evo` Python API.
 
-        The current executable metric is translation APE with timestamp
-        association only. The persisted payload records those semantics so
-        future RPE or alignment modes can coexist without ambiguity.
+        The persisted manifest and long-form metric table include translation
+        and rotation APE/RPE rows for every candidate whose metric can be
+        computed. The primary run estimate must produce translation APE.
         """
         reference_path = selection.reference_path
         if reference_path is None:
@@ -251,8 +252,9 @@ class TrajectoryEvaluationService:
         reference_source: str,
         candidates: list[_TrajectoryEvaluationCandidate],
     ) -> TrajectoryEvaluationManifest:
-        """Persist one translation-APE metric case for every ordered candidate."""
+        """Persist trajectory metrics for every ordered candidate."""
         run_root = selection.run.artifact_root
+        run_id = stable_run_id(run_root, self.path_config)
         evaluation_dir = run_root / "evaluation" / "trajectory"
         error_series_dir = evaluation_dir / "error_series"
         error_series_dir.mkdir(parents=True, exist_ok=True)
@@ -262,8 +264,14 @@ class TrajectoryEvaluationService:
         rows: list[TrajectoryMetricResultRow] = []
         cases: list[TrajectoryEvaluationCase] = []
         skipped: list[SkippedMetricRecord] = []
-        for candidate in candidates:
+        primary_metric_computed = False
+        for candidate_index, candidate in enumerate(candidates):
             for spec in _METRIC_SPECS:
+                is_primary_translation_ape = (
+                    candidate_index == 0
+                    and spec.family == "ape"
+                    and spec.pose_relation is metrics.PoseRelation.translation_part
+                )
                 try:
                     if spec.family == "ape":
                         preview = compute_trajectory_ape_preview(
@@ -290,11 +298,7 @@ class TrajectoryEvaluationService:
                             method_label=candidate.method_label,
                         )
                 except ValueError as exc:
-                    if (
-                        spec.family == "ape"
-                        and spec.pose_relation is metrics.PoseRelation.translation_part
-                        and not isinstance(exc, AlignmentUnsupportedError)
-                    ):
+                    if is_primary_translation_ape:
                         raise
                     skipped.append(
                         SkippedMetricRecord(
@@ -314,14 +318,12 @@ class TrajectoryEvaluationService:
                     f"{_entity_token(candidate.coordinate_status)}__{spec.family}_{relation_token}.npz"
                 )
                 error_series_path = error_series_dir / error_series_filename
-                np.savez(
+                _write_error_series(
                     error_series_path,
-                    values=preview.error_values,
-                    timestamps_s=preview.error_timestamps_s,
-                    pair_index=np.arange(matched_pairs, dtype=np.int64),
-                    reference_positions_xyz=preview.reference_positions_xyz,
-                    estimate_positions_xyz=preview.estimate_positions_xyz,
+                    preview=preview,
+                    matched_pairs=matched_pairs,
                 )
+                primary_metric_computed = primary_metric_computed or is_primary_translation_ape
                 cases.append(
                     TrajectoryEvaluationCase(
                         reference_path=reference_path,
@@ -341,7 +343,7 @@ class TrajectoryEvaluationService:
                 error_series_relative = Path("error_series") / error_series_filename
                 rows.extend(
                     TrajectoryMetricResultRow(
-                        run_id=run_root.name,
+                        run_id=run_id,
                         sequence_id=selection.sequence_slug,
                         reference_source=reference_source,
                         estimate_source=f"{candidate.source}/{candidate.coordinate_status}",
@@ -358,11 +360,13 @@ class TrajectoryEvaluationService:
                     for statistic, value in preview.stats.model_dump(mode="python").items()
                 )
 
+        if not primary_metric_computed:
+            raise RuntimeError("Primary trajectory translation APE did not produce a metric row.")
         _write_metric_rows(metrics_long_path, rows)
         manifest = TrajectoryEvaluationManifest(
             artifact_root=run_root,
             sequence_id=selection.sequence_slug,
-            run_id=run_root.name,
+            run_id=run_id,
             reference_trajectories=[reference_path],
             candidate_trajectories=[candidate.path for candidate in candidates],
             error_series_paths=[case.error_series_path for case in cases],
@@ -441,6 +445,18 @@ def _evaluation_candidates_for(
 def _write_metric_rows(path: Path, rows: list[TrajectoryMetricResultRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     metric_rows_to_frame(rows).to_csv(path, index=False)
+
+
+def _write_error_series(path: Path, *, preview: _TrajectoryMetricPreview, matched_pairs: int) -> None:
+    payload = {
+        "values": preview.error_values,
+        "timestamps_s": preview.error_timestamps_s,
+        "pair_index": np.arange(matched_pairs, dtype=np.int64),
+    }
+    if preview.reference_positions_xyz is not None and preview.estimate_positions_xyz is not None:
+        payload["reference_positions_xyz"] = preview.reference_positions_xyz
+        payload["estimate_positions_xyz"] = preview.estimate_positions_xyz
+    np.savez(path, **payload)
 
 
 def _entity_token(value: str) -> str:

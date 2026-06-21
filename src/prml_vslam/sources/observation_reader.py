@@ -17,7 +17,6 @@ def iter_sequence_manifest_observations(
     sequence: SequenceManifest,
     *,
     max_frames: int | None = None,
-    load_rgb: bool = True,
 ) -> Iterator[Observation]:
     """Yield RGB observations from a normalized source sequence manifest."""
     image_paths, timestamps_ns = _load_manifest_rgb_inputs(sequence=sequence, max_frames=max_frames)

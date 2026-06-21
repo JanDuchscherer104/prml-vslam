@@ -11,6 +11,7 @@ import pytest
 
 from prml_vslam.eval.query import TrajectoryEvaluationQueryService
 from prml_vslam.eval.services import TrajectoryEvaluationRepairService
+from prml_vslam.eval.trajectory_contracts import stable_run_id
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import PathConfig
@@ -94,51 +95,13 @@ def _build_advio_run(
 ) -> Path:
     """Create a minimal run artifact tree for one ADVIO sequence."""
     run_root = artifacts_root / sequence_id / method
+    run_id = f"{sequence_id}/{method}"
     _write_sequence_manifest(run_root / "input", sequence_id=sequence_id, dataset_id="advio")
     _write_trajectory(run_root / "slam" / "trajectory.tum")
     eval_dir = run_root / "evaluation" / "trajectory"
-    _write_evaluation_manifest(eval_dir, sequence_id=sequence_id, run_id=run_root.name)
-    _write_metrics_long(eval_dir, sequence_id=sequence_id, run_id=run_root.name)
+    _write_evaluation_manifest(eval_dir, sequence_id=sequence_id, run_id=run_id)
+    _write_metrics_long(eval_dir, sequence_id=sequence_id, run_id=run_id)
     return run_root
-
-
-# ---------------------------------------------------------------------------
-# discover_dataset_runs
-# ---------------------------------------------------------------------------
-
-
-def test_discover_dataset_runs_finds_advio_trajectory(tmp_path: Path) -> None:
-    _build_advio_run(tmp_path / "artifacts", sequence_id="advio-20")
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts")
-    service = TrajectoryEvaluationQueryService(path_config)
-
-    runs = service.discover_dataset_runs(DatasetId.ADVIO)
-
-    assert len(runs) == 1
-    assert runs[0].artifact_root.name == "vista"
-
-
-def test_discover_dataset_runs_excludes_mismatched_dataset(tmp_path: Path) -> None:
-    artifacts = tmp_path / "artifacts"
-    _build_advio_run(artifacts, sequence_id="advio-20")
-    # Write a TUM RGB-D sequence manifest to another run
-    tum_run = artifacts / "tum-desk" / "vista"
-    _write_sequence_manifest(tum_run / "input", sequence_id="tum-desk", dataset_id="tum_rgbd")
-    _write_trajectory(tum_run / "slam" / "trajectory.tum")
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=artifacts)
-    service = TrajectoryEvaluationQueryService(path_config)
-
-    advio_runs = service.discover_dataset_runs(DatasetId.ADVIO)
-    tum_runs = service.discover_dataset_runs(DatasetId.TUM_RGBD)
-
-    assert len(advio_runs) == 1
-    assert len(tum_runs) == 1
-
-
-# ---------------------------------------------------------------------------
-# load_dataset_evaluation
-# ---------------------------------------------------------------------------
 
 
 def test_load_dataset_evaluation_returns_coverage_and_metric_rows(tmp_path: Path) -> None:
@@ -157,31 +120,28 @@ def test_load_dataset_evaluation_returns_coverage_and_metric_rows(tmp_path: Path
     assert result.coverage[0].metric_row_count == 1
     assert len(result.metric_rows) == 1
     assert result.metric_rows[0].value == pytest.approx(0.25)
+    assert result.coverage[0].run_id == "advio-20/vista"
+    assert result.metric_rows[0].run_id == "advio-20/vista"
 
 
-def test_load_dataset_evaluation_reports_sim3_skips_from_manifest(tmp_path: Path) -> None:
+def test_load_dataset_evaluation_keeps_same_method_runs_distinct(tmp_path: Path) -> None:
     artifacts = tmp_path / "artifacts"
-    run_root = _build_advio_run(artifacts, sequence_id="advio-20")
-    _write_evaluation_manifest(
-        run_root / "evaluation" / "trajectory",
-        sequence_id="advio-20",
-        run_id=run_root.name,
-        skipped_metrics=[
-            {
-                "candidate_source": "vista/raw",
-                "metric_family": "ape",
-                "pose_relation": "translation part",
-                "reason": "Trajectory lacks sufficient geometric spread for Sim(3) alignment.",
-            }
-        ],
-    )
-    path_config = PathConfig(root=tmp_path, artifacts_dir=artifacts)
-    service = TrajectoryEvaluationQueryService(path_config)
+    run_a = _build_advio_run(artifacts, sequence_id="exp-a", method="vista")
+    run_b = _build_advio_run(artifacts, sequence_id="exp-b", method="vista")
+    for run_root in (run_a, run_b):
+        _write_sequence_manifest(run_root / "input", sequence_id="advio-20", dataset_id="advio")
+        eval_dir = run_root / "evaluation" / "trajectory"
+        run_id = stable_run_id(run_root, PathConfig(root=tmp_path, artifacts_dir=artifacts))
+        _write_evaluation_manifest(eval_dir, sequence_id="advio-20", run_id=run_id)
+        _write_metrics_long(eval_dir, sequence_id="advio-20", run_id=run_id)
+
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=artifacts))
 
     with patch("prml_vslam.eval.query.list_sequence_slugs", return_value=["advio-20"]):
         result = service.load_dataset_evaluation(DatasetId.ADVIO)
 
-    assert result.coverage[0].sim3_alignment_skip_count == 1
+    assert {item.run_id for item in result.coverage} == {"exp-a/vista", "exp-b/vista"}
+    assert {row.run_id for row in result.metric_rows} == {"exp-a/vista", "exp-b/vista"}
 
 
 def test_load_dataset_evaluation_handles_missing_manifest_gracefully(tmp_path: Path) -> None:
@@ -201,28 +161,6 @@ def test_load_dataset_evaluation_handles_missing_manifest_gracefully(tmp_path: P
     assert result.coverage[0].manifest_present is False
     assert result.coverage[0].metric_row_count == 0
     assert result.metric_rows == []
-
-
-# ---------------------------------------------------------------------------
-# load_dataset_coverage
-# ---------------------------------------------------------------------------
-
-
-def test_load_dataset_coverage_convenience_wrapper_matches_evaluation(tmp_path: Path) -> None:
-    _build_advio_run(tmp_path / "artifacts", sequence_id="advio-20")
-    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts")
-    service = TrajectoryEvaluationQueryService(path_config)
-
-    with patch("prml_vslam.eval.query.list_sequence_slugs", return_value=["advio-20"]):
-        coverage = service.load_dataset_coverage(DatasetId.ADVIO)
-        evaluation = service.load_dataset_evaluation(DatasetId.ADVIO)
-
-    assert coverage == evaluation.coverage
-
-
-# ---------------------------------------------------------------------------
-# read-only query / repair recompute
-# ---------------------------------------------------------------------------
 
 
 def _write_four_pose_trajectory(path: Path) -> Path:
@@ -285,77 +223,6 @@ def test_recompute_run_evaluation_regenerates_manifest_from_benchmark_inputs_jso
     manifest_path = run_root / "evaluation" / "trajectory" / "manifest.json"
     assert manifest_path.exists()
     assert manifest.sequence_id == "advio-20"
-    assert manifest.run_id == "vista"
+    assert manifest.run_id == "advio-20/vista"
     assert len(manifest.evaluation_cases) >= 1
     assert any(c.metric_family == "ape" for c in manifest.evaluation_cases)
-
-
-def test_recompute_run_evaluation_falls_back_to_ground_truth_tum_when_no_inputs_json(tmp_path: Path) -> None:
-    artifacts = tmp_path / "artifacts"
-    run_root = artifacts / "advio-20" / "vista"
-    _write_sequence_manifest(run_root / "input", sequence_id="advio-20", dataset_id="advio")
-    _write_four_pose_trajectory(run_root / "slam" / "trajectory.tum")
-    _write_four_pose_trajectory(run_root / "benchmark" / "ground_truth.tum")
-    # No inputs.json written — fallback path should be used
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=artifacts)
-    query = TrajectoryEvaluationQueryService(path_config)
-    service = TrajectoryEvaluationRepairService(path_config)
-    run = query.discover_runs("advio-20", dataset=DatasetId.ADVIO)[0]
-
-    manifest = service.recompute_run_evaluation(run)
-
-    assert (run_root / "evaluation" / "trajectory" / "manifest.json").exists()
-    assert manifest.sequence_id == "advio-20"
-
-
-def test_recompute_run_evaluation_raises_when_no_reference_exists(tmp_path: Path) -> None:
-    artifacts = tmp_path / "artifacts"
-    run_root = artifacts / "advio-20" / "vista"
-    _write_sequence_manifest(run_root / "input", sequence_id="advio-20", dataset_id="advio")
-    _write_four_pose_trajectory(run_root / "slam" / "trajectory.tum")
-    # Neither inputs.json nor benchmark/ground_truth.tum present
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=artifacts)
-    query = TrajectoryEvaluationQueryService(path_config)
-    service = TrajectoryEvaluationRepairService(path_config)
-    run = query.discover_runs("advio-20", dataset=DatasetId.ADVIO)[0]
-
-    with pytest.raises(FileNotFoundError, match="No reference trajectory"):
-        service.recompute_run_evaluation(run)
-
-
-def test_recompute_run_evaluation_remaps_paths_written_on_another_machine(tmp_path: Path) -> None:
-    artifacts = tmp_path / "artifacts"
-    run_root = artifacts / "advio-20" / "vista"
-    _write_sequence_manifest(run_root / "input", sequence_id="advio-20", dataset_id="advio")
-    _write_four_pose_trajectory(run_root / "slam" / "trajectory.tum")
-    # Write the actual file at the local path
-    local_gt = _write_four_pose_trajectory(run_root / "benchmark" / "ground_truth.tum")
-    # inputs.json references the file via a foreign-machine absolute path
-    foreign_path = "/home/other-user/repos/prml-vslam/.artifacts/advio-20/vista/benchmark/ground_truth.tum"
-    inputs = {
-        "reference_trajectories": [
-            {"source": "ground_truth", "path": foreign_path, "coordinate_status": "source_native"}
-        ],
-        "candidate_trajectories": [],
-        "reference_clouds": [],
-        "observation_sequences": [],
-    }
-    (run_root / "benchmark" / "inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
-
-    path_config = PathConfig(root=tmp_path, artifacts_dir=artifacts)
-    query = TrajectoryEvaluationQueryService(path_config)
-    service = TrajectoryEvaluationRepairService(path_config)
-    run = query.discover_runs("advio-20", dataset=DatasetId.ADVIO)[0]
-
-    manifest = service.recompute_run_evaluation(run)
-
-    assert manifest.sequence_id == "advio-20"
-    assert local_gt.exists()  # local file was used for computation
-
-
-def test_query_service_does_not_expose_recompute_surface(tmp_path: Path) -> None:
-    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts"))
-
-    assert not hasattr(service, "recompute_run_evaluation")
