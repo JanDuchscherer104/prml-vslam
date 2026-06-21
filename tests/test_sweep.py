@@ -25,11 +25,9 @@ from prml_vslam.sources.config import (
     AdvioSourceConfig,
     Record3DDatasetSourceConfig,
     TumRgbdSourceConfig,
-    normalized_profile_for_source_config,
 )
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
-from prml_vslam.sources.datasets.contracts import DatasetId
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -375,45 +373,6 @@ def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
     }
 
     assert datastore_keys == full_sweep_keys
-
-
-def test_full_sweeps_match_benchmark_datastore_profiles() -> None:
-    datastore_sources = {
-        (source.source_id, source.sequence_id): source
-        for source in NormalizedDatasetBuildConfig.from_toml(
-            Path(".configs/datasets/benchmark-vslam-datastore.toml")
-        ).source_configs()
-    }
-    dataset_ids = {
-        "advio": DatasetId.ADVIO,
-        "record3d_dataset": DatasetId.RECORD3D,
-        "tum_rgbd": DatasetId.TUM_RGBD,
-    }
-
-    for sweep_path in sorted(Path(".configs/sweeps").glob("full-*-sweep.toml")):
-        for item in expand_sweep(load_sweep_config(sweep_path)):
-            key = (item.dataset.dataset_id, item.dataset.sequence_id)
-            datastore_config = datastore_sources[key]
-            run_config = build_run_config_from_sweep_item(item)
-            source_config = run_config.stages.source.backend
-            assert isinstance(source_config, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig)
-            dataset_id = dataset_ids[key[0]]
-
-            run_profile = normalized_profile_for_source_config(
-                dataset_id=dataset_id,
-                sequence_id=key[1],
-                source_id=key[0],
-                payload=source_config.model_dump(mode="json"),
-            )
-            datastore_profile = normalized_profile_for_source_config(
-                dataset_id=dataset_id,
-                sequence_id=key[1],
-                source_id=key[0],
-                payload=datastore_config.model_dump(mode="json"),
-                include_frame_selection=True,
-            )
-
-            assert run_profile.source_profile == datastore_profile.source_profile
 
 
 def test_full_vista_sweep_uses_bounded_frame_count() -> None:

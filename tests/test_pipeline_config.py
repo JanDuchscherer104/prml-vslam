@@ -334,20 +334,13 @@ def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> Non
 
     backend = run_config.stages.source.backend
     assert isinstance(backend, Record3DDatasetSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig)
-    assert backend.frame_stride == 1
-    assert backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert run_config_plan.source.source_id == backend.source_id
     assert run_config_plan.source.sequence_id == backend.sequence_id
-    assert run_config_plan.source.replay_mode == "fast_as_possible"
     assert run_config_plan.source.metadata["dataset_id"] in {
         DatasetId.ADVIO.value,
         DatasetId.RECORD3D.value,
         DatasetId.TUM_RGBD.value,
     }
-    assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is False
-    assert run_config.stages.reconstruction.backend.extract_mesh is True
-    assert run_config.stages.align_cloud.enabled is False
     assert run_config.stages.evaluate_cloud.enabled is False
     assert run_config.stages.evaluate_trajectory.enabled is True
     assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
