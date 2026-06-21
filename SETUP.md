@@ -221,6 +221,20 @@ uv run prml-vslam tum-rgbd download
 uv run prml-vslam record3d download
 ```
 
+The Record3D samples will be persisted to
+
+```
+.data/record3d
+├── 2026-06-03--18-17-10.r3d # sequence 0
+├── 2026-06-03--18-20-22.r3d
+├── 2026-06-03--18-24-27.r3d
+├── 2026-06-03--18-26-32.r3d
+├── 2026-06-03--18-27-25.r3d
+├── 2026-06-03--18-29-08.r3d
+├── 2026-06-03--18-32-27.r3d
+└── 2026-06-03--18-35-44.r3d # sequence 7
+```
+
 To limit a download, repeat `--sequence`. ADVIO uses numeric sequence ids,
 TUM RGB-D uses scene slugs, and Record3D uses zero-based catalog indices:
 
@@ -259,6 +273,15 @@ uv run prml-vslam dataset summary --dataset record3d
 Use `--overwrite` on the dataset download commands only when refreshing cached
 archives intentionally. The default `--reuse` mode keeps already-downloaded
 archives and extracted scenes.
+
+Single sequences can be normalized directly via cli:
+
+```bash
+uv run prml-vslam dataset normalize \
+  --dataset record3d \ #  advio, tum_rgbd, or record3d
+  --sequence 2026-06-03--18-17-10 \ # stem of the original .r3d filename or directoy name for TUM or ADVIO
+  --target-fps 15
+```
 
 ## Dataset × Method Sweep
 
@@ -399,14 +422,14 @@ uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-
 
 ### Sweep file reference
 
-| File | Method | Sequences |
-|---|---|---|
-| `example-vista-sweep.toml` | ViSTA | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
-| `example-mast3r-sweep.toml` | MASt3R | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
-| `example-lingbot-sweep.toml` | LingBot | 5 (2 TUM + 2 ADVIO + 1 Record3D) |
-| `full-vista-sweep.toml` | ViSTA | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
-| `full-mast3r-sweep.toml` | MASt3R | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
-| `full-lingbot-sweep.toml` | LingBot | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+| File                         | Method  | Sequences                           |
+| ---------------------------- | ------- | ----------------------------------- |
+| `example-vista-sweep.toml`   | ViSTA   | 5 (2 TUM + 2 ADVIO + 1 Record3D)    |
+| `example-mast3r-sweep.toml`  | MASt3R  | 5 (2 TUM + 2 ADVIO + 1 Record3D)    |
+| `example-lingbot-sweep.toml` | LingBot | 5 (2 TUM + 2 ADVIO + 1 Record3D)    |
+| `full-vista-sweep.toml`      | ViSTA   | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+| `full-mast3r-sweep.toml`     | MASt3R  | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
+| `full-lingbot-sweep.toml`    | LingBot | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
 
 Build and verify the normalized benchmark datastore before running the full
 sweeps; see
