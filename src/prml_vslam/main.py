@@ -1156,7 +1156,7 @@ def record3d_summary() -> None:
     service = Record3DDatasetService(path_config)
     normalized = query_normalized_dataset(DatasetId.RECORD3D, path_config)
     payload = {
-        "normalized": normalized.model_dump(mode="json"),
+        "normalized": _normalized_query_summary_payload(normalized),
         "native_cache": _native_cache_facts(service),
     }
     console.plog(payload)
@@ -1587,6 +1587,16 @@ def _dataframe_records(frame: Any) -> list[dict[str, Any]]:
     return [dict(record) for record in records]
 
 
+def _normalized_query_summary_payload(query: NormalizedDatasetQuery) -> dict[str, Any]:
+    return {
+        "dataset_id": query.dataset_id.value,
+        "records": [record.model_dump(mode="json") for record in query.records],
+        "issues": query.issues,
+        "stats": _dataframe_records(query.stats_df),
+        "metadata": _dataframe_records(query.metadata_df),
+    }
+
+
 def _entry_dataframe_records(frame: Any, record: NormalizedSequenceRecord) -> list[dict[str, Any]]:
     return _records_dataframe_records(frame, [record])
 
@@ -1608,7 +1618,7 @@ def advio_summary() -> None:
     normalized = query_normalized_dataset(DatasetId.ADVIO, path_config)
     payload = {
         "upstream": service.catalog.upstream.model_dump(mode="json"),
-        "normalized": normalized.model_dump(mode="json"),
+        "normalized": _normalized_query_summary_payload(normalized),
         "native_cache": _native_cache_facts(service),
     }
     console.plog(payload)
@@ -1656,7 +1666,7 @@ def tum_rgbd_summary() -> None:
     normalized = query_normalized_dataset(DatasetId.TUM_RGBD, path_config)
     payload = {
         "upstream": service.catalog.upstream,
-        "normalized": normalized.model_dump(mode="json"),
+        "normalized": _normalized_query_summary_payload(normalized),
         "native_cache": _native_cache_facts(service),
     }
     console.plog(payload)
