@@ -207,6 +207,59 @@ curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt 
   -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
 
+## Dataset Downloads and VSLAM Datastore
+
+Dataset-backed pipeline configs and sweeps read from the normalized VSLAM
+datastore under `.data/vslam-datastore/<dataset>/`. Build it from complete local
+raw dataset caches under `.data/advio/`, `.data/tum_rgbd/`, and `.data/record3d/`.
+
+Download all benchmark scenes:
+
+```bash
+uv run prml-vslam advio download
+uv run prml-vslam tum-rgbd download
+uv run prml-vslam record3d download
+```
+
+To limit a download, repeat `--sequence`. ADVIO uses numeric sequence ids,
+TUM RGB-D uses scene slugs, and Record3D uses zero-based catalog indices:
+
+```bash
+uv run prml-vslam advio download --sequence 15
+uv run prml-vslam tum-rgbd download --sequence freiburg3_large_cabinet
+uv run prml-vslam record3d download --sequence 0
+```
+
+Inspect raw cache and normalized coverage:
+
+```bash
+uv run prml-vslam advio summary
+uv run prml-vslam tum-rgbd summary
+uv run prml-vslam record3d summary
+```
+
+Build the full normalized benchmark datastore used by the full sweep files:
+
+```bash
+uv run prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml
+```
+
+The checked-in datastore config covers 50 benchmark sequences: 23 ADVIO, 19
+TUM RGB-D, and 8 Record3D scenes. It owns the normalize-time frame cadence,
+RGB resizing, and reference-cloud settings for each dataset group.
+
+Verify the built entries before running sweeps or dataset-backed pipelines:
+
+```bash
+uv run prml-vslam dataset summary --dataset advio
+uv run prml-vslam dataset summary --dataset tum_rgbd
+uv run prml-vslam dataset summary --dataset record3d
+```
+
+Use `--overwrite` on the dataset download commands only when refreshing cached
+archives intentionally. The default `--reuse` mode keeps already-downloaded
+archives and extracted scenes.
+
 ## Dataset × Method Sweep
 
 The sweep feature runs a cross-product of datasets and methods through the
@@ -355,11 +408,9 @@ uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-
 | `full-mast3r-sweep.toml` | MASt3R | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
 | `full-lingbot-sweep.toml` | LingBot | 50 (19 TUM + 23 ADVIO + 8 Record3D) |
 
-Build the normalized benchmark datastore before running the full sweeps:
-
-```bash
-uv run prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml
-```
+Build and verify the normalized benchmark datastore before running the full
+sweeps; see
+[Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore).
 
 ## Streamlit Workbench
 

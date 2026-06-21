@@ -293,14 +293,20 @@ def test_advio_summary_reports_normalized_entries_and_native_cache(monkeypatch) 
                 )
             ]
 
-    normalized = SimpleNamespace(model_dump=lambda *, mode: {"records": [{"sequence_id": "advio-15"}], "mode": mode})
+    normalized = SimpleNamespace(
+        dataset_id=DatasetId.ADVIO,
+        records=[SimpleNamespace(model_dump=lambda *, mode: {"sequence_id": "advio-15", "mode": mode})],
+        issues=[],
+        stats_df=pd.DataFrame(),
+        metadata_df=pd.DataFrame(),
+    )
     monkeypatch.setattr(main_module, "AdvioDatasetService", FakeService)
     monkeypatch.setattr(main_module, "query_normalized_dataset", lambda dataset_id, path_config: normalized)
 
     result = runner.invoke(app, ["advio", "summary"])
 
     assert result.exit_code == 0
-    assert "'normalized': {'records': [{'sequence_id': 'advio-15'}], 'mode': 'json'}" in result.stdout
+    assert "'sequence_id': 'advio-15'" in result.stdout
     assert "'native_cache':" in result.stdout
     assert "'sequence_ids': [15]" in result.stdout
     assert "'archive_sequence_ids': [15]" in result.stdout
