@@ -37,6 +37,7 @@ from prml_vslam.sources.replay import ImageSequenceObservationSource, Observatio
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import (
     depth_map_to_world_points,
+    poses_relative_to_first_pose,
     sample_point_cloud_random,
     write_point_cloud_ply,
     write_tum_trajectory,
@@ -151,7 +152,7 @@ class Record3DSequence(BaseData):
         sample = self.load_offline_sample()
         stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(sample.timestamps_ns)
         selected_frames = list(sample.frames[::stride])
-        normalized_poses_world_camera = _poses_relative_to_first_pose(sample.poses_world_camera)
+        normalized_poses_world_camera = poses_relative_to_first_pose(sample.poses_world_camera)
         output.mkdir(parents=True, exist_ok=True)
         trajectory_path = write_tum_trajectory(
             output / "record3d_arkit.tum",
@@ -414,20 +415,6 @@ class Record3DSequence(BaseData):
             native_frame=RECORD3D_WORLD_FRAME,
             coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         )
-
-
-def _poses_relative_to_first_pose(poses_world_camera: list[FrameTransform]) -> list[FrameTransform]:
-    if not poses_world_camera:
-        raise ValueError("Record3D benchmark materialization requires at least one camera pose.")
-    T_first_world = np.linalg.inv(poses_world_camera[0].as_matrix())
-    return [
-        FrameTransform.from_matrix(
-            T_first_world @ pose_world_camera.as_matrix(),
-            target_frame=pose_world_camera.target_frame,
-            source_frame=pose_world_camera.source_frame,
-        )
-        for pose_world_camera in poses_world_camera
-    ]
 
 
 def _write_depth_png(path: Path, depth_m: np.ndarray) -> None:

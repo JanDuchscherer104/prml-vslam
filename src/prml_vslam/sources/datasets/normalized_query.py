@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import pandas as pd
 
@@ -28,6 +28,7 @@ from prml_vslam.sources.datasets.normalized_store import (
     STATS_LONG_HEADER,
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
+    NormalizedSourceProfile,
     load_normalized_entry_metadata_table,
     load_normalized_entry_stats_table,
     normalized_entry_analysis_summary,
@@ -504,18 +505,19 @@ def _is_default_profile_entry(entry: NormalizedDatasetEntry, profile: Normalized
         return True
     if entry.dataset_id is not DatasetId.TUM_RGBD:
         return False
-    if entry.schema_version != 9 or entry.profile.get("schema_version") != 9:
+    if entry.schema_version != 9 or entry.profile.schema_version != 9:
         return False
-    selected = entry.profile.get("source_profile")
-    if not isinstance(selected, dict):
-        return False
-    selected = _legacy_default_profile_payload(dataset_id=entry.dataset_id, payload=selected)
-    requested = _legacy_default_profile_payload(dataset_id=entry.dataset_id, payload=profile.source_profile)
+    selected = _legacy_default_profile_payload(dataset_id=entry.dataset_id, profile=entry.profile.source_profile)
+    requested = _legacy_default_profile_payload(dataset_id=entry.dataset_id, profile=profile.source_profile)
     return selected == requested
 
 
-def _legacy_default_profile_payload(dataset_id: DatasetId, payload: dict[str, object]) -> dict[str, object]:
-    normalized = dict(payload)
+def _legacy_default_profile_payload(
+    *,
+    dataset_id: DatasetId,
+    profile: NormalizedSourceProfile,
+) -> dict[str, Any]:
+    normalized = profile.as_dict()
     normalized.pop("frame_stride", None)
     normalized.pop("target_fps", None)
     return normalized
@@ -524,11 +526,7 @@ def _legacy_default_profile_payload(dataset_id: DatasetId, payload: dict[str, ob
 def _is_query_visible_entry(entry: NormalizedDatasetEntry) -> bool:
     if entry.dataset_id is not DatasetId.ADVIO:
         return True
-    source_profile = entry.profile.get("source_profile")
-    return (
-        isinstance(source_profile, dict)
-        and source_profile.get("trajectory_convention") == ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
-    )
+    return entry.profile.source_profile.trajectory_convention == ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
 
 
 def _sequence_label(service: _SceneLookup, sequence_id: str) -> str:
@@ -542,9 +540,8 @@ def _sequence_label(service: _SceneLookup, sequence_id: str) -> str:
 def _advio_pose_source(entry: NormalizedDatasetEntry) -> AdvioPoseSource | None:
     if entry.dataset_id is not DatasetId.ADVIO:
         return None
-    source_profile = entry.profile.get("source_profile", {})
-    serving = source_profile.get("dataset_serving", {}) if isinstance(source_profile, dict) else {}
-    pose_source = serving.get("pose_source") if isinstance(serving, dict) else None
+    serving = entry.profile.source_profile.dataset_serving
+    pose_source = serving.get("pose_source")
     try:
         return AdvioPoseSource(pose_source) if pose_source is not None else AdvioPoseSource.GROUND_TRUTH
     except ValueError:
