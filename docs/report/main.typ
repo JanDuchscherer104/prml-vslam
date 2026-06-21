@@ -1,4 +1,7 @@
 #import "charged_ieee_local.typ": ieee
+#import "@preview/booktabs:0.0.4": *
+
+#show: booktabs-default-table-style
 
 #let hm_author(name, email: none) = if email == none {
   (name: name)
@@ -15,25 +18,34 @@
 #show: ieee.with(
   title: [Uncalibrated Monocular VSLAM for Smartphone Video Benchmarking],
   authors: (
-    hm_author("Florian Beck"),
-    hm_author("Valentin Bumeder"),
+    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
     hm_author("Lukas Röß"),
     hm_author("Christopher Kirschner"),
-    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
+    hm_author("Valentin Bumeder"),
+    hm_author("Florian Beck"),
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
-    This report documents the project scaffold, evaluation protocol, and benchmark plan for
-    uncalibrated monocular VSLAM on smartphone video. The focus is on comparing modern methods,
-    handling unknown intrinsics, and evaluating both trajectory quality and dense reconstruction
-    quality against public and custom datasets.
+    We present a benchmark framework for off-device uncalibrated monocular visual simultaneous
+    localization and mapping (VSLAM) on smartphone video. The framework addresses a practical
+    reproducibility gap: recent learned dense SLAM methods can process monocular image streams with
+    weak or absent calibration assumptions, but their outputs are difficult to compare unless data
+    ingestion, coordinate frames, scale alignment, dense geometry, and provenance are made explicit.
+    The system normalizes ADVIO, TUM RGB-D, and Record3D sources into a common observation contract,
+    integrates ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map through method adapters, and persists the
+    artifacts needed to interpret trajectories and point clouds. The paper therefore contributes a
+    framework description rather than a leaderboard: it specifies source and method contracts,
+    transform semantics, similarity and gravity-aware alignment, local point-cloud registration, and
+    the validation gates required before quantitative results are reported.
   ],
   index-terms: (
     "VSLAM",
     "monocular SLAM",
+    "visual odometry",
+    "benchmarking",
+    "similarity alignment",
+    "dataset normalization",
     "dense reconstruction",
-    "trajectory evaluation",
-    "ADVIO",
   ),
   bibliography: bibliography("../references.bib"),
   figure-supplement: [Fig.],
@@ -49,3 +61,4 @@
 #include "sections/07-experiments.typ"
 #include "sections/08-discussion.typ"
 #include "sections/09-conclusion.typ"
+#include "sections/10-appendix-workpackages.typ"
