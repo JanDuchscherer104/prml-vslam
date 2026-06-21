@@ -200,13 +200,158 @@ unset VIRTUAL_ENV
 export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
-mkdir -p external
-git clone https://github.com/Robbyant/lingbot-map.git external/lingbot-map
+git submodule update --init --recursive external/lingbot-map
 uv sync --extra lingbot
 mkdir -p external/lingbot-map/checkpoints
 curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
   -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
+
+## Dataset × Method Sweep
+
+The sweep feature runs a cross-product of datasets and methods through the
+existing single-run pipeline, writing local artifacts only.  No aggregation,
+dashboards, or W&B integration are included.
+
+### Sweep TOML
+
+A sweep is described by a single TOML file with three sections:
+
+```toml
+[sweep]
+name       = "vista-vs-mast3r"   # prefix for all run IDs
+output_dir = ".artifacts/sweeps" # shared artifact root
+
+# One [[datasets]] block per dataset/sequence combination.
+[[datasets]]
+dataset_id          = "tum_rgbd"              # "tum_rgbd" | "advio"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 1
+baseline_source     = "ground_truth"          # ReferenceSource enum value
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+reconstruction      = false
+align_cloud         = false
+evaluate_cloud      = false
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# One [methods.<id>] block per SLAM method.
+# Only [stages.slam] is read from each template; all other sections are ignored.
+[methods.vista]
+config_path = ".configs/templates/vista-slam.toml"
+
+[methods.mast3r]
+config_path = ".configs/templates/mast3r-slam.toml"
+```
+
+Run IDs are derived deterministically:
+`{sweep.name}-{dataset_id}-{sequence_id}-{method_id}`
+
+### Method Templates
+
+A method template is a standard pipeline TOML that must contain
+`[stages.slam]`.  All other sections are silently ignored by the sweep loader.
+
+```toml
+# .configs/templates/vista-slam.toml
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "vista"
+    max_frames  = 50
+    random_seed = 43
+```
+
+Ready-to-use templates live in `.configs/templates/`.
+
+### CLI Commands
+
+Inspect the expanded plan without executing (no GPU required, works for any sweep):
+
+```bash
+uv run prml-vslam plan-sweep-config .configs/sweeps/<sweep>.toml
+```
+
+Each run writes its own timestamped log under `.logs/runs/<run-id>/` and its
+artifacts under `[sweep].output_dir`.  Artifacts from summary stages under
+`summary/run-events.jsonl` remain the only source of truth for downstream query
+and aggregation.  Sweep artifacts are discovered automatically by the Streamlit
+app via its recursive artifact scan.
+
+### ViSTA sweeps
+
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml
+
+# All 40 sequences
+uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/full-vista-sweep.toml \
+    --continue-on-failure
+```
+
+### MASt3R sweeps
+
+Requires a separate install (conflicts with `vista` and `lingbot`):
+
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv sync --extra dev --extra streaming --extra mast3r
+
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/example-mast3r-sweep.toml
+
+# All 40 sequences
+uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/full-mast3r-sweep.toml \
+    --continue-on-failure
+```
+
+### LingBot sweeps
+
+Requires a separate install (conflicts with `vista` and `mast3r`).  LingBot is
+trained within ~320 direct-mode views; the sweep files use higher frame strides
+(TUM ×5, ADVIO ×10) to stay within that range.
+
+```bash
+mamba activate prml-vslam
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv sync --extra dev --extra streaming --extra lingbot
+
+# 4-sequence example (2 TUM + 2 ADVIO)
+uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/example-lingbot-sweep.toml
+
+# All 40 sequences
+uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-sweep.toml \
+    --continue-on-failure
+```
+
+### Sweep file reference
+
+| File | Method | Sequences |
+|---|---|---|
+| `example-vista-sweep.toml` | ViSTA | 4 (2 TUM + 2 ADVIO) |
+| `example-mast3r-sweep.toml` | MASt3R | 4 (2 TUM + 2 ADVIO) |
+| `example-lingbot-sweep.toml` | LingBot | 4 (2 TUM + 2 ADVIO) |
+| `full-vista-sweep.toml` | ViSTA | 40 (all TUM + all ADVIO) |
+| `full-mast3r-sweep.toml` | MASt3R | 40 (all TUM + all ADVIO) |
+| `full-lingbot-sweep.toml` | LingBot | 40 (all TUM + all ADVIO) |
 
 ## Streamlit Workbench
 

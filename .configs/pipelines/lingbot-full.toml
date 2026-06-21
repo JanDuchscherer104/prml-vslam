@@ -1,11 +1,9 @@
 # Main LingBot-Map benchmark configuration
 # ----------------------------------------
-# This config favors the upstream/paper default quality path over the smaller
-# GPU-survival smoke settings while fitting the local 12 GB RTX 3080 Ti SDPA
-# path. It keeps the TUM cabinet sequence inside LingBot's 320-frame
-# direct-mode training range after source sampling.
+# This config is the full-scene TUM cabinet LingBot quality profile using
+# LingBot's manifest-native path preprocessing.
 
-experiment_name          = "lingbot-tum-cabinet-full"
+experiment_name          = "lingbot-freiburg3-large-cabinet"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -14,14 +12,10 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id   = "tum_rgbd"
-    sequence_id = "freiburg3_large_cabinet"
-    # LingBot is trained/evaluated most directly within roughly 320 direct-mode
-    # views. The cabinet subset has about 1000 RGB frames, so stride 5 keeps
-    # this benchmark near 200 processed frames while preserving
-    # the same dataset and normalized source artifacts.
-    frame_stride = 5
+    source_id    = "tum_rgbd"
+    sequence_id  = "freiburg3_large_cabinet"
     replay_mode  = "fast_as_possible"
+    frame_stride = 3
 
 [stages.slam]
 enabled  = true
@@ -50,13 +44,11 @@ sampling_interval_ms    = 1000
     # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
     device = "cuda"
 
-    # Upstream calls Direct Output Mode "streaming": frames are processed
-    # causally with anchor context, trajectory memory, and a local pose window.
-    mode = "streaming"
+    # Windowed inference bounds GPU residency for long scenes.
+    mode = "windowed"
 
-    # Upstream/paper default input width is 518, but the local SDPA path OOMs
-    # at that size on the 12 GB RTX 3080 Ti. Use 392 as the highest practical
-    # fit candidate so far.
+    # 392 is the best full-run trajectory profile found so far on the local
+    # 12 GB RTX 3080 Ti FlashInfer path.
     image_size = 392
 
     # DINO/GCT patch size. Keep at 14 so the processed raster remains
@@ -66,8 +58,8 @@ sampling_interval_ms    = 1000
     # LingBot's video RoPE is part of the long-range geometric context model.
     enable_3d_rope = true
 
-    # Model's configured frame-position capacity. This matches upstream default
-    # and is safely above the source-strided cabinet benchmark frame count.
+    # Windowed inference operates within per-window frame spans; keep upstream
+    # default temporal capacity without sizing FlashInfer caches to all frames.
     max_frame_num = 1024
 
     # Number of bidirectional anchor/scale frames. The paper default is 8, but
@@ -78,13 +70,12 @@ sampling_interval_ms    = 1000
     # Local pose-reference window size k. Paper and upstream benchmark use 64.
     kv_cache_sliding_window = 64
 
-    # Keep every second processed frame in the KV cache while still producing a
-    # pose/depth prediction for every processed frame. This keeps FlashInfer
-    # trajectory metrics comparable to the local SDPA reference on TUM cabinet.
-    keyframe_interval = 2
+    # Let upstream bound retained keyframes for the selected sequence length.
+    # This is required for the accepted windowed benchmark profile.
+    keyframe_interval = "auto"
 
-    # Use LingBot's FlashInfer backend. The repo worktree helper exposes the
-    # mamba CUDA driver stub to FlashInfer's JIT linker.
+    # Use LingBot's FlashInfer backend. Run from the prml-vslam mamba env so
+    # FlashInfer can see the CUDA compiler and driver stubs.
     use_sdpa = false
 
     # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
@@ -98,6 +89,10 @@ sampling_interval_ms    = 1000
     # Required when using the RTX 3080 Ti fit width instead of the checkpoint's
     # native 518-wide grid.
     checkpoint_pos_embed = "interpolate"
+
+    # Windowed fallback parameters for long-scene robustness.
+    window_size       = 128
+    overlap_keyframes = 8
 
     # Camera-head iterative refinement steps. Upstream default is 4; lowering to
     # 1 is a speed-only tradeoff that costs pose accuracy.

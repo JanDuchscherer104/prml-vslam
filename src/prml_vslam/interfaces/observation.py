@@ -21,8 +21,8 @@ from prml_vslam.utils import BaseData
 from .camera import CameraIntrinsics
 from .transforms import FrameTransform
 
-OBSERVATION_SEQUENCE_FORMAT = "observation_sequence.v1"
-CAMERA_RDF_FRAME = "camera_rdf"
+OBSERVATION_SEQUENCE_FORMAT: Literal["observation_sequence.v1"] = "observation_sequence.v1"
+CAMERA_RDF_FRAME: Literal["camera_rdf"] = "camera_rdf"
 
 
 class ObservationProvenance(BaseData):
@@ -69,6 +69,9 @@ class Observation(BaseData):
     loop_index: int = Field(default=0, ge=0)
     arrival_timestamp_s: float | None = None
     camera_frame: Literal["camera_rdf"] = CAMERA_RDF_FRAME
+
+    rgb_path: Path | None = None
+    """Optional normalized RGB payload path for file-backed observations."""
 
     rgb: NDArray[np.uint8] | None = None
     depth_m: NDArray[np.float32] | None = None

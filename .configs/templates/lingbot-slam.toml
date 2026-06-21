@@ -1,0 +1,69 @@
+# LingBot-Map method template for the sweep runner.
+#
+# IMPORTANT: Only [stages.slam] is read by the sweeper.  All other sections
+# (source, alignment, evaluation, reconstruction, visualization) are ignored.
+# Dataset selection, baseline policy, and downstream stage enablement are
+# controlled by the [[datasets]] entries in the sweep TOML.
+#
+# NOTE: LingBot requires the lingbot extra and submodule:
+#   uv sync --extra dev --extra lingbot
+# The two GPU extras (vista, mast3r, lingbot) conflict — run each in a
+# dedicated environment or install separately.
+#
+# NOTE: emit_sparse_points must be false; LingBot does not expose a separate
+# sparse point-cloud artifact.
+#
+# NOTE: LingBot is trained within ~320 direct-mode views. For sequences with
+# many frames, use frame_stride in the sweep [[datasets]] entry to stay within
+# that range (e.g. frame_stride = 5 keeps ~200 frames from the TUM cabinet).
+#
+# Run one-off (outside a sweep):
+#   uv run --extra lingbot prml-vslam run-config .configs/pipelines/lingbot-full.toml
+
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+affinity = "gpu-node"
+
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id = "lingbot_map"
+
+    checkpoint_path = "external/lingbot-map/checkpoints/lingbot-map.pt"
+
+    device = "cuda"
+    mode   = "streaming"
+
+    # 392 is the highest width that fits a 12 GB RTX 3080 Ti on the SDPA path.
+    # Raise to 518 (paper default) if your GPU has more VRAM.
+    image_size           = 392
+    patch_size           = 14
+    checkpoint_pos_embed = "interpolate"
+
+    enable_3d_rope  = true
+    max_frame_num   = 1024
+    num_scale_frames = 2
+
+    kv_cache_sliding_window = 64
+    keyframe_interval       = 2
+
+    use_sdpa   = false
+    use_amp    = true
+    model_dtype = "auto"
+
+    camera_num_iterations = 4
+    enable_point_head     = false
+
+    confidence_threshold = 0.5
+    point_stride         = 4
+    max_points           = 200000
+    max_depth_m          = 100.0
