@@ -111,8 +111,8 @@ The current ADVIO-specific manifest payload DTOs are:
 - `AdvioManifestAssets`
   - parsed intrinsics
   - parsed `T_cam_imu`
-  - selected/raw pose refs
-  - fixpoints ref
+  - optional selected/raw pose refs before normalized-store publication
+  - optional fixpoints ref before normalized-store publication
 - `AdvioRawPoseRefs`
   - GT, ARCore, ARKit, and selected provider pose paths when present
 
@@ -222,13 +222,19 @@ keeping the same file-backed contract as TUM RGB-D and Record3D, ADVIO defaults
 to a method-neutral cache raster with maximum width 392 px and dimensions rounded
 to multiples of 14; intrinsics are scaled to that stored raster.
 
-ADVIO benchmark trajectories are persisted in the dataset-owned benchmark frame
-prepared by `AdvioSequence`. In particular, GT-aligned ARCore/ARKit trajectories
-keep the similarity alignment transform written by the ADVIO adapter instead of
-being independently rebased to each trajectory's first pose during normalized
-store publication. The ADVIO normalized profile includes the trajectory
-convention so stale entries created with the older first-pose-rebased behavior
-are treated as rebuild-required.
+ADVIO datastore entries publish RDF local-first-pose trajectories. Raw ADVIO
+poses are first converted with the dataset adapter's `(x, y, z) -> (z, -y, x)`
+basis, then `NormalizedDatasetStore` rebases persisted source-native GT,
+ARCore, and ARKit trajectories to their own first pose and labels them with
+`*_local_first_pose` frames. ARCore/ARKit source-native trajectories are both
+reference trajectories for baseline lookup and candidate trajectories for
+benchmarking. Post-normalization `*_aligned_to_gt.tum` overlays are diagnostic
+reference trajectories only and are never benchmark candidates. Normalized ADVIO
+manifests keep calibration/intrinsics but set raw pose refs and fixpoints to
+`None`; raw ADVIO pose/fixpoint CSV sidecars are invalid under a normalized
+datastore entry. The ADVIO normalized profile convention is
+`local_first_pose_rdf_v1`, and older or missing conventions are treated as
+rebuild-required instead of compatible defaults.
 
 New entries use canonical roots only: source inputs under `<entry>/input/`,
 reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 from dataclasses import dataclass
 from hashlib import sha256
@@ -429,7 +430,6 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert not (tmp_path / ".data" / "record3d" / ".normalized").exists()
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
-    assert observation_ref["rgb_video_path"] is None
     assert not (entry.root / "observations" / "rgb.mp4").exists()
     assert (entry.root / "observations" / "rgb").is_dir()
     assert (entry.root / "observations" / "depth").is_dir()
@@ -474,7 +474,6 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert observations[0].intrinsics.width_px == observations[0].rgb.shape[1]
     assert observations[0].intrinsics.height_px == observations[0].rgb.shape[0]
     assert observation_index["rows"][0]["rgb_path"] == "rgb/000000.png"
-    assert observation_index["rows"][0]["rgb_video_frame_index"] is None
     assert observation_index["rows"][0]["provenance"]["raster_space"] == "display_downscaled"
     assert observation_index["rows"][0]["provenance"]["original_width"] == 4
     assert observation_index["rows"][0]["provenance"]["original_height"] == 4
@@ -490,14 +489,14 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert observations[0].depth_m[1, 1] == pytest.approx(1.0, abs=0.0005)
     assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
-    assert stats[("reference_trajectory", "arkit/aligned", "ego_motion_class")] == "low_curvature"
+    assert ("reference_trajectory", "arkit/aligned", "ego_motion_class") not in stats
     cloud_metadata = json.loads(Path(benchmark_inputs["reference_clouds"][0]["metadata_path"]).read_text())
     points_xyz, _ = load_point_cloud_ply_with_colors(Path(benchmark_inputs["reference_clouds"][0]["path"]))
     assert cloud_metadata["coordinate_origin"] == "first_pose"
     assert cloud_metadata["coordinate_normalization"] == "relative_to_first_pose"
     assert points_xyz[:, 0].min() > -1.0
     assert points_xyz[:, 0].max() < 4.0
-    assert records[0]["schema_version"] == 9
+    assert records[0]["schema_version"] == 10
     assert "sequence_id" not in records[0]["profile"]["source_profile"]
     assert "source_id" not in records[0]["profile"]["source_profile"]
 
@@ -532,8 +531,8 @@ def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) 
     entry = fixture.entry
     entry_path = entry.root / "entry.json"
     stale_payload = json.loads(entry_path.read_text(encoding="utf-8"))
-    stale_payload["schema_version"] = 1
-    stale_payload["profile"]["schema_version"] = 1
+    stale_payload["schema_version"] = 9
+    stale_payload["profile"]["schema_version"] = 9
     entry_path.write_text(json.dumps(stale_payload), encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="schema_version"):
@@ -543,6 +542,22 @@ def test_record3d_normalized_store_rejects_stale_schema_entries(tmp_path: Path) 
     assert len(issues) == 1
     assert issues[0].status == "stale_schema"
     assert issues[0].sequence_id == "synthetic"
+
+
+def test_normalized_store_ignores_superseded_stale_schema_entries(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    stale_root = fixture.entry.root.parent / "legacy-profile"
+    shutil.copytree(fixture.entry.root, stale_root)
+    entry_path = stale_root / "entry.json"
+    stale_payload = json.loads(entry_path.read_text(encoding="utf-8"))
+    stale_payload["schema_version"] = 9
+    stale_payload["profile_key"] = stale_root.name
+    stale_payload["root"] = stale_root.as_posix()
+    stale_payload["profile"]["schema_version"] = 9
+    entry_path.write_text(json.dumps(stale_payload), encoding="utf-8")
+
+    assert fixture.store.summary(strict=False) == [fixture.entry]
+    assert fixture.store.issues() == []
 
 
 def test_normalized_store_resolves_sampling_only_profile_mismatch_with_warning(tmp_path: Path) -> None:

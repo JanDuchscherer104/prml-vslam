@@ -14,13 +14,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from prml_vslam.interfaces import (
-    Observation,
-    ObservationIndexEntry,
-    ObservationSequenceIndex,
-    ObservationSequenceRef,
-)
-from prml_vslam.sources.replay.video import iter_rgb_video_frames
+from prml_vslam.interfaces import Observation, ObservationSequenceIndex, ObservationSequenceRef
 
 
 class FileObservationSequenceLoader:
@@ -47,11 +41,8 @@ class FileObservationSequenceLoader:
         """
         index = load_observation_sequence_index(self._sequence_ref.index_path)
         _validate_index_matches_ref(index, self._sequence_ref)
-        video_frames = _video_frames_by_row(index.rows, self._sequence_ref)
         for row in index.rows:
-            image_rgb = video_frames.get(row.seq)
-            if image_rgb is None and row.rgb_path is not None:
-                image_rgb = _load_rgb(_resolve_payload(row.rgb_path, self._sequence_ref))
+            image_rgb = None if row.rgb_path is None else _load_rgb(_resolve_payload(row.rgb_path, self._sequence_ref))
             if row.depth_path is None:
                 raise ValueError(f"Observation seq={row.seq} is missing a depth payload.")
             depth_map_m = _load_depth(_resolve_payload(row.depth_path, self._sequence_ref)) * row.depth_scale_to_m
@@ -91,25 +82,6 @@ def _validate_index_matches_ref(index: ObservationSequenceIndex, ref: Observatio
             f"Observation index observation_count={index.observation_count} does not match ref "
             f"observation_count={ref.observation_count}."
         )
-    if ref.rgb_video_path is None and any(row.rgb_path is None for row in index.rows):
-        raise ValueError("Observation rows without rgb_path require ObservationSequenceRef.rgb_video_path.")
-
-
-def _video_frames_by_row(
-    rows: list[ObservationIndexEntry],
-    ref: ObservationSequenceRef,
-) -> dict[int, np.ndarray]:
-    if ref.rgb_video_path is None:
-        return {}
-    video_path = _resolve_payload(ref.rgb_video_path, ref)
-    frame_indices = [row.rgb_video_frame_index if row.rgb_video_frame_index is not None else row.seq for row in rows]
-    frames = list(iter_rgb_video_frames(video_path, frame_indices))
-    if len(frames) != len(frame_indices):
-        raise RuntimeError(
-            f"Video observation payload '{video_path}' yielded {len(frames)} frame(s) for "
-            f"{len(frame_indices)} observation row(s)."
-        )
-    return {row.seq: frame for row, frame in zip(rows, frames, strict=True)}
 
 
 def _resolve_payload(path: Path, ref: ObservationSequenceRef) -> Path:

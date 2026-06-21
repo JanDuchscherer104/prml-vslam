@@ -12,7 +12,7 @@ import pytest
 
 import prml_vslam.sources.replay.video as replay_video_module
 from prml_vslam.interfaces import ObservationSequenceIndex
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, normalized_profile_for_source_config
 from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceSource,
@@ -41,8 +41,10 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION, DatasetId
 from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
+from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, normalized_store_for_path_config
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
@@ -609,7 +611,6 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
     stream.disconnect()
 
     assert observation_ref["raster_space"] == "display_downscaled"
-    assert observation_ref["rgb_video_path"] is None
     assert sequence_manifest.get("video_path") is None
     assert sequence_manifest["rgb_dir"] == (entry.root / "observations" / "rgb").as_posix()
     assert observation_index.raster_space == "display_downscaled"
@@ -632,23 +633,50 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
     )
     assert (
         benchmark_inputs["reference_trajectories"][2]["path"]
-        == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
+        == (entry.root / "benchmark" / "trajectories" / "arkit.tum").as_posix()
     )
     assert (
-        benchmark_inputs["candidate_trajectories"][1]["path"]
+        benchmark_inputs["reference_trajectories"][3]["path"]
         == (entry.root / "benchmark" / "trajectories" / "arcore_aligned_to_gt.tum").as_posix()
     )
-    for trajectory_ref in [
-        *benchmark_inputs["reference_trajectories"],
-        *benchmark_inputs["candidate_trajectories"],
-    ]:
+    assert [trajectory["path"] for trajectory in benchmark_inputs["candidate_trajectories"]] == [
+        (entry.root / "benchmark" / "trajectories" / "arcore.tum").as_posix(),
+        (entry.root / "benchmark" / "trajectories" / "arkit.tum").as_posix(),
+    ]
+    assert all("aligned_to_gt" not in trajectory["path"] for trajectory in benchmark_inputs["candidate_trajectories"])
+    assert sequence_manifest["dataset_serving"]["pose_frame_mode"] == "local_first_pose"
+    assert sequence_manifest["advio"]["pose_refs"] is None
+    assert sequence_manifest["advio"]["fixpoints_csv_path"] is None
+    assert not any(
+        path.name in {"ground_truth_pose.csv", "arcore.csv", "arkit.csv", "selected_pose.csv", "fixpoints.csv"}
+        for path in entry.root.rglob("*.csv")
+    )
+    source_native_frames = {
+        "ground_truth": "advio_gt_world_local_first_pose",
+        "arcore": "advio_arcore_world_local_first_pose",
+        "arkit": "advio_arkit_world_local_first_pose",
+    }
+    for trajectory_ref in benchmark_inputs["reference_trajectories"]:
         trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
         trajectory_metadata = json.loads(Path(trajectory_ref["metadata_path"]).read_text())
-        np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
         assert trajectory_metadata["trajectory_origin"] == "first_pose"
         assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
+        if trajectory_ref["coordinate_status"] == "source_native":
+            assert np.allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+            assert trajectory_ref["target_frame"] == source_native_frames[trajectory_ref["source"]]
+            assert trajectory_ref["native_frame"] == source_native_frames[trajectory_ref["source"]]
+        else:
+            assert trajectory_ref["target_frame"] == "advio_gt_world_local_first_pose"
+            assert trajectory_ref["native_frame"] == source_native_frames[trajectory_ref["source"]]
+            assert trajectory_metadata["alignment"]["matched_pairs"] >= 3
+    for trajectory_ref in benchmark_inputs["candidate_trajectories"]:
+        trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
+        assert np.allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+        assert trajectory_ref["coordinate_status"] == "source_native"
     assert observation_index.rows[0].rgb_path == Path("rgb/000000.png")
-    assert observation_index.rows[0].rgb_video_frame_index is None
+    assert observation_index.world_frame == "advio_gt_world_local_first_pose"
+    assert observation_index.rows[0].T_world_camera is not None
+    assert observation_index.rows[0].T_world_camera.tx == pytest.approx(0.0, abs=1e-9)
     assert (entry.root / "observations" / observation_index.rows[0].rgb_path).is_file()
     assert observation_index.rows[0].provenance.source_frame_index == 0
     assert observation_index.rows[0].provenance.raster_space == "display_downscaled"
@@ -664,6 +692,34 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
     assert packet.intrinsics.height_px == 56
     assert packet.source_frame_index == 0
     assert packet.provenance.source_frame_index == 0
+    assert packet.T_world_camera is not None
+    assert packet.T_world_camera.tx == pytest.approx(0.0, abs=1e-9)
+
+
+def test_advio_normalized_entry_rejects_raw_sidecars_under_entry_root(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15")
+    entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=source_config,
+    )
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+    rogue_sidecar = entry.root / "input" / "advio" / "arcore.csv"
+    rogue_sidecar.parent.mkdir(parents=True, exist_ok=True)
+    rogue_sidecar.write_text("0.0,1.0,2.0,3.0,1.0,0.0,0.0,0.0\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="must not persist raw pose or fixpoint sidecars"):
+        normalized_store_for_path_config(DatasetId.ADVIO, path_config).load_entry(profile)
 
 
 def test_advio_normalization_target_fps_changes_profile_and_observation_count(tmp_path: Path) -> None:
@@ -693,6 +749,57 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     assert sampled_entry.profile_key != full_entry.profile_key
     assert sampled_index.observation_count == 2
     assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
+
+
+def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15")
+    legacy_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+    legacy_profile = NormalizedDatasetProfile(
+        dataset_id=legacy_profile.dataset_id,
+        sequence_id=legacy_profile.sequence_id,
+        source_id=legacy_profile.source_id,
+        source_profile={
+            key: value for key, value in legacy_profile.source_profile.items() if key != "trajectory_convention"
+        },
+    )
+    store = normalized_store_for_path_config(DatasetId.ADVIO, path_config)
+    legacy_entry = store.create_entry_from_source(
+        profile=legacy_profile,
+        source=service._build_raw_streaming_source(
+            sequence_id=15,
+            frame_selection=source_config,
+            replay_mode=source_config.replay_mode,
+            dataset_serving=source_config.dataset_serving,
+            rgb_max_width_px=source_config.rgb_max_width_px,
+            rgb_dimension_multiple=source_config.rgb_dimension_multiple,
+        ),
+    )
+    current_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+
+    assert legacy_entry.root.exists()
+    assert current_profile.profile_key != legacy_profile.profile_key
+    assert current_profile.source_profile["trajectory_convention"] == ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+    with pytest.raises(FileNotFoundError, match="compatible profiles differ"):
+        store.resolve_entry(current_profile)
+
+    query = query_normalized_dataset(DatasetId.ADVIO, path_config)
+    assert query.records == []
+    assert query.default_records == []
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:

@@ -14,6 +14,9 @@ from typing import Any, Protocol, cast
 import cv2
 import numpy as np
 import pandas as pd  # type: ignore[import-untyped]
+from evo.core import geometry, sync
+from evo.core.trajectory import PoseTrajectory3D
+from evo.tools import file_interface
 from pydantic import AliasChoices, BaseModel, Field
 
 from prml_vslam.interfaces import (
@@ -24,24 +27,25 @@ from prml_vslam.interfaces import (
 )
 from prml_vslam.sources.contracts import (
     AdvioManifestAssets,
-    AdvioRawPoseRefs,
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
     ReferenceCloudRef,
+    ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
-from prml_vslam.sources.replay import (
-    ImageSequenceObservationSource,
-    ObservationStream,
-    ReplayMode,
-    VideoSequenceObservationSource,
-)
+from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
 from prml_vslam.utils import BaseData, JsonObject, JsonValue, PathConfig
-from prml_vslam.utils.geometry import load_tum_trajectory, trajectory_relative_to_first_pose, write_tum_trajectory
+from prml_vslam.utils.geometry import (
+    apply_similarity_to_trajectory,
+    load_tum_trajectory,
+    trajectory_relative_to_first_pose,
+    write_tum_trajectory,
+    yaw_similarity_align,
+)
 from prml_vslam.utils.serialization import stable_hash, write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
@@ -62,7 +66,16 @@ STATS_LONG_HEADER = (
     "unit",
 )
 METADATA_LONG_HEADER = ("dataset_id", "sequence_id", "profile_key", "source_id", "scope", "key", "value")
-STORE_SCHEMA_VERSION = 9
+STORE_SCHEMA_VERSION = 10
+_ADVIO_ALIGN_MAX_DIFF_S = 0.01
+_ADVIO_ALIGN_MIN_PAIRS = 3
+_ADVIO_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+_ADVIO_GT_LOCAL_FIRST_POSE_FRAME = "advio_gt_world_local_first_pose"
+_ADVIO_LOCAL_FIRST_POSE_FRAMES = {
+    ReferenceSource.GROUND_TRUTH: _ADVIO_GT_LOCAL_FIRST_POSE_FRAME,
+    ReferenceSource.ARCORE: "advio_arcore_world_local_first_pose",
+    ReferenceSource.ARKIT: "advio_arkit_world_local_first_pose",
+}
 
 
 class NormalizedDatasetProfile(BaseData):
@@ -409,16 +422,6 @@ class NormalizedDatasetStore:
         if sequence_ref is None:
             raise RuntimeError("The normalized dataset entry does not include a replayable observation sequence.")
         index = load_observation_sequence_index(sequence_ref.index_path)
-        if sequence_ref.rgb_video_path is not None:
-            return VideoSequenceObservationSource(
-                video_path=sequence_ref.rgb_video_path,
-                payload_root=sequence_ref.payload_root,
-                rows=index.rows,
-                loop=loop,
-                replay_mode=replay_mode,
-                include_depth=include_depth,
-                depth_loader=load_depth_array,
-            )
         return ImageSequenceObservationSource(
             sequence_dir=sequence_ref.payload_root,
             rows=index.rows,
@@ -437,11 +440,14 @@ class NormalizedDatasetStore:
         if not self.store_root.exists():
             return []
         issues: list[NormalizedDatasetStoreIssue] = []
+        usable_identities = {(entry.sequence_id, entry.source_id) for entry in self._scan_entries(strict=False)}
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
                 profile = NormalizedDatasetProfile.model_validate(entry.profile)
-                if _is_stale_schema(entry, profile):
+                if not _is_read_compatible_schema(entry, profile):
+                    if (entry.sequence_id, entry.source_id) in usable_identities:
+                        continue
                     issues.append(
                         _stale_schema_issue(
                             dataset_id=self.dataset_id, entry=entry, profile=profile, entry_path=entry_path
@@ -462,7 +468,7 @@ class NormalizedDatasetStore:
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
                 profile = NormalizedDatasetProfile.model_validate(entry.profile)
-                if _is_stale_schema(entry, profile):
+                if not _is_read_compatible_schema(entry, profile):
                     continue
                 self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
                 self._validate_entry_payloads(entry)
@@ -491,7 +497,7 @@ class NormalizedDatasetStore:
                 f"Normalized entry dataset_id does not belong to store '{self.dataset_id.value}': "
                 f"entry={entry.dataset_id.value}, profile={profile.dataset_id.value}."
             )
-        if entry.schema_version != STORE_SCHEMA_VERSION or profile.schema_version != STORE_SCHEMA_VERSION:
+        if not _is_read_compatible_schema(entry, profile):
             raise RuntimeError(
                 "Normalized entry schema_version does not match the current store schema: "
                 f"entry={entry.schema_version}, profile={profile.schema_version}, expected={STORE_SCHEMA_VERSION}."
@@ -608,16 +614,20 @@ class NormalizedDatasetStore:
         *,
         root: Path,
     ) -> PreparedBenchmarkInputs:
+        if self.dataset_id is DatasetId.ADVIO:
+            return _normalize_advio_benchmark_inputs(benchmark_inputs, root=root)
         trajectory_copies: dict[Path, Path] = {}
         reference_trajectories = _normalize_reference_trajectories(
             benchmark_inputs.reference_trajectories,
             target_root=root / "benchmark" / "trajectories",
             copies=trajectory_copies,
+            relative_to_first_pose=True,
         )
         candidate_trajectories = _normalize_reference_trajectories(
             benchmark_inputs.candidate_trajectories,
             target_root=root / "benchmark" / "trajectories",
             copies=trajectory_copies,
+            relative_to_first_pose=True,
         )
         reference_clouds = _normalize_reference_clouds(
             benchmark_inputs.reference_clouds,
@@ -822,15 +832,6 @@ def _entry_metadata_rows(
         rows.append(
             _metadata_row(profile, scope="observation_sequence", key="payload_root", value=ref.payload_root.as_posix())
         )
-        if ref.rgb_video_path is not None:
-            rows.append(
-                _metadata_row(
-                    profile,
-                    scope="observation_sequence",
-                    key="rgb_video_path",
-                    value=ref.rgb_video_path.as_posix(),
-                )
-            )
     return rows
 
 
@@ -888,12 +889,7 @@ def _observation_sequence_stats_rows(
         subject=ref.source_id,
         values={
             "observation_frame_count": (frame_count, "count"),
-            "rgb_frame_count": (
-                frame_count
-                if ref.rgb_video_path is not None
-                else sum(1 for row in index.rows if row.rgb_path is not None),
-                "count",
-            ),
+            "rgb_frame_count": (sum(1 for row in index.rows if row.rgb_path is not None), "count"),
             "depth_frame_count": (depth_count, "count"),
             "depth_coverage_ratio": (0.0 if frame_count == 0 else depth_count / frame_count, "ratio"),
             "observation_duration_s": (duration_s, "s"),
@@ -940,7 +936,6 @@ def _trajectory_stats_rows(
                 "rad/s",
             ),
             "trajectory_mean_curvature_rad_m": (curvature_rad_m, "rad/m"),
-            "ego_motion_class": (_ego_motion_class(pose_count, duration_s, path_length_m, curvature_rad_m), "class"),
         },
     )
 
@@ -954,18 +949,6 @@ def _tangent_angle_sum_rad(positions: np.ndarray) -> float:
     unit = valid / np.linalg.norm(valid, axis=1, keepdims=True)
     dots = np.sum(unit[:-1] * unit[1:], axis=1)
     return float(np.sum(np.arccos(np.clip(dots, -1.0, 1.0))))
-
-
-def _ego_motion_class(pose_count: int, duration_s: float, path_length_m: float, curvature_rad_m: float) -> str:
-    if pose_count < 3 or duration_s <= 0.0:
-        return "degenerate"
-    if path_length_m < 0.25:
-        return "stationary"
-    if curvature_rad_m < 0.10:
-        return "low_curvature"
-    if curvature_rad_m < 0.30:
-        return "medium_curvature"
-    return "high_curvature"
 
 
 def _duration_s_from_ns(timestamps_ns: list[int]) -> float:
@@ -1110,8 +1093,15 @@ def _csv_value(value: int | float | str) -> str:
     return str(value)
 
 
-def _is_stale_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
-    return entry.schema_version != STORE_SCHEMA_VERSION or profile.schema_version != STORE_SCHEMA_VERSION
+def _is_read_compatible_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
+    if entry.schema_version == STORE_SCHEMA_VERSION and profile.schema_version == STORE_SCHEMA_VERSION:
+        return True
+    return (
+        entry.schema_version == 9
+        and profile.schema_version == 9
+        and entry.dataset_id is profile.dataset_id
+        and entry.dataset_id is DatasetId.TUM_RGBD
+    )
 
 
 def _compatible_entry_identity(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
@@ -1123,7 +1113,7 @@ def _compatible_entry_identity(entry: NormalizedDatasetEntry, profile: Normalize
         entry_profile = NormalizedDatasetProfile.model_validate(entry.profile)
     except Exception:
         return False
-    return entry.schema_version == STORE_SCHEMA_VERSION and entry_profile.schema_version == STORE_SCHEMA_VERSION
+    return _is_read_compatible_schema(entry, entry_profile)
 
 
 def _compatible_entry_profile(
@@ -1241,11 +1231,9 @@ def _validate_manifest_paths(root: Path, manifest: SequenceManifest) -> None:
     if manifest.advio is None:
         return
     _ensure_existing_under(root, manifest.advio.calibration_path)
-    _ensure_optional_existing_under(root, manifest.advio.fixpoints_csv_path)
-    _ensure_existing_under(root, manifest.advio.pose_refs.ground_truth_csv_path)
-    _ensure_optional_existing_under(root, manifest.advio.pose_refs.arcore_csv_path)
-    _ensure_optional_existing_under(root, manifest.advio.pose_refs.arkit_csv_path)
-    _ensure_optional_existing_under(root, manifest.advio.pose_refs.selected_pose_csv_path)
+    if manifest.advio.fixpoints_csv_path is not None or manifest.advio.pose_refs is not None:
+        raise RuntimeError("Normalized ADVIO entries must not persist raw pose or fixpoint sidecars.")
+    _validate_no_raw_advio_sidecars(root)
 
 
 def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchmarkInputs) -> None:
@@ -1258,11 +1246,10 @@ def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchm
     for ref in benchmark_inputs.observation_sequences:
         _ensure_existing_under(root, ref.index_path)
         _ensure_existing_under(root, ref.payload_root)
-        _ensure_optional_existing_under(root, ref.rgb_video_path)
         index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
-        if ref.rgb_video_path is None and any(row.rgb_path is None for row in index.rows):
-            raise RuntimeError("Observation rows without rgb_path require ObservationSequenceRef.rgb_video_path.")
         for row in index.rows:
+            if row.rgb_path is None:
+                raise RuntimeError("Normalized observation rows require rgb_path image payloads.")
             _ensure_optional_existing_under(
                 ref.payload_root, _resolve_observation_payload(ref.payload_root, row.rgb_path)
             )
@@ -1270,6 +1257,21 @@ def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchm
                 ref.payload_root,
                 _resolve_observation_payload(ref.payload_root, row.depth_path),
             )
+
+
+def _validate_no_raw_advio_sidecars(root: Path) -> None:
+    raw_sidecar_names = {
+        "ground_truth_pose.csv",
+        "selected_pose.csv",
+        "fixpoints.csv",
+        "arcore.csv",
+        "arkit.csv",
+    }
+    raw_sidecars = sorted(
+        path.relative_to(root).as_posix() for path in root.rglob("*.csv") if path.name in raw_sidecar_names
+    )
+    if raw_sidecars:
+        raise RuntimeError(f"Normalized ADVIO entries must not persist raw pose or fixpoint sidecars: {raw_sidecars}.")
 
 
 def _resolve_observation_payload(payload_root: Path, path: Path | None) -> Path | None:
@@ -1464,10 +1466,193 @@ def _normalize_observation_sequence_ref(ref: ObservationSequenceRef, *, target_r
         update={
             "index_path": index_path.resolve(),
             "payload_root": payload_root,
-            "rgb_video_path": _rebase_observation_payload_path(
-                ref.rgb_video_path, old_root=ref.payload_root, new_root=payload_root
-            ),
         }
+    )
+
+
+def _normalize_advio_benchmark_inputs(
+    benchmark_inputs: PreparedBenchmarkInputs,
+    *,
+    root: Path,
+) -> PreparedBenchmarkInputs:
+    trajectory_copies: dict[Path, Path] = {}
+    trajectory_root = root / "benchmark" / "trajectories"
+    source_references = [
+        _advio_local_first_pose_trajectory_ref(ref)
+        for ref in benchmark_inputs.reference_trajectories
+        if _is_advio_source_native_trajectory(ref)
+    ]
+    source_candidates = [
+        _advio_local_first_pose_trajectory_ref(ref)
+        for ref in benchmark_inputs.candidate_trajectories
+        if _is_advio_source_native_trajectory(ref) and ref.source is not ReferenceSource.GROUND_TRUTH
+    ]
+    reference_trajectories = _normalize_reference_trajectories(
+        source_references,
+        target_root=trajectory_root,
+        copies=trajectory_copies,
+        relative_to_first_pose=True,
+    )
+    candidate_trajectories = _normalize_reference_trajectories(
+        source_candidates,
+        target_root=trajectory_root,
+        copies=trajectory_copies,
+        relative_to_first_pose=True,
+    )
+    reference_trajectories.extend(
+        _advio_aligned_diagnostic_references(reference_trajectories, target_root=trajectory_root)
+    )
+    observation_sequences = []
+    for index, ref in enumerate(benchmark_inputs.observation_sequences):
+        target_root = _normalized_observation_sequence_root(
+            root=root,
+            sequence_count=len(benchmark_inputs.observation_sequences),
+            index=index,
+        )
+        normalized_ref = _normalize_observation_sequence_ref(ref, target_root=target_root)
+        _remove_staged_observation_sequence(
+            source_root=ref.payload_root,
+            normalized_root=normalized_ref.payload_root,
+            entry_root=root,
+        )
+        observation_sequences.append(normalized_ref)
+    _remove_rebased_benchmark_sources(
+        source_inputs=benchmark_inputs,
+        kept_paths=_benchmark_artifact_paths([*reference_trajectories, *candidate_trajectories]),
+        entry_root=root,
+    )
+    return benchmark_inputs.model_copy(
+        update={
+            "reference_trajectories": reference_trajectories,
+            "candidate_trajectories": candidate_trajectories,
+            "reference_clouds": [],
+            "observation_sequences": observation_sequences,
+        }
+    )
+
+
+def _is_advio_source_native_trajectory(ref: ReferenceTrajectoryRef) -> bool:
+    return (
+        ref.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+        and ref.source in _ADVIO_LOCAL_FIRST_POSE_FRAMES
+    )
+
+
+def _advio_local_first_pose_trajectory_ref(ref: ReferenceTrajectoryRef) -> ReferenceTrajectoryRef:
+    frame = _ADVIO_LOCAL_FIRST_POSE_FRAMES[ref.source]
+    return ref.model_copy(update={"target_frame": frame, "native_frame": frame})
+
+
+def _advio_aligned_diagnostic_references(
+    source_references: list[ReferenceTrajectoryRef],
+    *,
+    target_root: Path,
+) -> list[ReferenceTrajectoryRef]:
+    ground_truth = next(
+        (
+            ref
+            for ref in source_references
+            if ref.source is ReferenceSource.GROUND_TRUTH
+            and ref.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+        ),
+        None,
+    )
+    if ground_truth is None:
+        return []
+    diagnostics: list[ReferenceTrajectoryRef] = []
+    ground_truth_trajectory = load_tum_trajectory(ground_truth.path, canonicalize_timestamps=True)
+    for ref in source_references:
+        if ref.source not in {ReferenceSource.ARCORE, ReferenceSource.ARKIT}:
+            continue
+        diagnostic = _advio_aligned_diagnostic_reference(
+            ground_truth_ref=ground_truth,
+            ground_truth_trajectory=ground_truth_trajectory,
+            provider_ref=ref,
+            target_root=target_root,
+        )
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    return diagnostics
+
+
+def _advio_aligned_diagnostic_reference(
+    *,
+    ground_truth_ref: ReferenceTrajectoryRef,
+    ground_truth_trajectory: PoseTrajectory3D,
+    provider_ref: ReferenceTrajectoryRef,
+    target_root: Path,
+) -> ReferenceTrajectoryRef | None:
+    provider_trajectory = load_tum_trajectory(provider_ref.path, canonicalize_timestamps=True)
+    try:
+        ground_truth_assoc, provider_assoc = sync.associate_trajectories(
+            ground_truth_trajectory,
+            provider_trajectory,
+            max_diff=_ADVIO_ALIGN_MAX_DIFF_S,
+        )
+    except (ValueError, sync.SyncException):
+        return None
+    matched_pairs = int(len(ground_truth_assoc.positions_xyz))
+    if matched_pairs < _ADVIO_ALIGN_MIN_PAIRS:
+        return None
+    method = "sim3_umeyama_post_local_first_pose"
+    try:
+        rotation, translation, scale = provider_assoc.align(ground_truth_assoc, correct_scale=True)
+    except (ValueError, geometry.GeometryException):
+        method = "yaw_similarity_umeyama_post_local_first_pose"
+        scale, rotation, translation = yaw_similarity_align(
+            np.asarray(provider_assoc.positions_xyz, dtype=np.float64),
+            np.asarray(ground_truth_assoc.positions_xyz, dtype=np.float64),
+            up_axis=_ADVIO_RDF_DOWN_AXIS,
+            correct_scale=True,
+        )
+        provider_assoc = apply_similarity_to_trajectory(
+            provider_assoc,
+            scale=float(scale),
+            rotation=np.asarray(rotation, dtype=np.float64),
+            translation=np.asarray(translation, dtype=np.float64),
+        )
+    aligned = apply_similarity_to_trajectory(
+        provider_trajectory,
+        scale=float(scale),
+        rotation=np.asarray(rotation, dtype=np.float64),
+        translation=np.asarray(translation, dtype=np.float64),
+    )
+    residual = np.asarray(ground_truth_assoc.positions_xyz, dtype=np.float64) - np.asarray(
+        provider_assoc.positions_xyz,
+        dtype=np.float64,
+    )
+    rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
+    aligned_path = target_root / f"{provider_ref.source.value}_aligned_to_gt.tum"
+    metadata_path = aligned_path.with_suffix(".metadata.json")
+    aligned_path.parent.mkdir(parents=True, exist_ok=True)
+    file_interface.write_tum_trajectory_file(aligned_path, aligned)
+    write_json(
+        metadata_path,
+        {
+            "source": provider_ref.source.value,
+            "target_frame": ground_truth_ref.target_frame,
+            "native_frame": provider_ref.native_frame,
+            "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
+            "trajectory_origin": "first_pose",
+            "pose_normalization": "relative_to_first_pose",
+            "alignment": {
+                "method": method,
+                "scale": float(scale),
+                "rotation": np.asarray(rotation, dtype=np.float64).tolist(),
+                "translation": np.asarray(translation, dtype=np.float64).reshape(3).tolist(),
+                "matched_pairs": matched_pairs,
+                "rms_error_m": rms_error_m,
+                "sync_max_diff_s": _ADVIO_ALIGN_MAX_DIFF_S,
+            },
+        },
+    )
+    return ReferenceTrajectoryRef(
+        source=provider_ref.source,
+        path=aligned_path.resolve(),
+        target_frame=ground_truth_ref.target_frame,
+        native_frame=provider_ref.native_frame,
+        coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+        metadata_path=metadata_path.resolve(),
     )
 
 
@@ -1476,6 +1661,7 @@ def _normalize_reference_trajectories(
     *,
     target_root: Path,
     copies: dict[Path, Path],
+    relative_to_first_pose: bool,
 ) -> list[ReferenceTrajectoryRef]:
     source_counts: dict[str, int] = {}
     for trajectory in trajectories:
@@ -1486,6 +1672,7 @@ def _normalize_reference_trajectories(
             target_root=target_root,
             slug=_trajectory_slug(trajectory, duplicate_source=source_counts[trajectory.source.value] > 1),
             copies=copies,
+            relative_to_first_pose=relative_to_first_pose,
         )
         for trajectory in trajectories
     ]
@@ -1497,6 +1684,7 @@ def _normalize_reference_trajectory(
     target_root: Path,
     slug: str,
     copies: dict[Path, Path],
+    relative_to_first_pose: bool,
 ) -> ReferenceTrajectoryRef:
     target_path = target_root / f"{slug}.tum"
     normalized_path = _normalize_trajectory_once(
@@ -1504,15 +1692,18 @@ def _normalize_reference_trajectory(
         target_path,
         copies,
         target_frame=trajectory.target_frame or "world",
+        relative_to_first_pose=relative_to_first_pose,
     )
     metadata_path = target_root / f"{slug}.metadata.json"
+    trajectory_origin = "first_pose" if relative_to_first_pose else "dataset_benchmark_frame"
+    pose_normalization = "relative_to_first_pose" if relative_to_first_pose else "preserved"
     metadata_payload = {
         "source": trajectory.source.value,
         "target_frame": trajectory.target_frame,
         "native_frame": trajectory.native_frame,
         "coordinate_status": None if trajectory.coordinate_status is None else trajectory.coordinate_status.value,
-        "trajectory_origin": "first_pose",
-        "pose_normalization": "relative_to_first_pose",
+        "trajectory_origin": trajectory_origin,
+        "pose_normalization": pose_normalization,
     }
     if trajectory.metadata_path is not None:
         source_metadata = json.loads(trajectory.metadata_path.read_text(encoding="utf-8"))
@@ -1528,10 +1719,13 @@ def _normalize_trajectory_once(
     copies: dict[Path, Path],
     *,
     target_frame: str,
+    relative_to_first_pose: bool,
 ) -> Path:
     resolved_source = source.resolve()
     if resolved_source not in copies:
-        trajectory = trajectory_relative_to_first_pose(load_tum_trajectory(source, canonicalize_timestamps=True))
+        trajectory = load_tum_trajectory(source, canonicalize_timestamps=True)
+        if relative_to_first_pose:
+            trajectory = trajectory_relative_to_first_pose(trajectory)
         poses = [
             FrameTransform.from_matrix(
                 np.asarray(pose, dtype=np.float64),
@@ -1623,39 +1817,15 @@ def _copy_once(source: Path, target: Path, copies: dict[Path, Path]) -> Path:
     return copies[resolved_source]
 
 
-def _rebase_observation_payload_path(path: Path | None, *, old_root: Path, new_root: Path) -> Path | None:
-    if path is None:
-        return None
-    resolved = path if path.is_absolute() else old_root / path
-    try:
-        return (new_root / resolved.resolve().relative_to(old_root.resolve())).resolve()
-    except ValueError:
-        return _copy_path(resolved, new_root / path.name)
-
-
 def _normalize_advio_assets(assets: AdvioManifestAssets, *, input_root: Path) -> AdvioManifestAssets:
     advio_root = input_root / "advio"
-    pose_refs = AdvioRawPoseRefs(
-        ground_truth_csv_path=_copy_path(assets.pose_refs.ground_truth_csv_path, advio_root / "ground_truth_pose.csv"),
-        arcore_csv_path=_copy_optional_path(assets.pose_refs.arcore_csv_path, advio_root / "arcore.csv"),
-        arkit_csv_path=_copy_optional_path(assets.pose_refs.arkit_csv_path, advio_root / "arkit.csv"),
-        selected_pose_csv_path=_copy_optional_path(
-            assets.pose_refs.selected_pose_csv_path, advio_root / "selected_pose.csv"
-        ),
-    )
     return assets.model_copy(
         update={
             "calibration_path": _copy_path(assets.calibration_path, advio_root / "calibration.yaml"),
-            "fixpoints_csv_path": _copy_optional_path(assets.fixpoints_csv_path, advio_root / "fixpoints.csv"),
-            "pose_refs": pose_refs,
+            "fixpoints_csv_path": None,
+            "pose_refs": None,
         }
     )
-
-
-def _copy_optional_path(source: Path | None, target: Path) -> Path | None:
-    if source is None:
-        return None
-    return _copy_path(source, target)
 
 
 def _normalized_observation_sequence_root(*, root: Path, sequence_count: int, index: int) -> Path:

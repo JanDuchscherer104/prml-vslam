@@ -46,7 +46,12 @@ from prml_vslam.utils.serialization import write_json
 
 from . import advio_layout, advio_loading
 from .advio_frames import advio_basis_metadata, transform_advio_trajectory_to_rdf, write_advio_rdf_tum
-from .advio_models import ADVIO_SEQUENCE_COUNT, AdvioCatalog, AdvioSceneMetadata, AdvioSequenceConfig
+from .advio_models import (
+    ADVIO_SEQUENCE_COUNT,
+    AdvioCatalog,
+    AdvioSceneMetadata,
+    AdvioSequenceConfig,
+)
 from .advio_replay_adapter import (
     _poses_for_frame_timestamps,
     advio_pose_frames,
