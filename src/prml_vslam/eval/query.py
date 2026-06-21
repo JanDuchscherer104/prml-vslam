@@ -7,16 +7,18 @@ rows for app review without invoking evo or mutating run artifacts.
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from pydantic import Field
 
+from prml_vslam.eval.dataset_aggregation import metric_frame_to_rows
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
+    stable_run_id,
 )
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import SequenceManifest
@@ -32,7 +34,7 @@ class DatasetRunCoverage(BaseData):
     """Source sequence identifier for this run."""
 
     run_id: str
-    """Run identifier derived from the artifact root name."""
+    """Stable run identifier derived from the artifact root under ``artifacts_dir``."""
 
     artifact_root: Path
     """Run artifact root directory."""
@@ -54,6 +56,9 @@ class DatasetRunCoverage(BaseData):
 
     skipped_metric_count: int = 0
     """Number of non-primary metrics that were attempted but skipped during evaluation."""
+
+    sim3_alignment_skip_count: int = 0
+    """Number of metrics skipped because Sim(3) alignment could not be applied."""
 
 
 class DatasetEvaluationSelection(BaseData):
@@ -164,7 +169,7 @@ class TrajectoryEvaluationQueryService:
             coverage.append(
                 DatasetRunCoverage(
                     sequence_id=sequence_id,
-                    run_id=run.artifact_root.name,
+                    run_id=stable_run_id(run.artifact_root, self.path_config),
                     artifact_root=run.artifact_root,
                     method=run.method,
                     manifest_present=evaluation.manifest is not None,
@@ -172,6 +177,7 @@ class TrajectoryEvaluationQueryService:
                     matched_pairs=sum(r.matched_pairs for r in evaluation.metric_rows),
                     load_error=evaluation.load_error,
                     skipped_metric_count=evaluation.skipped_metric_count,
+                    sim3_alignment_skip_count=_sim3_alignment_skip_count(evaluation.manifest),
                 )
             )
             all_metric_rows.extend(evaluation.metric_rows)
@@ -262,20 +268,17 @@ class TrajectoryEvaluationQueryService:
         """Load the long-form metrics CSV emitted by the trajectory evaluator."""
         if not path.exists():
             return []
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            return [
-                TrajectoryMetricResultRow.model_validate(
-                    {
-                        **row,
-                        "value": float(row["value"]),
-                        "matched_pairs": int(row["matched_pairs"]),
-                        "delta": _optional_float(row.get("delta")),
-                        "delta_unit": row.get("delta_unit") or None,
-                        "error_series_path": _resolve_error_series_path(row.get("error_series_path"), path),
-                    }
-                )
-                for row in csv.DictReader(handle)
-            ]
+        return metric_frame_to_rows(
+            pd.read_csv(path, keep_default_na=False).assign(
+                value=lambda df: pd.to_numeric(df["value"]),
+                matched_pairs=lambda df: pd.to_numeric(df["matched_pairs"]).astype(int),
+                delta=lambda df: pd.to_numeric(df["delta"].replace("", pd.NA), errors="coerce"),
+                delta_unit=lambda df: df["delta_unit"].replace("", None),
+                error_series_path=lambda df: df["error_series_path"].map(
+                    lambda raw: _resolve_error_series_path(raw, path)
+                ),
+            )
+        )
 
     @staticmethod
     def manifest_path(run_root: Path) -> Path:
@@ -321,10 +324,10 @@ def _resolve_error_series_path(raw: str | None, csv_path: Path) -> Path | None:
     return (csv_path.parent / "error_series" / p.name).resolve()
 
 
-def _optional_float(value: str | None) -> float | None:
-    if value is None or value == "":
-        return None
-    return float(value)
+def _sim3_alignment_skip_count(manifest: TrajectoryEvaluationManifest | None) -> int:
+    if manifest is None:
+        return 0
+    return sum(1 for record in manifest.skipped_metrics if "Sim(3) alignment" in record.reason)
 
 
 def _load_run_sequence_manifest(run_root: Path) -> SequenceManifest | None:

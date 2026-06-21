@@ -741,21 +741,29 @@ def test_eval_trajectory_command_uses_advio_provider_baseline_file(
     reference_path.write_text("", encoding="utf-8")
     captured = {}
 
-    class FakeTrajectoryEvaluationService:
+    class FakeTrajectoryEvaluationRepairService:
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
 
-        def compute_evaluation(self, *, selection):
-            captured["reference_path"] = selection.reference_path
+        def recompute_run_evaluation(self, run, *, baseline_source, sequence_slug):
+            captured["run"] = run
+            captured["baseline_source"] = baseline_source
+            captured["sequence_slug"] = sequence_slug
             return SimpleNamespace(artifact_root=artifact_root, error_series_paths=[])
 
     monkeypatch.setattr("prml_vslam.main.get_path_config", lambda: PathConfig(root=tmp_path, artifacts_dir=tmp_path))
-    monkeypatch.setattr("prml_vslam.eval.services.TrajectoryEvaluationService", FakeTrajectoryEvaluationService)
+    monkeypatch.setattr(
+        "prml_vslam.eval.services.TrajectoryEvaluationRepairService",
+        FakeTrajectoryEvaluationRepairService,
+    )
 
     result = runner.invoke(app, ["eval-trajectory", str(artifact_root), "--baseline", "arcore", "--sequence-id", "seq"])
 
     assert result.exit_code == 0
-    assert captured["reference_path"] == reference_path
+    assert captured["run"].artifact_root == artifact_root
+    assert captured["run"].estimate_path == estimate_path
+    assert captured["baseline_source"].value == "arcore"
+    assert captured["sequence_slug"] == "seq"
 
 
 # ---------------------------------------------------------------------------

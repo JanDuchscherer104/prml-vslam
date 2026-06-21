@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shlex
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -102,6 +103,7 @@ class LingbotMapSlamBackend(SlamBackend):
                 backend_config=config,
                 output_policy=output_policy,
                 artifact_root=artifact_root,
+                require_rgb_path=False,
             )
         finally:
             self._streaming_frames = None
@@ -123,7 +125,7 @@ class LingbotMapSlamBackend(SlamBackend):
         config = _expect_lingbot_config(backend_config)
         _validate_output_policy(output_policy)
 
-        frames = [frame for frame in observations if frame.rgb is not None]
+        frames = list(observations)
         if config.max_frames is not None:
             frames = frames[: config.max_frames]
         return self._run_frames(
@@ -131,6 +133,7 @@ class LingbotMapSlamBackend(SlamBackend):
             backend_config=config,
             output_policy=output_policy,
             artifact_root=artifact_root,
+            require_rgb_path=True,
         )
 
     def _run_frames(
@@ -140,12 +143,26 @@ class LingbotMapSlamBackend(SlamBackend):
         backend_config: LingbotMapSlamBackendConfig,
         output_policy: SlamOutputPolicy,
         artifact_root: Path,
+        require_rgb_path: bool,
     ) -> SlamArtifacts:
         if not frames:
             raise RuntimeError("LingBot-Map requires at least one RGB observation.")
 
         runtime = _LingbotRuntime(backend_config, path_config=self._path_config)
-        predictions, processed_images = runtime.infer([np.asarray(frame.rgb, dtype=np.uint8) for frame in frames])
+        if require_rgb_path:
+            if not all(frame.rgb_path is not None for frame in frames):
+                raise RuntimeError("LingBot offline inference requires path-backed RGB observations.")
+            image_paths = [frame.rgb_path for frame in frames if frame.rgb_path is not None]
+            predictions, processed_images = runtime.infer_paths(image_paths)
+        else:
+            if not all(frame.rgb is not None for frame in frames):
+                raise RuntimeError("LingBot streaming inference requires RGB observations.")
+            images_rgb: list[np.ndarray] = []
+            for frame in frames:
+                if frame.rgb is None:
+                    raise RuntimeError("LingBot streaming inference requires RGB observations.")
+                images_rgb.append(np.asarray(frame.rgb, dtype=np.uint8))
+            predictions, processed_images = runtime.infer(images_rgb)
         return _build_lingbot_artifacts(
             predictions=predictions,
             processed_images=processed_images,
@@ -201,7 +218,19 @@ class _LingbotRuntime:
         self._console = Console(__name__).child("_LingbotRuntime")
 
     def infer(self, images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], Any]:
+        return self._infer(image_paths=None, images_rgb=images_rgb)
+
+    def infer_paths(self, image_paths: list[Path]) -> tuple[dict[str, Any], Any]:
+        return self._infer(image_paths=image_paths, images_rgb=None)
+
+    def _infer(
+        self,
+        *,
+        image_paths: list[Path] | None,
+        images_rgb: list[np.ndarray] | None,
+    ) -> tuple[dict[str, Any], Any]:
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        _prepare_lingbot_cuda_jit_env()
         torch = importlib.import_module("torch")
         checkpoint = self._resolve_checkpoint()
         model_module_name = (
@@ -230,6 +259,7 @@ class _LingbotRuntime:
                     gct_stream=gct_stream,
                     load_and_preprocess_images=load_and_preprocess_images,
                     checkpoint=checkpoint,
+                    image_paths=image_paths,
                     images_rgb=images_rgb,
                     device=device,
                 )
@@ -250,7 +280,8 @@ class _LingbotRuntime:
         gct_stream: Any,
         load_and_preprocess_images: Callable[..., Any],
         checkpoint: Path,
-        images_rgb: list[np.ndarray],
+        image_paths: list[Path] | None,
+        images_rgb: list[np.ndarray] | None,
         device: str,
     ) -> tuple[dict[str, Any], Any]:
         self._console.info("Initializing LingBot-Map model; upstream checkpoint load may take tens of seconds.")
@@ -296,14 +327,26 @@ class _LingbotRuntime:
         else:
             model = model.to(device).eval()
 
-        self._console.info("Preparing %d RGB frames for LingBot-Map inference.", len(images_rgb))
-        image_tensor = _preprocess_images_with_lingbot(
-            load_and_preprocess_images,
-            images_rgb,
-            device=device,
-            image_size=self._cfg.image_size,
-            patch_size=self._cfg.patch_size,
-        )
+        if image_paths is not None:
+            frame_count = len(image_paths)
+            self._console.info("Preparing %d RGB frame paths for LingBot-Map inference.", frame_count)
+            image_tensor = _preprocess_image_paths_with_lingbot(
+                load_and_preprocess_images,
+                image_paths,
+                image_size=self._cfg.image_size,
+                patch_size=self._cfg.patch_size,
+            )
+        elif images_rgb is not None:
+            frame_count = len(images_rgb)
+            self._console.info("Preparing %d RGB frames for LingBot-Map inference.", frame_count)
+            image_tensor = _preprocess_images_with_lingbot(
+                load_and_preprocess_images,
+                images_rgb,
+                image_size=self._cfg.image_size,
+                patch_size=self._cfg.patch_size,
+            )
+        else:
+            raise RuntimeError("LingBot-Map inference requires RGB frame paths or RGB arrays.")
         self._console.info(
             "Starting LingBot-Map inference on tensor shape %s.",
             tuple(int(dim) for dim in image_tensor.shape),
@@ -365,6 +408,65 @@ class _LingbotRuntime:
 def _is_cuda_oom(exc: RuntimeError) -> bool:
     message = str(exc).lower()
     return "cuda out of memory" in message or ("cuda" in message and "out of memory" in message)
+
+
+def _prepare_lingbot_cuda_jit_env() -> None:
+    """Expose active mamba CUDA build paths to FlashInfer's JIT linker."""
+    cuda_home = _resolve_lingbot_cuda_home()
+    if cuda_home is None:
+        return
+
+    nvcc = cuda_home / "bin" / "nvcc"
+    if nvcc.exists():
+        current_cuda_home = os.environ.get("CUDA_HOME")
+        if current_cuda_home is None or not _has_lingbot_cuda_jit_inputs(Path(current_cuda_home)):
+            os.environ["CUDA_HOME"] = str(cuda_home)
+
+    compiler_bin = cuda_home / "bin"
+    cc = compiler_bin / "x86_64-conda-linux-gnu-gcc"
+    cxx = compiler_bin / "x86_64-conda-linux-gnu-g++"
+    if cc.exists():
+        os.environ.setdefault("CC", str(cc))
+    if cxx.exists():
+        os.environ.setdefault("CXX", str(cxx))
+        os.environ.setdefault("CUDAHOSTCXX", str(cxx))
+        os.environ.setdefault("NVCC_PREPEND_FLAGS", f"--compiler-bindir={compiler_bin}")
+
+    _prepend_flashinfer_stub_ldflags(cuda_home)
+
+
+def _resolve_lingbot_cuda_home() -> Path | None:
+    for variable in ("CUDA_HOME", "CUDA_PATH", "CONDA_PREFIX"):
+        value = os.environ.get(variable)
+        if value and _has_lingbot_cuda_jit_inputs(Path(value)):
+            return Path(value)
+    return None
+
+
+def _has_lingbot_cuda_jit_inputs(cuda_home: Path) -> bool:
+    return (cuda_home / "bin" / "nvcc").exists() or any(
+        (stub_dir / "libcuda.so").exists()
+        for stub_dir in (
+            cuda_home / "lib" / "stubs",
+            cuda_home / "targets" / "x86_64-linux" / "lib" / "stubs",
+        )
+    )
+
+
+def _prepend_flashinfer_stub_ldflags(cuda_home: Path) -> None:
+    flags = shlex.split(os.environ.get("FLASHINFER_EXTRA_LDFLAGS", ""))
+    for stub_dir in reversed(
+        (
+            cuda_home / "lib" / "stubs",
+            cuda_home / "targets" / "x86_64-linux" / "lib" / "stubs",
+        )
+    ):
+        if (stub_dir / "libcuda.so").exists():
+            flag = f"-L{stub_dir}"
+            if flag not in flags:
+                flags.insert(0, flag)
+    if flags:
+        os.environ["FLASHINFER_EXTRA_LDFLAGS"] = " ".join(shlex.quote(flag) for flag in flags)
 
 
 def _extract_checkpoint_state_dict(state: Any) -> Mapping[str, Any]:
@@ -460,7 +562,6 @@ def _preprocess_images_with_lingbot(
     load_and_preprocess_images: Callable[..., Any],
     images_rgb: list[np.ndarray],
     *,
-    device: str,
     image_size: int,
     patch_size: int,
 ) -> Any:
@@ -473,12 +574,27 @@ def _preprocess_images_with_lingbot(
             frame_path = Path(frame_dir) / f"{index:06d}.png"
             Image.fromarray(rgb).save(frame_path)
             frame_paths.append(str(frame_path))
-        return load_and_preprocess_images(
-            frame_paths,
-            mode="crop",
+        return _preprocess_image_paths_with_lingbot(
+            load_and_preprocess_images,
+            [Path(frame_path) for frame_path in frame_paths],
             image_size=image_size,
             patch_size=patch_size,
-        ).to(device)
+        )
+
+
+def _preprocess_image_paths_with_lingbot(
+    load_and_preprocess_images: Callable[..., Any],
+    image_paths: list[Path],
+    *,
+    image_size: int,
+    patch_size: int,
+) -> Any:
+    return load_and_preprocess_images(
+        [str(path) for path in image_paths],
+        mode="crop",
+        image_size=image_size,
+        patch_size=patch_size,
+    )
 
 
 def _resolve_keyframe_interval(
@@ -762,6 +878,7 @@ def _as_numpy(value: Any) -> np.ndarray:
 
 __all__ = [
     "LingbotMapSlamBackend",
+    "_prepare_lingbot_cuda_jit_env",
     "_build_lingbot_artifacts",
     "_pose_camera_to_world_to_frame_transform",
     "_resolve_keyframe_interval",

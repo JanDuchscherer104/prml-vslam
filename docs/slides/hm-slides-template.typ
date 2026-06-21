@@ -120,7 +120,7 @@
   let info = if footer == auto {
     self.info + args.named()
   } else {
-    self.info + args.named() + (footer: footer,)
+    self.info + args.named() + (footer: footer)
   }
 
   // Custom Header with logo only (no institute name)

@@ -19,6 +19,7 @@ def iter_sequence_manifest_observations(
     sequence: SequenceManifest,
     *,
     max_frames: int | None = None,
+    load_rgb: bool = True,
 ) -> Iterator[Observation]:
     """Yield RGB observations from a normalized source sequence manifest."""
     rgb_inputs, timestamps_ns, source_frame_indices = _load_manifest_rgb_inputs(
@@ -32,7 +33,8 @@ def iter_sequence_manifest_observations(
             seq=seq,
             timestamp_ns=timestamp_ns,
             source_frame_index=source_frame_index,
-            rgb=_load_rgb_input(rgb_input),
+            rgb_path=_rgb_input_path(rgb_input),
+            rgb=_load_rgb_input(rgb_input) if load_rgb or not isinstance(rgb_input, Path) else None,
             provenance=provenance.model_copy(update={"source_frame_index": source_frame_index}),
         )
 
@@ -173,6 +175,10 @@ def _load_source_frame_indices(path: Path) -> list[int]:
 
 def _load_rgb_input(rgb: Path | np.ndarray) -> np.ndarray:
     return rgb if isinstance(rgb, np.ndarray) else _load_rgb(rgb)
+
+
+def _rgb_input_path(rgb: Path | np.ndarray) -> Path | None:
+    return rgb if isinstance(rgb, Path) else None
 
 
 def _load_rgb(path: Path) -> np.ndarray:

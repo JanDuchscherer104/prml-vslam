@@ -14,13 +14,14 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, PathConfig
 
 
 class TrajectoryEvaluationStageInput(BaseData):
     """Inputs required to compute repository trajectory metrics."""
 
     artifact_root: Path
+    path_config: PathConfig
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
     method_id: MethodId | None = None
     method_label: str = "unknown"

@@ -13,7 +13,7 @@ from typing import Literal
 from evo.core import metrics
 from pydantic import Field, field_serializer, field_validator
 
-from prml_vslam.utils import BaseData
+from prml_vslam.utils import BaseData, PathConfig
 
 
 class DiscoveredRun(BaseData):
@@ -202,6 +202,16 @@ class TrajectoryEvaluationManifest(BaseData):
     """Non-primary metrics that were attempted but skipped due to non-fatal errors."""
 
 
+def stable_run_id(artifact_root: Path, path_config: PathConfig) -> str:
+    """Return the artifact-root identifier used in persisted evaluation rows."""
+    resolved_root = artifact_root.resolve()
+    resolved_artifacts = path_config.artifacts_dir.resolve()
+    try:
+        return resolved_root.relative_to(resolved_artifacts).as_posix()
+    except ValueError:
+        return resolved_root.as_posix()
+
+
 __all__ = [
     "DiscoveredRun",
     "SelectionSnapshot",
@@ -209,4 +219,5 @@ __all__ = [
     "TrajectoryEvaluationCase",
     "TrajectoryEvaluationManifest",
     "TrajectoryMetricResultRow",
+    "stable_run_id",
 ]

@@ -17,7 +17,7 @@ contract split after the offline/streaming refactor.
 - `prml_vslam.methods`
   - method ids, backend-private config, output policy, runtime updates, and
     thin wrapper integration around external SLAM systems
-- `prml_vslam.alignment`
+- `prml_vslam.align`
   - derived alignment contracts and services such as dominant-ground detection
     and viewer-scoped world alignment metadata
 - `prml_vslam.sources`

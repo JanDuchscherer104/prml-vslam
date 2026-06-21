@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import prml_vslam.alignment.stage as alignment_stage_package
+import prml_vslam.align as align_package
+import prml_vslam.align.gravity as alignment_stage_package
 import prml_vslam.eval.stage_trajectory as trajectory_stage_package
 import prml_vslam.interfaces as interfaces_package
 import prml_vslam.methods as methods_package
@@ -54,6 +55,11 @@ def test_executable_stage_packages_export_canonical_surfaces() -> None:
     assert "TrajectoryEvaluationStageConfig" in trajectory_stage_package.__all__
     assert "TrajectoryEvaluationStageInput" in trajectory_stage_package.__all__
     assert "TrajectoryEvaluationRuntime" in trajectory_stage_package.__all__
+
+
+def test_align_root_does_not_reexport_heavy_subpackages() -> None:
+    assert align_package.__all__ == []
+    assert not hasattr(align_package, "CloudAlignmentService")
 
 
 def test_replay_package_exports_only_replay_primitives() -> None:

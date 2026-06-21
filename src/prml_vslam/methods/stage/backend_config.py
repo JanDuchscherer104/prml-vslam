@@ -84,6 +84,11 @@ class SlamBackendConfig(BaseConfig):
         raise NotImplementedError
 
     @property
+    def eager_load_offline_rgb(self) -> bool:
+        """Whether offline source dematerialization should load RGB arrays."""
+        return True
+
+    @property
     def supports_streaming(self) -> bool:
         """Whether the backend supports streaming execution."""
         raise NotImplementedError
@@ -350,6 +355,11 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
     def supports_offline(self) -> bool:
         """Whether the backend supports offline execution."""
         return True
+
+    @property
+    def eager_load_offline_rgb(self) -> bool:
+        """LingBot consumes normalized RGB paths directly during offline inference."""
+        return False
 
     @property
     def supports_streaming(self) -> bool:

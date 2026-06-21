@@ -117,8 +117,8 @@ class SlamStageRuntime(
         self._last_warning: str | None = None
         self._last_error: str | None = None
         self._last_latency_ms: float | None = None
-        self._frame_timestamps = deque(maxlen=FPS_WINDOW)
-        self._keyframe_timestamps = deque(maxlen=FPS_WINDOW)
+        self._frame_timestamps: deque[float] = deque(maxlen=FPS_WINDOW)
+        self._keyframe_timestamps: deque[float] = deque(maxlen=FPS_WINDOW)
         self._stopped = False
 
     def status(self) -> StageRuntimeStatus:
@@ -156,6 +156,7 @@ class SlamStageRuntime(
             observations = iter_sequence_manifest_observations(
                 input_payload.sequence_manifest,
                 max_frames=backend_config.max_frames,
+                load_rgb=backend_config.eager_load_offline_rgb,
             )
             slam = backend.run_observations(
                 observations,
