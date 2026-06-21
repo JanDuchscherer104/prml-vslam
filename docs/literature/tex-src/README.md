@@ -23,10 +23,17 @@ The checked-in manifest for this directory lives at:
 
 - `sources.jsonl`
 
-Each JSONL row describes one paper and the local output names needed to fetch its arXiv e-print source tree and, optionally, its PDF. The current schema is:
+Each JSONL row describes one literature source. ArXiv rows include the local output names needed to fetch the e-print source tree and, optionally, its PDF. Reference-only rows may point to external repositories or other source material.
 
-- required: `arxiv_id`, `tex_dir`
-- optional: `title`, `source_url`, `pdf_url`, `pdf_file`
+- arXiv rows: required `arxiv_id`, `tex_dir`; optional `title`, `source_url`, `pdf_url`, `pdf_file`
+- reference-only rows: set `kind` to a value other than `arxiv` and provide `source_url`
+
+Reference-only rows are kept in the manifest for discovery but skipped by the arXiv downloader.
+
+External sources are also indexed for agent retrieval:
+
+- `graphify add <url>` stores compact URL captures under `raw/` for Graphify's external corpus.
+- `make mempalace-refresh` stages TeX paper sources as normalized text under the derived MemPalace source tree so paper text is searchable without committing extracted arXiv bundles.
 
 Run the downloader from the repo root:
 

@@ -2,3 +2,4 @@
 {"title":"MASt3R-SLAM: Real-Time Dense SLAM with 3D Reconstruction Priors","arxiv_id":"2412.12392","tex_dir":"arXiv-MASt3R-SLAM","pdf_file":"MASt3R-SLAM.pdf"}
 {"title":"DROID-SLAM: Deep Visual SLAM for Monocular, Stereo, and RGB-D Cameras","arxiv_id":"2108.10869","tex_dir":"arXiv-DROID-SLAM","pdf_file":"DROID-SLAM.pdf"}
 {"title":"ADVIO: An authentic dataset for visual-inertial odometry.","arxiv_id":"1807.09828","tex_dir":"arXiv-ADVIO","pdf_file":"ADVIO.pdf"}
+{"kind":"repository","title":"SLAM Handbook Public Release","source_url":"https://github.com/SLAM-Handbook-contributors/slam-handbook-public-release"}
