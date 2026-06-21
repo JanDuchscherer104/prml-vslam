@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
-from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignmentStageInput
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import FailureFingerprint
@@ -15,6 +15,7 @@ def _build_offline_input(context: PipelineExecutionContext) -> TrajectoryAlignme
     slam_backend = context.run_config.stages.slam.backend
     return TrajectoryAlignmentStageInput(
         artifact_root=context.plan.artifact_root,
+        path_config=context.path_config,
         baseline_source=config.baseline_source,
         method_id=None if slam_backend is None else slam_backend.method_id,
         sequence_manifest=context.results.require_sequence_manifest(),

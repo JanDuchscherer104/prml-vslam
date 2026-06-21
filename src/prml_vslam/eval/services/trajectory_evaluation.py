@@ -1,33 +1,26 @@
-"""Concrete evaluation services built on normalized run artifacts.
-
-This module implements the explicit evaluation work described by
-:mod:`prml_vslam.eval.contracts` and :mod:`prml_vslam.eval.protocols`. App and
-post-run aggregation discovery lives in :mod:`prml_vslam.eval.query`; this
-module owns eval-stage computation and persistence.
-"""
+"""Trajectory evaluation service for pipeline-driven APE/RPE computation and persistence."""
 
 from __future__ import annotations
 
-import copy
-import csv
 import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
-import open3d as o3d
 from evo.core import metrics, sync
-from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
 
-from prml_vslam.eval.alignment_contracts import (
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentCloudUseStatus,
-    TrajectoryAlignmentMode,
+from prml_vslam.align.trajectory_sim3 import align_estimate_sim3, sim3_up_axis_tilt_deg, trajectory_supports_sim3
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.dataset_aggregation import metric_rows_to_frame
+from prml_vslam.eval.services.preview import (
+    _EVO_ASSOCIATION_MAX_DIFF_S,
+    _TrajectoryMetricPreview,
+    compute_trajectory_ape_preview,
+    compute_trajectory_rpe_preview,
 )
-from prml_vslam.eval.contracts import CloudAlignmentArtifact, CloudAlignmentSelection, MetricStats
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
@@ -35,31 +28,25 @@ from prml_vslam.eval.trajectory_contracts import (
     TrajectoryEvaluationCase,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
+    stable_run_id,
 )
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceTrajectoryRef, SequenceManifest
 from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils.geometry import (
-    apply_similarity_to_trajectory,
     load_point_cloud_ply_with_colors,
     load_tum_trajectory,
     write_point_cloud_ply,
-    yaw_similarity_align,
 )
 from prml_vslam.utils.path_config import PathConfig
 
-__all__ = [
-    "CloudAlignmentService",
-    "TrajectoryEvaluationService",
-    "compute_trajectory_ape_preview",
-    "compute_trajectory_rpe_preview",
-]
+if TYPE_CHECKING:
+    from prml_vslam.pipeline.config import RunConfig
+    from prml_vslam.pipeline.contracts.plan import RunPlan
 
-_EVO_ASSOCIATION_MAX_DIFF_S = 0.01
 _SIM3_CLOUD_MIN_MATCHED_PAIRS = 20
 _SIM3_CLOUD_MAX_RMS_ERROR_M = 2.0
 _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG = 15.0
-_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,22 +69,6 @@ _POSE_RELATION_UNIT: dict[metrics.PoseRelation, str] = {
     metrics.PoseRelation.translation_part: "m",
     metrics.PoseRelation.rotation_angle_deg: "deg",
 }
-
-if TYPE_CHECKING:
-    from prml_vslam.pipeline.config import RunConfig
-    from prml_vslam.pipeline.contracts.plan import RunPlan
-
-
-@dataclass(slots=True)
-class _TrajectoryMetricPreview:
-    """Internal single-metric preview kept until the full evo metric loop lands."""
-
-    error_timestamps_s: np.ndarray
-    error_values: np.ndarray
-    reference_positions_xyz: np.ndarray
-    estimate_positions_xyz: np.ndarray
-    stats: MetricStats
-    alignment: TrajectoryAlignmentArtifact | None = None
 
 
 @dataclass(slots=True)
@@ -151,10 +122,10 @@ class TrajectoryEvaluationService:
                 f"No matching trajectory timestamps found for Sim(3) alignment (max_diff={_EVO_ASSOCIATION_MAX_DIFF_S:.3f}s)."
             ) from exc
 
-        if not _trajectory_supports_sim3(associated_reference, associated_estimate):
+        if not trajectory_supports_sim3(associated_reference, associated_estimate):
             raise ValueError("Trajectory lacks sufficient geometric spread for Sim(3) alignment.")
 
-        aligned_estimate, alignment = _align_estimate_sim3(
+        aligned_estimate, alignment = align_estimate_sim3(
             reference=associated_reference,
             estimate=associated_estimate,
             max_diff_s=_EVO_ASSOCIATION_MAX_DIFF_S,
@@ -175,10 +146,7 @@ class TrajectoryEvaluationService:
             alignment,
             cloud_input_present=selection.run.point_cloud_path is not None,
         )
-        if (
-            selection.run.point_cloud_path is not None
-            and alignment.cloud_use_status is not TrajectoryAlignmentCloudUseStatus.REJECTED
-        ):
+        if selection.run.point_cloud_path is not None and not alignment.cloud_rejection_reasons:
             aligned_point_cloud_path = self.aligned_point_cloud_path(run_root)
             _write_aligned_point_cloud(
                 source_path=selection.run.point_cloud_path,
@@ -201,11 +169,11 @@ class TrajectoryEvaluationService:
         selection: SelectionSnapshot,
         candidate_trajectories: list[ReferenceTrajectoryRef] | None = None,
     ) -> TrajectoryEvaluationManifest:
-        """Compute and persist trajectory APE via the `evo` Python API.
+        """Compute and persist trajectory APE/RPE metrics via the `evo` Python API.
 
-        The current executable metric is translation APE with timestamp
-        association only. The persisted payload records those semantics so
-        future RPE or alignment modes can coexist without ambiguity.
+        The persisted manifest and long-form metric table include translation
+        and rotation APE/RPE rows for every candidate whose metric can be
+        computed. The primary run estimate must produce translation APE.
         """
         reference_path = selection.reference_path
         if reference_path is None:
@@ -284,8 +252,9 @@ class TrajectoryEvaluationService:
         reference_source: str,
         candidates: list[_TrajectoryEvaluationCandidate],
     ) -> TrajectoryEvaluationManifest:
-        """Persist one translation-APE metric case for every ordered candidate."""
+        """Persist trajectory metrics for every ordered candidate."""
         run_root = selection.run.artifact_root
+        run_id = stable_run_id(run_root, self.path_config)
         evaluation_dir = run_root / "evaluation" / "trajectory"
         error_series_dir = evaluation_dir / "error_series"
         error_series_dir.mkdir(parents=True, exist_ok=True)
@@ -295,15 +264,20 @@ class TrajectoryEvaluationService:
         rows: list[TrajectoryMetricResultRow] = []
         cases: list[TrajectoryEvaluationCase] = []
         skipped: list[SkippedMetricRecord] = []
-        for candidate in candidates:
+        primary_metric_computed = False
+        for candidate_index, candidate in enumerate(candidates):
             for spec in _METRIC_SPECS:
+                is_primary_translation_ape = (
+                    candidate_index == 0
+                    and spec.family == "ape"
+                    and spec.pose_relation is metrics.PoseRelation.translation_part
+                )
                 try:
                     if spec.family == "ape":
                         preview = compute_trajectory_ape_preview(
                             reference_path=reference_path,
                             estimate_path=candidate.path,
                             pose_relation=spec.pose_relation,
-                            alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
                             target_frame=selection.target_frame or "world",
                             source_frame=_method_world_frame(candidate.method_id),
                             reference_source=reference_source,
@@ -317,9 +291,14 @@ class TrajectoryEvaluationService:
                             pose_relation=spec.pose_relation,
                             delta=spec.delta or 1.0,
                             delta_unit=spec.delta_unit_enum or metrics.Unit.meters,
+                            target_frame=selection.target_frame or "world",
+                            source_frame=_method_world_frame(candidate.method_id),
+                            reference_source=reference_source,
+                            method_id=candidate.method_id,
+                            method_label=candidate.method_label,
                         )
                 except ValueError as exc:
-                    if spec.family == "ape" and spec.pose_relation is metrics.PoseRelation.translation_part:
+                    if is_primary_translation_ape:
                         raise
                     skipped.append(
                         SkippedMetricRecord(
@@ -339,14 +318,12 @@ class TrajectoryEvaluationService:
                     f"{_entity_token(candidate.coordinate_status)}__{spec.family}_{relation_token}.npz"
                 )
                 error_series_path = error_series_dir / error_series_filename
-                np.savez(
+                _write_error_series(
                     error_series_path,
-                    values=preview.error_values,
-                    timestamps_s=preview.error_timestamps_s,
-                    pair_index=np.arange(matched_pairs, dtype=np.int64),
-                    reference_positions_xyz=preview.reference_positions_xyz,
-                    estimate_positions_xyz=preview.estimate_positions_xyz,
+                    preview=preview,
+                    matched_pairs=matched_pairs,
                 )
+                primary_metric_computed = primary_metric_computed or is_primary_translation_ape
                 cases.append(
                     TrajectoryEvaluationCase(
                         reference_path=reference_path,
@@ -366,7 +343,7 @@ class TrajectoryEvaluationService:
                 error_series_relative = Path("error_series") / error_series_filename
                 rows.extend(
                     TrajectoryMetricResultRow(
-                        run_id=run_root.name,
+                        run_id=run_id,
                         sequence_id=selection.sequence_slug,
                         reference_source=reference_source,
                         estimate_source=f"{candidate.source}/{candidate.coordinate_status}",
@@ -383,11 +360,13 @@ class TrajectoryEvaluationService:
                     for statistic, value in preview.stats.model_dump(mode="python").items()
                 )
 
+        if not primary_metric_computed:
+            raise RuntimeError("Primary trajectory translation APE did not produce a metric row.")
         _write_metric_rows(metrics_long_path, rows)
         manifest = TrajectoryEvaluationManifest(
             artifact_root=run_root,
             sequence_id=selection.sequence_slug,
-            run_id=run_root.name,
+            run_id=run_id,
             reference_trajectories=[reference_path],
             candidate_trajectories=[candidate.path for candidate in candidates],
             error_series_paths=[case.error_series_path for case in cases],
@@ -425,215 +404,6 @@ class TrajectoryEvaluationService:
     def metrics_long_path(run_root: Path) -> Path:
         """Return the canonical long-form trajectory metric table path."""
         return run_root / "evaluation" / "trajectory" / "metrics_long.csv"
-
-
-class CloudAlignmentService:
-    """Materialize offline point-cloud alignment artifacts before cloud metrics."""
-
-    def compute_cloud_alignment(self, *, selection: CloudAlignmentSelection) -> CloudAlignmentArtifact:
-        """Refine a trajectory-Sim(3)-aligned cloud against a reference cloud with ICP."""
-        reference_pcd = _read_non_empty_point_cloud(selection.reference_cloud_path, label="reference")
-        estimate_pcd = _read_non_empty_point_cloud(selection.sim3_cloud_path, label="estimate")
-        registration = o3d.pipelines.registration.registration_icp(
-            estimate_pcd,
-            reference_pcd,
-            selection.max_correspondence_distance_m,
-            np.eye(4, dtype=np.float64),
-            o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-        )
-        transformation = np.asarray(registration.transformation, dtype=np.float64)
-        points_xyz, colors_rgb = load_point_cloud_ply_with_colors(selection.sim3_cloud_path)
-        rotation = transformation[:3, :3]
-        translation = transformation[:3, 3]
-        refined_points = points_xyz @ rotation.T + translation
-        icp_cloud_path = self.icp_point_cloud_path(selection.artifact_root)
-        write_point_cloud_ply(icp_cloud_path, refined_points, colors_rgb=colors_rgb)
-        artifact = CloudAlignmentArtifact(
-            path=self.result_path(selection.artifact_root),
-            reference_cloud_path=selection.reference_cloud_path,
-            sim3_point_cloud_path=selection.sim3_cloud_path,
-            icp_point_cloud_path=icp_cloud_path,
-            target_frame=selection.target_frame,
-            max_correspondence_distance_m=selection.max_correspondence_distance_m,
-            fitness=float(registration.fitness),
-            inlier_rmse_m=float(registration.inlier_rmse),
-            transformation=transformation.tolist(),
-        )
-        artifact.path.parent.mkdir(parents=True, exist_ok=True)
-        artifact.path.write_text(
-            json.dumps(artifact.model_dump(mode="json"), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        return artifact
-
-    @staticmethod
-    def result_path(run_root: Path) -> Path:
-        """Return the deterministic point-cloud alignment metadata path."""
-        return run_root / "evaluation" / "cloud_alignment.json"
-
-    @staticmethod
-    def icp_point_cloud_path(run_root: Path) -> Path:
-        """Return the deterministic ICP-refined point-cloud path."""
-        return run_root / "evaluation" / "point_cloud_sim3_icp_aligned.ply"
-
-
-def compute_trajectory_ape_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
-    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
-    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-    target_frame: str = "world",
-    source_frame: str = "slam_world",
-    reference_source: str = "reference",
-    method_id: str | None = None,
-    method_label: str | None = None,
-) -> _TrajectoryMetricPreview:
-    """Compute in-memory APE for two normalized TUM trajectory artifacts.
-
-    Uses evo's timestamp association and APE implementation over
-    :class:`evo.core.trajectory.PoseTrajectory3D`. The helper returns an
-    internal preview and leaves persistence to :class:`TrajectoryEvaluationService`.
-    """
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    try:
-        associated_reference, associated_estimate = sync.associate_trajectories(
-            reference_trajectory,
-            estimate_trajectory,
-            max_diff=max_diff_s,
-        )
-    except sync.SyncException as exc:
-        raise ValueError(
-            f"No matching trajectory timestamps were found for evo APE (max_diff={max_diff_s:.3f}s)."
-        ) from exc
-
-    evaluation_estimate = associated_estimate
-    alignment = None
-    if alignment_mode is TrajectoryAlignmentMode.SIM3_UMEYAMA:
-        if _trajectory_supports_sim3(associated_reference, associated_estimate):
-            evaluation_estimate, alignment = _align_estimate_sim3(
-                reference=associated_reference,
-                estimate=associated_estimate,
-                max_diff_s=max_diff_s,
-                target_frame=target_frame,
-                source_frame=source_frame,
-                reference_source=reference_source,
-                method_id=method_id,
-                method_label=method_label,
-            )
-    elif alignment_mode is not TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY:
-        raise ValueError(f"Unsupported trajectory alignment mode: {alignment_mode.value}.")
-
-    metric = metrics.APE(pose_relation)
-    metric.process_data((associated_reference, evaluation_estimate))
-    error_values = np.asarray(metric.error, dtype=np.float64)
-    if error_values.size == 0:
-        raise ValueError("evo APE produced zero matched trajectory pairs.")
-    return _TrajectoryMetricPreview(
-        error_timestamps_s=np.asarray(associated_reference.timestamps, dtype=np.float64),
-        error_values=error_values,
-        reference_positions_xyz=np.asarray(associated_reference.positions_xyz, dtype=np.float64),
-        estimate_positions_xyz=np.asarray(evaluation_estimate.positions_xyz, dtype=np.float64),
-        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
-        alignment=alignment,
-    )
-
-
-def compute_trajectory_rpe_preview(
-    *,
-    reference_path: Path,
-    estimate_path: Path,
-    pose_relation: metrics.PoseRelation = metrics.PoseRelation.translation_part,
-    delta: float = 1.0,
-    delta_unit: metrics.Unit = metrics.Unit.meters,
-    max_diff_s: float = _EVO_ASSOCIATION_MAX_DIFF_S,
-) -> _TrajectoryMetricPreview:
-    """Compute in-memory RPE for two normalized TUM trajectory artifacts.
-
-    No alignment is applied — RPE measures relative motion between fixed-distance
-    pose pairs, so the global alignment cancels in the subtraction.
-    """
-    reference_trajectory = load_tum_trajectory(reference_path)
-    estimate_trajectory = load_tum_trajectory(estimate_path)
-    try:
-        associated_reference, associated_estimate = sync.associate_trajectories(
-            reference_trajectory,
-            estimate_trajectory,
-            max_diff=max_diff_s,
-        )
-    except sync.SyncException as exc:
-        raise ValueError(
-            f"No matching trajectory timestamps were found for evo RPE (max_diff={max_diff_s:.3f}s)."
-        ) from exc
-
-    metric = metrics.RPE(pose_relation, delta=delta, delta_unit=delta_unit, all_pairs=False)
-    try:
-        metric.process_data((associated_reference, associated_estimate))
-    except Exception as exc:
-        raise ValueError(f"evo RPE computation failed: {exc}") from exc
-
-    error_values = np.asarray(metric.error, dtype=np.float64)
-    if error_values.size == 0:
-        raise ValueError("evo RPE produced zero matched trajectory pairs.")
-    n = error_values.size
-    return _TrajectoryMetricPreview(
-        error_timestamps_s=np.asarray(associated_reference.timestamps[:n], dtype=np.float64),
-        error_values=error_values,
-        reference_positions_xyz=np.asarray(associated_reference.positions_xyz[:n], dtype=np.float64),
-        estimate_positions_xyz=np.asarray(associated_estimate.positions_xyz[:n], dtype=np.float64),
-        stats=MetricStats.from_evo_statistics(metric.get_all_statistics()),
-        alignment=None,
-    )
-
-
-def _align_estimate_sim3(
-    *,
-    reference: PoseTrajectory3D,
-    estimate: PoseTrajectory3D,
-    max_diff_s: float,
-    target_frame: str = "world",
-    source_frame: str = "slam_world",
-    reference_source: str = "reference",
-    method_id: str | None = None,
-    method_label: str | None = None,
-) -> tuple[PoseTrajectory3D, TrajectoryAlignmentArtifact]:
-    if _is_gravity_aligned_target(target_frame):
-        # Gravity-aligned benchmark worlds (e.g. ADVIO) are near-planar; full
-        # Umeyama can return an up/down-flipped rotation. Lock rotation to yaw
-        # about the RDF gravity axis so the cloud overlay cannot flip upside down.
-        scale_value, rotation_matrix, translation_vector = yaw_similarity_align(
-            np.asarray(estimate.positions_xyz, dtype=np.float64),
-            np.asarray(reference.positions_xyz, dtype=np.float64),
-            up_axis=_RDF_DOWN_AXIS,
-            correct_scale=True,
-        )
-        aligned_estimate = apply_similarity_to_trajectory(
-            estimate, scale=scale_value, rotation=rotation_matrix, translation=translation_vector
-        )
-        rotation, translation, scale = rotation_matrix, translation_vector, scale_value
-    else:
-        aligned_estimate = copy.deepcopy(estimate)
-        rotation, translation, scale = aligned_estimate.align(reference, correct_scale=True)
-    residual = np.asarray(reference.positions_xyz, dtype=np.float64) - np.asarray(
-        aligned_estimate.positions_xyz,
-        dtype=np.float64,
-    )
-    rms_error_m = float(np.sqrt(np.mean(np.sum(residual**2, axis=1))))
-    return aligned_estimate, TrajectoryAlignmentArtifact(
-        source_frame=source_frame,
-        target_frame=target_frame,
-        scale=float(scale),
-        rotation=np.asarray(rotation, dtype=np.float64).tolist(),
-        translation=np.asarray(translation, dtype=np.float64).reshape(3).tolist(),
-        matched_pairs=int(len(reference.positions_xyz)),
-        rms_error_m=rms_error_m,
-        reference_source=reference_source,
-        sync_max_diff_s=max_diff_s,
-        method_id=method_id,
-        method_label=method_label,
-    )
 
 
 def _method_world_frame(method_id: str | None) -> str:
@@ -674,12 +444,19 @@ def _evaluation_candidates_for(
 
 def _write_metric_rows(path: Path, rows: list[TrajectoryMetricResultRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(TrajectoryMetricResultRow.model_fields)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row.model_dump(mode="json"))
+    metric_rows_to_frame(rows).to_csv(path, index=False)
+
+
+def _write_error_series(path: Path, *, preview: _TrajectoryMetricPreview, matched_pairs: int) -> None:
+    payload = {
+        "values": preview.error_values,
+        "timestamps_s": preview.error_timestamps_s,
+        "pair_index": np.arange(matched_pairs, dtype=np.int64),
+    }
+    if preview.reference_positions_xyz is not None and preview.estimate_positions_xyz is not None:
+        payload["reference_positions_xyz"] = preview.reference_positions_xyz
+        payload["estimate_positions_xyz"] = preview.estimate_positions_xyz
+    np.savez(path, **payload)
 
 
 def _entity_token(value: str) -> str:
@@ -692,9 +469,8 @@ def _apply_sim3_cloud_use_policy(
     *,
     cloud_input_present: bool,
 ) -> TrajectoryAlignmentArtifact:
-    up_axis_tilt_deg = _sim3_up_axis_tilt_deg(np.asarray(alignment.rotation, dtype=np.float64))
+    up_axis_tilt_deg = sim3_up_axis_tilt_deg(np.asarray(alignment.rotation, dtype=np.float64))
     reasons: list[str] = []
-    status = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
     if cloud_input_present:
         if alignment.matched_pairs < _SIM3_CLOUD_MIN_MATCHED_PAIRS:
             reasons.append("insufficient_matched_pairs")
@@ -706,15 +482,9 @@ def _apply_sim3_cloud_use_policy(
             reasons.append("unknown_up_axis_tilt")
         elif up_axis_tilt_deg > _SIM3_CLOUD_MAX_UP_AXIS_TILT_DEG:
             reasons.append("up_axis_tilt_too_high")
-        status = (
-            TrajectoryAlignmentCloudUseStatus.REJECTED
-            if "invalid_scale" in reasons
-            else TrajectoryAlignmentCloudUseStatus.ACCEPTED
-        )
     return alignment.model_copy(
         update={
             "cloud_input_present": cloud_input_present,
-            "cloud_use_status": status,
             "cloud_warning_reasons": reasons,
             "cloud_rejection_reasons": ["invalid_scale"] if "invalid_scale" in reasons else [],
             "cloud_gate_min_matched_pairs": _SIM3_CLOUD_MIN_MATCHED_PAIRS,
@@ -723,37 +493,6 @@ def _apply_sim3_cloud_use_policy(
             "up_axis_tilt_deg": up_axis_tilt_deg,
         }
     )
-
-
-def _sim3_up_axis_tilt_deg(rotation: np.ndarray) -> float | None:
-    if rotation.shape != (3, 3) or not np.all(np.isfinite(rotation)):
-        return None
-    transformed_down_axis = rotation @ _RDF_DOWN_AXIS
-    norm = float(np.linalg.norm(transformed_down_axis))
-    if norm <= 0.0 or not math.isfinite(norm):
-        return None
-    cos_angle = float(np.clip(np.dot(transformed_down_axis / norm, _RDF_DOWN_AXIS), -1.0, 1.0))
-    return math.degrees(math.acos(cos_angle))
-
-
-def _trajectory_supports_sim3(reference: PoseTrajectory3D, estimate: PoseTrajectory3D) -> bool:
-    if len(reference.positions_xyz) < 3 or len(estimate.positions_xyz) < 3:
-        return False
-    reference_centered = np.asarray(reference.positions_xyz, dtype=np.float64) - np.mean(
-        reference.positions_xyz,
-        axis=0,
-    )
-    estimate_centered = np.asarray(estimate.positions_xyz, dtype=np.float64) - np.mean(estimate.positions_xyz, axis=0)
-    return np.linalg.matrix_rank(reference_centered) >= 2 and np.linalg.matrix_rank(estimate_centered) >= 2
-
-
-def _is_gravity_aligned_target(target_frame: str) -> bool:
-    """Whether the benchmark target frame is gravity-aligned (up == RDF -Y).
-
-    ADVIO provider worlds derive from Apple Y-up, so RDF ``-Y`` is gravity. The
-    TUM first-camera RDF frame is *not* gravity-aligned, so it keeps full Umeyama.
-    """
-    return target_frame.startswith("advio_") and target_frame.endswith("_world")
 
 
 def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) -> str:
@@ -785,15 +524,4 @@ def _write_aligned_point_cloud(
     write_point_cloud_ply(output_path, aligned_points, colors_rgb=colors_rgb)
 
 
-def _read_non_empty_point_cloud(path: Path, *, label: str) -> Any:
-    if not path.exists():
-        raise FileNotFoundError(f"Point-cloud alignment {label} cloud does not exist: {path}")
-    point_cloud = o3d.io.read_point_cloud(path.as_posix())
-    points_xyz = np.asarray(point_cloud.points, dtype=np.float64)
-    if points_xyz.shape[0] == 0:
-        raise ValueError(f"Point-cloud alignment {label} cloud is empty: {path}")
-    if points_xyz.ndim != 2 or points_xyz.shape[1] != 3:
-        raise ValueError(f"Expected {label} point cloud shape (N, 3), got {points_xyz.shape} for '{path}'.")
-    if not np.isfinite(points_xyz).all():
-        raise ValueError(f"Point-cloud alignment {label} cloud contains non-finite points: {path}")
-    return point_cloud
+__all__ = ["TrajectoryEvaluationService"]

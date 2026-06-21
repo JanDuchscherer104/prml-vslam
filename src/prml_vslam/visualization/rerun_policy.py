@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from evo.core import metrics
 
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, CameraIntrinsics, FrameTransform
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
@@ -385,7 +385,7 @@ class RerunLoggingPolicy:
                 ),
                 decimation_seed=decimation_seed,
             )
-        except Exception as exc:
+        except (OSError, KeyError, ValueError) as exc:
             _LOGGER.warning("Skipping %s artifact '%s': %s", warning_label, artifact_path, exc)
 
     def _log_mesh_ply_artifact(
@@ -517,9 +517,20 @@ class RerunLoggingPolicy:
         try:
             with np.load(evaluation_case.error_series_path) as payload:
                 error_values = np.asarray(payload["values"], dtype=np.float64)
-                timestamps_s = np.asarray(payload["timestamps_s"], dtype=np.float64)
-                reference_positions_xyz = np.asarray(payload["reference_positions_xyz"], dtype=np.float32)
-                estimate_positions_xyz = np.asarray(payload["estimate_positions_xyz"], dtype=np.float32)
+                timestamps_s = np.asarray(
+                    payload["timestamps_s"] if "timestamps_s" in payload else payload["pair_index"],
+                    dtype=np.float64,
+                )
+                reference_positions_xyz = (
+                    np.asarray(payload["reference_positions_xyz"], dtype=np.float32)
+                    if "reference_positions_xyz" in payload
+                    else None
+                )
+                estimate_positions_xyz = (
+                    np.asarray(payload["estimate_positions_xyz"], dtype=np.float32)
+                    if "estimate_positions_xyz" in payload
+                    else None
+                )
         except Exception as exc:
             _LOGGER.warning(
                 "Skipping trajectory evaluation case '%s' vs '%s': %s",
@@ -532,8 +543,6 @@ class RerunLoggingPolicy:
             evaluation_case.matched_pairs,
             len(error_values),
             len(timestamps_s),
-            len(reference_positions_xyz),
-            len(estimate_positions_xyz),
         )
         if matched_pairs == 0:
             _LOGGER.warning(
@@ -567,34 +576,36 @@ class RerunLoggingPolicy:
             candidate_source=evaluation_case.candidate_source,
             candidate_coordinate_status=evaluation_case.candidate_coordinate_status,
         )
-        if evaluation_case.metric_family == "ape" and is_translation_metric:
+        has_geometry = reference_positions_xyz is not None and estimate_positions_xyz is not None
+        if evaluation_case.metric_family == "ape" and is_translation_metric and has_geometry:
+            matched_geometry_pairs = min(matched_pairs, len(reference_positions_xyz), len(estimate_positions_xyz))
             rerun_helpers.log_line_strip3d(
                 stream,
                 entity_path=f"{metric_root}/reference/trajectory",
-                positions_xyz=reference_positions_xyz[:matched_pairs],
+                positions_xyz=reference_positions_xyz[:matched_geometry_pairs],
                 color_rgb=RERUN_SCENE.reference_color(evaluation_case.reference_source),
                 static=True,
             )
             rerun_helpers.log_line_strip3d(
                 stream,
                 entity_path=f"{metric_root}/estimate/trajectory",
-                positions_xyz=estimate_positions_xyz[:matched_pairs],
+                positions_xyz=estimate_positions_xyz[:matched_geometry_pairs],
                 color_rgb=_evaluation_candidate_color(evaluation_case.candidate_source),
                 static=True,
             )
             rerun_helpers.log_points3d(
                 stream,
                 entity_path=f"{metric_root}/estimate/ape_points",
-                points_xyz=estimate_positions_xyz[:matched_pairs],
-                colors=rerun_helpers.ape_error_colors(error_values[:matched_pairs]),
+                points_xyz=estimate_positions_xyz[:matched_geometry_pairs],
+                colors=rerun_helpers.ape_error_colors(error_values[:matched_geometry_pairs]),
                 radii=rerun_helpers.POINT_CLOUD_RADII,
                 static=True,
             )
             rerun_helpers.log_correspondence_strips3d(
                 stream,
                 entity_path=f"{metric_root}/correspondences",
-                reference_positions_xyz=reference_positions_xyz[:matched_pairs],
-                estimate_positions_xyz=estimate_positions_xyz[:matched_pairs],
+                reference_positions_xyz=reference_positions_xyz[:matched_geometry_pairs],
+                estimate_positions_xyz=estimate_positions_xyz[:matched_geometry_pairs],
                 static=True,
             )
         rerun_helpers.log_scalar_series(

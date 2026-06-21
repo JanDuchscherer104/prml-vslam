@@ -1,7 +1,7 @@
 """Open3D-backed dominant-ground detection and viewer alignment helpers.
 
 This module contains the concrete implementation of the alignment boundary
-defined in :mod:`prml_vslam.alignment.contracts`. It consumes normalized
+defined in :mod:`prml_vslam.align.gravity.contracts`. It consumes normalized
 :class:`prml_vslam.pipeline.SlamArtifacts` and emits explicit viewer-scoped
 alignment metadata without rewriting the native SLAM outputs.
 """

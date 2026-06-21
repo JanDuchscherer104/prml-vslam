@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
+from prml_vslam.align.gravity import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.interfaces.slam import SlamArtifacts

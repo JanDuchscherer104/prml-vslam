@@ -8,12 +8,21 @@ from typing import Protocol
 
 import numpy as np
 import plotly.graph_objects as go
+from evo.core import metrics
+from plotly.subplots import make_subplots
 
 from prml_vslam.eval.dataset_aggregation import CoverageMatrix, HeatmapData, PerSequenceRow
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 
 from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
 from .trajectories import _add_xy_trajectory_trace, _apply_standard_trajectory_xy_layout
+
+_RMSE_METRIC_FACETS = [
+    ("ape", metrics.PoseRelation.translation_part, "APE Translation (m)"),
+    ("ape", metrics.PoseRelation.rotation_angle_deg, "APE Rotation (deg)"),
+    ("rpe", metrics.PoseRelation.translation_part, "RPE Translation (m)"),
+    ("rpe", metrics.PoseRelation.rotation_angle_deg, "RPE Rotation (deg)"),
+]
 
 
 class TrajectoryPlotSeries(Protocol):
@@ -72,18 +81,103 @@ def build_error_figure(error_series: ErrorPlotSeries) -> go.Figure:
 
 def build_trajectory_rmse_bar(rows: list[TrajectoryMetricResultRow]) -> go.Figure:
     """Build a cross-run RMSE summary for persisted trajectory metric rows."""
-    labels = [f"{row.run_id}<br>{row.estimate_source}<br>{row.metric_family}.{row.pose_relation.name}" for row in rows]
-    figure = go.Figure(go.Bar(x=labels, y=[row.value for row in rows], marker_color=BLUE))
+    rmse_rows = [row for row in rows if row.statistic == "rmse"]
+    facets = [
+        (family, relation, title)
+        for family, relation, title in _RMSE_METRIC_FACETS
+        if any(row.metric_family == family and row.pose_relation is relation for row in rmse_rows)
+    ]
+    if not facets:
+        figure = go.Figure()
+        figure.update_layout(
+            title="RMSE by Run and Metric",
+            margin={"l": 48, "r": 24, "t": 48, "b": 64},
+            showlegend=False,
+        )
+        return figure
+
+    n_cols = 2 if len(facets) == 4 else len(facets)
+    n_rows = int(np.ceil(len(facets) / n_cols))
+    figure = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=[title for _, _, title in facets],
+        shared_yaxes=False,
+    )
+    identities = sorted({_run_identity(row) for row in rmse_rows})
+    colors = {identity: str(DEFAULT_COLORS[index % DEFAULT_COLORS.size]) for index, identity in enumerate(identities)}
+    legend_seen: set[str] = set()
+    for index, (family, relation, title) in enumerate(facets):
+        subplot_row = index // n_cols + 1
+        subplot_col = index % n_cols + 1
+        for row in rmse_rows:
+            if row.metric_family != family or row.pose_relation is not relation:
+                continue
+            identity = _run_identity(row)
+            _, coordinate_status = _estimate_source_parts(row.estimate_source)
+            figure.add_trace(
+                go.Bar(
+                    name=identity,
+                    x=[identity],
+                    y=[row.value],
+                    marker_color=colors[identity],
+                    showlegend=identity not in legend_seen,
+                    customdata=[
+                        [
+                            row.run_id,
+                            row.estimate_source,
+                            row.metric_family,
+                            row.pose_relation.name,
+                            row.value,
+                            row.unit or "",
+                            row.matched_pairs,
+                            "Sim(3) applied",
+                            coordinate_status,
+                        ]
+                    ],
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "Estimate: %{customdata[1]}<br>"
+                        "Metric: %{customdata[2]}.%{customdata[3]}<br>"
+                        "RMSE: %{customdata[4]:.4g} %{customdata[5]}<br>"
+                        "Matched pairs: %{customdata[6]}<br>"
+                        "Alignment status: %{customdata[7]}<br>"
+                        "Coordinate status: %{customdata[8]}<extra></extra>"
+                    ),
+                ),
+                row=subplot_row,
+                col=subplot_col,
+            )
+            legend_seen.add(identity)
+        figure.update_xaxes(title_text="Run / Method", row=subplot_row, col=subplot_col)
+        figure.update_yaxes(title_text=title, row=subplot_row, col=subplot_col)
     figure.update_layout(
         title="RMSE by Run and Metric",
-        xaxis_title="Run / Estimate / Metric",
-        yaxis_title="RMSE",
-        margin={"l": 48, "r": 24, "t": 48, "b": 96},
+        barmode="group",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.08, "x": 0},
+        margin={"l": 48, "r": 24, "t": 96, "b": 72},
     )
     return figure
 
 
-def build_trajectory_error_cdf(series_by_label: dict[str, np.ndarray]) -> go.Figure:
+def _run_identity(row: TrajectoryMetricResultRow) -> str:
+    source_base, coordinate_status = _estimate_source_parts(row.estimate_source)
+    if row.run_id == source_base:
+        return source_base
+    return f"{row.run_id} / {source_base}" if coordinate_status == "raw" else f"{row.run_id} / {row.estimate_source}"
+
+
+def _estimate_source_parts(estimate_source: str) -> tuple[str, str]:
+    source_base, separator, coordinate_status = estimate_source.partition("/")
+    return source_base, coordinate_status if separator else "raw"
+
+
+def build_trajectory_error_cdf(
+    series_by_label: dict[str, np.ndarray],
+    *,
+    title: str = "Error CDF",
+    unit: str = "m",
+) -> go.Figure:
     """Build an empirical CDF for one or more persisted error series."""
     figure = go.Figure()
     for label, values in series_by_label.items():
@@ -93,15 +187,20 @@ def build_trajectory_error_cdf(series_by_label: dict[str, np.ndarray]) -> go.Fig
         cdf = np.arange(1, sorted_values.size + 1, dtype=np.float64) / float(sorted_values.size)
         figure.add_trace(go.Scatter(x=sorted_values, y=cdf, mode="lines", name=label))
     figure.update_layout(
-        title="Absolute Position Error CDF",
-        xaxis_title="Error (m)",
+        title=title,
+        xaxis_title=f"Error ({unit})",
         yaxis_title="Cumulative Fraction",
         margin={"l": 48, "r": 24, "t": 48, "b": 48},
     )
     return figure
 
 
-def build_trajectory_error_box(series_by_label: dict[str, np.ndarray]) -> go.Figure:
+def build_trajectory_error_box(
+    series_by_label: dict[str, np.ndarray],
+    *,
+    title: str = "Error Distribution",
+    unit: str = "m",
+) -> go.Figure:
     """Build a distribution box plot for one or more persisted error series."""
     figure = go.Figure()
     for label, values in series_by_label.items():
@@ -109,8 +208,8 @@ def build_trajectory_error_box(series_by_label: dict[str, np.ndarray]) -> go.Fig
             continue
         figure.add_trace(go.Box(y=values, name=label, boxmean=True))
     figure.update_layout(
-        title="Absolute Position Error Distribution",
-        yaxis_title="Error (m)",
+        title=title,
+        yaxis_title=f"Error ({unit})",
         margin={"l": 48, "r": 24, "t": 48, "b": 96},
     )
     return figure

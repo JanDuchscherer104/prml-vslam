@@ -19,6 +19,7 @@ def _build_offline_input(context: PipelineExecutionContext) -> TrajectoryEvaluat
     )
     return TrajectoryEvaluationStageInput(
         artifact_root=context.plan.artifact_root,
+        path_config=context.path_config,
         baseline_source=config.evaluation.baseline_source,
         method_id=None if slam_backend is None else slam_backend.method_id,
         method_label="unknown" if slam_backend is None else slam_backend.display_name,

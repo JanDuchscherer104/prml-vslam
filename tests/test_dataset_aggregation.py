@@ -9,10 +9,13 @@ from evo.core import metrics
 
 from prml_vslam.eval.dataset_aggregation import (
     MetricFilter,
+    available_metric_keys,
     build_coverage_matrix,
     build_heatmap_data,
     build_leaderboard,
     build_per_sequence_table,
+    build_wide_metric_rows,
+    filter_metric_rows,
 )
 from prml_vslam.eval.query import DatasetEvaluationSelection, DatasetRunCoverage
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
@@ -335,3 +338,88 @@ def test_build_heatmap_data_uses_provided_metric_name() -> None:
     heatmap = build_heatmap_data(rows, ["advio-01"], metric_name="APE RMSE (m)")
 
     assert heatmap.metric_name == "APE RMSE (m)"
+
+
+def test_available_metric_keys_includes_non_rmse_with_rmse_first() -> None:
+    rows = [
+        _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw", statistic="median"),
+        _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw", statistic="rmse"),
+    ]
+
+    keys = available_metric_keys(rows)
+
+    assert keys == [
+        ("ape", metrics.PoseRelation.translation_part, "rmse"),
+        ("ape", metrics.PoseRelation.translation_part, "median"),
+    ]
+
+
+def test_build_wide_metric_rows_suppresses_single_sequence_aggregate() -> None:
+    rows = [
+        _make_metric_row(run_id="exp-a/vista", sequence_id="advio-20", estimate_source="vista/raw", value=0.1),
+        _make_metric_row(
+            run_id="exp-b/vista",
+            sequence_id="advio-20",
+            estimate_source="vista/raw",
+            value=0.3,
+        ),
+    ]
+
+    table = build_wide_metric_rows(rows)
+
+    assert {row["Run"] for row in table} == {"exp-a/vista", "exp-b/vista"}
+    assert all(row["Sequence"] != "All sequences" for row in table)
+
+
+def test_build_wide_metric_rows_adds_weighted_multi_sequence_aggregate() -> None:
+    rows = [
+        _make_metric_row(
+            run_id="exp-a/vista", sequence_id="advio-20", estimate_source="vista/raw", value=0.1, matched_pairs=1
+        ),
+        _make_metric_row(
+            run_id="exp-a/vista", sequence_id="advio-21", estimate_source="vista/raw", value=0.3, matched_pairs=3
+        ),
+    ]
+
+    aggregate = next(row for row in build_wide_metric_rows(rows) if row["Sequence"] == "All sequences")
+
+    assert aggregate["Run"] == "exp-a/vista"
+    assert aggregate["APE Trans. RMSE (m)"] == pytest.approx(0.2646, abs=1e-4)
+    assert aggregate["APE Pairs"] == 4
+
+
+def test_filter_metric_rows_filters_by_reference_and_estimate_base() -> None:
+    rows = [
+        _make_metric_row(run_id="run-01", sequence_id="advio-01", estimate_source="vista/raw"),
+        _make_metric_row(run_id="run-02", sequence_id="advio-01", estimate_source="arcore/source_native"),
+    ]
+
+    result = filter_metric_rows(rows, references=["ground_truth"], estimates=["arcore"])
+
+    assert result == [rows[1]]
+
+
+def test_build_wide_metric_rows_supports_non_rmse_without_aggregate() -> None:
+    rows = [
+        _make_metric_row(
+            run_id="run-01",
+            sequence_id="advio-01",
+            estimate_source="vista/raw",
+            statistic="median",
+            value=0.2,
+        ),
+        _make_metric_row(
+            run_id="run-01",
+            sequence_id="advio-02",
+            estimate_source="vista/raw",
+            statistic="median",
+            value=0.4,
+        ),
+    ]
+
+    result = build_wide_metric_rows(rows, statistic="median")
+
+    assert len(result) == 2
+    assert {row["Sequence"] for row in result} == {"advio-01", "advio-02"}
+    assert all(row["Sequence"] != "All sequences" for row in result)
+    assert [row["APE Trans. Median (m)"] for row in result] == [pytest.approx(0.2), pytest.approx(0.4)]

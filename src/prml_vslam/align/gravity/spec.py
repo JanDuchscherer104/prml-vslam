@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment.stage.contracts import GroundAlignmentStageInput
-from prml_vslam.alignment.stage.runtime import GroundAlignmentRuntime
+from prml_vslam.align.gravity.runtime import GroundAlignmentRuntime
+from prml_vslam.align.gravity.stage_contracts import GroundAlignmentStageInput
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import FailureFingerprint
