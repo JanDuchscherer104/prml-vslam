@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment.stage.spec import GROUND_ALIGNMENT_STAGE_SPEC
-from prml_vslam.eval.stage_alignment.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
+from prml_vslam.align.gravity.spec import GROUND_ALIGNMENT_STAGE_SPEC
+from prml_vslam.align.icp.spec import CLOUD_ALIGNMENT_STAGE_SPEC
+from prml_vslam.align.trajectory_sim3.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
 from prml_vslam.eval.stage_cloud.spec import CLOUD_EVALUATION_STAGE_SPEC
-from prml_vslam.eval.stage_cloud_alignment.spec import CLOUD_ALIGNMENT_STAGE_SPEC
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
 from prml_vslam.pipeline.contracts.stages import StageKey

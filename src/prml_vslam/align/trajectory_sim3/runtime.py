@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.trajectory_contracts import DiscoveredRun, SelectionSnapshot
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
@@ -13,7 +13,6 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
 from prml_vslam.sources.contracts import ReferenceTrajectoryRef
-from prml_vslam.utils import PathConfig
 from prml_vslam.utils.serialization import stable_hash
 
 
@@ -48,7 +47,7 @@ class TrajectoryAlignmentRuntime(OfflineStageRuntime[TrajectoryAlignmentStageInp
 
     def _run(self, input_payload: TrajectoryAlignmentStageInput) -> StageResult:
         reference = _resolve_reference(input_payload)
-        service = TrajectoryEvaluationService(PathConfig(artifacts_dir=input_payload.artifact_root.parent))
+        service = TrajectoryEvaluationService(input_payload.path_config)
         alignment_path, aligned_estimate_path, aligned_point_cloud_path = service.compute_trajectory_alignment(
             selection=SelectionSnapshot(
                 sequence_slug=input_payload.sequence_manifest.sequence_id,

@@ -7,27 +7,9 @@ so stages can reuse alignment provenance without depending on metric DTOs.
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import Field
 
 from prml_vslam.utils import BaseData
-
-
-class TrajectoryAlignmentMode(StrEnum):
-    """Describe how trajectories are aligned before metric computation."""
-
-    TIMESTAMP_ASSOCIATED_ONLY = "timestamp_associated_only"
-    SE3_UMEYAMA = "se3_umeyama"
-    SIM3_UMEYAMA = "sim3_umeyama"
-
-
-class TrajectoryAlignmentCloudUseStatus(StrEnum):
-    """State whether an alignment may publish a downstream dense cloud."""
-
-    NOT_REQUESTED = "not_requested"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
 
 
 class TrajectoryAlignmentArtifact(BaseData):
@@ -38,9 +20,6 @@ class TrajectoryAlignmentArtifact(BaseData):
 
     target_frame: str
     """Frame of the reference trajectory after alignment."""
-
-    alignment_type: TrajectoryAlignmentMode = TrajectoryAlignmentMode.SIM3_UMEYAMA
-    """Alignment family used to derive the transform."""
 
     scale: float
     """Similarity scale applied to source positions."""
@@ -72,9 +51,6 @@ class TrajectoryAlignmentArtifact(BaseData):
     cloud_input_present: bool = False
     """Whether a dense cloud was available for optional downstream transform."""
 
-    cloud_use_status: TrajectoryAlignmentCloudUseStatus = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
-    """Whether the alignment transform was accepted for dense-cloud use."""
-
     cloud_warning_reasons: list[str] = Field(default_factory=list)
     """Non-fatal reasons attached to cloud transform gating."""
 
@@ -96,6 +72,4 @@ class TrajectoryAlignmentArtifact(BaseData):
 
 __all__ = [
     "TrajectoryAlignmentArtifact",
-    "TrajectoryAlignmentCloudUseStatus",
-    "TrajectoryAlignmentMode",
 ]

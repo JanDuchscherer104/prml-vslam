@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
-from prml_vslam.alignment.contracts import GroundAlignmentConfig
+from prml_vslam.align.gravity.contracts import GroundAlignmentConfig
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig

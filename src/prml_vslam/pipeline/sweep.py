@@ -39,10 +39,10 @@ from typing import Any, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
-from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
-from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
+from prml_vslam.align.gravity.config import GroundAlignmentStageConfig
+from prml_vslam.align.icp.config import CloudAlignmentStageConfig
+from prml_vslam.align.trajectory_sim3.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
-from prml_vslam.eval.stage_cloud_alignment.config import CloudAlignmentStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,

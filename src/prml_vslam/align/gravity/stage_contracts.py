@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prml_vslam.alignment.contracts import GroundAlignmentConfig
+from prml_vslam.align.gravity.contracts import GroundAlignmentConfig
 from prml_vslam.interfaces.slam import SlamArtifacts
 from prml_vslam.utils import BaseData, RunArtifactPaths
 

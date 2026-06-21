@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
-from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
+from prml_vslam.align.icp.runtime import CloudAlignmentRuntime
+from prml_vslam.align.icp.stage_contracts import CloudAlignmentStageInput
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.stages import StageKey

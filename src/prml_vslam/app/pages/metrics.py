@@ -11,10 +11,14 @@ from evo.core import metrics
 
 from prml_vslam.eval.dataset_aggregation import (
     MetricFilter,
+    MetricKey,
+    available_metric_keys,
     build_coverage_matrix,
     build_heatmap_data,
     build_leaderboard,
     build_per_sequence_table,
+    build_wide_metric_rows,
+    filter_metric_rows,
 )
 from prml_vslam.eval.query import RunTrajectoryEvaluation
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
@@ -38,24 +42,7 @@ if TYPE_CHECKING:
 _SCOPE_OPTIONS = ["sequence", "dataset"]
 _SCOPE_LABELS = {"sequence": "Single Sequence", "dataset": "Dataset Overview"}
 
-_PRIMARY_METRIC_OPTIONS = [
-    ("ape", metrics.PoseRelation.translation_part, "rmse"),
-    ("ape", metrics.PoseRelation.rotation_angle_deg, "rmse"),
-    ("rpe", metrics.PoseRelation.translation_part, "rmse"),
-    ("rpe", metrics.PoseRelation.rotation_angle_deg, "rmse"),
-]
-_PRIMARY_METRIC_LABELS = {
-    ("ape", metrics.PoseRelation.translation_part, "rmse"): "APE Translation RMSE (m)",
-    ("ape", metrics.PoseRelation.rotation_angle_deg, "rmse"): "APE Rotation RMSE (deg)",
-    ("rpe", metrics.PoseRelation.translation_part, "rmse"): "RPE Translation RMSE (m)",
-    ("rpe", metrics.PoseRelation.rotation_angle_deg, "rmse"): "RPE Rotation RMSE (deg)",
-}
-_PRIMARY_METRIC_UNITS = {
-    ("ape", metrics.PoseRelation.translation_part, "rmse"): "APE RMSE (m)",
-    ("ape", metrics.PoseRelation.rotation_angle_deg, "rmse"): "APE Rotation RMSE (deg)",
-    ("rpe", metrics.PoseRelation.translation_part, "rmse"): "RPE RMSE (m)",
-    ("rpe", metrics.PoseRelation.rotation_angle_deg, "rmse"): "RPE Rotation RMSE (deg)",
-}
+_DEFAULT_PRIMARY_METRIC = ("ape", metrics.PoseRelation.translation_part, "rmse")
 
 
 def render(context: AppContext) -> None:
@@ -64,8 +51,8 @@ def render(context: AppContext) -> None:
         eyebrow="Benchmark Review",
         title="Trajectory Metrics",
         body=(
-            "Inspect persisted trajectory evaluation manifests across runs. This page never computes evo metrics; "
-            "rerun the trajectory evaluation stage when manifests are missing."
+            "Inspect persisted trajectory evaluation manifests across runs. "
+            "Regenerate missing or stale metrics through the trajectory evaluation repair command."
         ),
     )
     page_state = context.state.metrics
@@ -118,7 +105,7 @@ def render(context: AppContext) -> None:
     if not filtered_rows:
         st.warning("No metric rows match the selected filters.")
         return
-    _render_ranked_table(filtered_rows)
+    _render_wide_metric_table(filtered_rows)
     _render_summary_plots(context, filtered_rows)
 
 
@@ -134,6 +121,7 @@ def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
             else "loaded",
             "Metric Rows": len(item.metric_rows),
             "Skipped Metrics": item.skipped_metric_count,
+            "Sim(3) Skips": _sim3_alignment_skip_count(item),
             "Message": item.load_error or "",
         }
         for item in loaded
@@ -143,22 +131,19 @@ def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
         st.dataframe(rows, hide_index=True, width="stretch")
 
 
+def _sim3_alignment_skip_count(item: RunTrajectoryEvaluation) -> int:
+    if item.manifest is None:
+        return 0
+    return sum(1 for record in item.manifest.skipped_metrics if "Sim(3) alignment" in record.reason)
+
+
 def _render_filters(rows: list[TrajectoryMetricResultRow]) -> list[TrajectoryMetricResultRow]:
     with st.container(border=True):
         st.subheader("Filters")
-        columns = st.columns(4, gap="small")
-        families = _multi_select(columns[0], "Metric Family", [row.metric_family for row in rows])
-        relations = _multi_select(columns[1], "Pose Relation", [row.pose_relation.value for row in rows])
-        references = _multi_select(columns[2], "Reference", [row.reference_source for row in rows])
-        estimates = _multi_select(columns[3], "Estimate", [row.estimate_source for row in rows])
-    return [
-        row
-        for row in rows
-        if row.metric_family in families
-        and row.pose_relation.value in relations
-        and row.reference_source in references
-        and row.estimate_source in estimates
-    ]
+        columns = st.columns(2, gap="small")
+        references = _multi_select(columns[0], "Reference", [row.reference_source for row in rows])
+        estimates = _multi_select(columns[1], "Estimate", [row.estimate_source.split("/")[0] for row in rows])
+    return filter_metric_rows(rows, references=references, estimates=estimates)
 
 
 def _multi_select(column, label: str, values: list[str]) -> list[str]:
@@ -166,44 +151,46 @@ def _multi_select(column, label: str, values: list[str]) -> list[str]:
     return column.multiselect(label, options=options, default=options)
 
 
-def _render_ranked_table(rows: list[TrajectoryMetricResultRow]) -> None:
-    table_rows = [
-        {
-            "Run": row.run_id,
-            "Sequence": row.sequence_id,
-            "Reference": row.reference_source,
-            "Estimate": row.estimate_source,
-            "Metric": f"{row.metric_family}.{row.pose_relation.name}",
-            "Statistic": row.statistic,
-            "Value": row.value,
-            "Unit": row.unit or "",
-            "Matched Pairs": row.matched_pairs,
-        }
-        for row in sorted(rows, key=lambda item: (item.statistic != "rmse", item.value))
-    ]
+def _render_wide_metric_table(rows: list[TrajectoryMetricResultRow], *, statistic: str = "rmse") -> None:
+    table_rows = build_wide_metric_rows(rows, statistic=statistic)
     with st.container(border=True):
-        st.subheader("Ranked Metrics")
+        st.subheader("Metrics")
         st.dataframe(table_rows, hide_index=True, width="stretch")
+
+
+_PLOT_METRIC_SPECS = [
+    ("ape", "translation_part", "APE Translation", "m"),
+    ("ape", "rotation_angle_deg", "APE Rotation", "deg"),
+    ("rpe", "translation_part", "RPE Translation", "m"),
+    ("rpe", "rotation_angle_deg", "RPE Rotation", "deg"),
+]
 
 
 def _render_summary_plots(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> None:
     plot_rows = [row for row in rows if row.statistic == "rmse"]
     if plot_rows:
         st.plotly_chart(build_trajectory_rmse_bar(plot_rows), width="stretch")
-    cdf_rows = [
-        row
-        for row in rows
-        if row.statistic == "rmse"
-        and row.metric_family == "ape"
-        and row.pose_relation.name == "translation_part"
-        and row.error_series_path is not None
-    ]
-    if not cdf_rows:
-        return
-    series_by_label = _load_error_series_by_label(context, cdf_rows)
-    figures = st.columns(2, gap="large")
-    figures[0].plotly_chart(build_trajectory_error_cdf(series_by_label), width="stretch")
-    figures[1].plotly_chart(build_trajectory_error_box(series_by_label), width="stretch")
+    for family, pose_name, label, unit in _PLOT_METRIC_SPECS:
+        group_rows = [
+            row
+            for row in rows
+            if row.statistic == "rmse"
+            and row.metric_family == family
+            and row.pose_relation.name == pose_name
+            and row.error_series_path is not None
+        ]
+        if not group_rows:
+            continue
+        series_by_label = _load_error_series_by_label(context, group_rows)
+        if not any(v.size > 0 for v in series_by_label.values()):
+            continue
+        col_cdf, col_box = st.columns(2, gap="large")
+        col_cdf.plotly_chart(
+            build_trajectory_error_cdf(series_by_label, title=f"{label} CDF", unit=unit), width="stretch"
+        )
+        col_box.plotly_chart(
+            build_trajectory_error_box(series_by_label, title=f"{label} Distribution", unit=unit), width="stretch"
+        )
 
 
 def _load_error_series_by_label(context: AppContext, rows: list[TrajectoryMetricResultRow]) -> dict[str, np.ndarray]:
@@ -251,10 +238,17 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
             "Short trajectories or insufficient pose-pair counts are the usual cause. "
             "Switch to **Single Sequence** view and inspect the Skipped Metrics column for details."
         )
+    sim3_skips = sum(c.sim3_alignment_skip_count for c in dataset_selection.coverage)
+    if sim3_skips > 0:
+        st.warning(f"{sim3_skips} metric calculation(s) were skipped because Sim(3) alignment failed.")
 
-    metric_keys = _PRIMARY_METRIC_OPTIONS
+    metric_keys = available_metric_keys(dataset_selection.metric_rows)
+    if not metric_keys:
+        st.info("No metric rows are available for the selected dataset.")
+        return
     current_key = _decode_primary_metric(page_state.dataset_primary_metric)
-    metric_index = metric_keys.index(current_key) if current_key in metric_keys else 0
+    default_key = _DEFAULT_PRIMARY_METRIC if _DEFAULT_PRIMARY_METRIC in metric_keys else metric_keys[0]
+    metric_index = metric_keys.index(current_key) if current_key in metric_keys else metric_keys.index(default_key)
 
     with st.container(border=True):
         st.subheader("Primary Metric")
@@ -262,7 +256,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
             "Metric",
             options=metric_keys,
             index=metric_index,
-            format_func=lambda k: _PRIMARY_METRIC_LABELS.get(k, str(k)),
+            format_func=_metric_label,
         )
         _save_state(
             context,
@@ -280,6 +274,9 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     with st.container(border=True):
         st.subheader("Coverage")
         st.plotly_chart(build_coverage_chart(coverage_matrix), width="stretch")
+
+    if dataset_selection.metric_rows:
+        _render_wide_metric_table(dataset_selection.metric_rows, statistic=statistic)
 
     if per_seq_rows:
         leaderboard = build_leaderboard(per_seq_rows, n_total_sequences=n_total)
@@ -306,7 +303,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
         heatmap_data = build_heatmap_data(
             per_seq_rows,
             dataset_selection.all_sequence_ids,
-            metric_name=_PRIMARY_METRIC_UNITS.get(selected_metric, "RMSE"),
+            metric_name=_metric_label(selected_metric),
         )
         with st.container(border=True):
             st.subheader("Sequence Heatmap")
@@ -319,12 +316,19 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
         st.info("No metric rows match the selected primary metric. Try selecting a different metric.")
 
 
-def _encode_primary_metric(key: tuple) -> str:
+def _metric_label(key: MetricKey) -> str:
+    family, pose_relation, statistic = key
+    pose_label = "Translation" if pose_relation is metrics.PoseRelation.translation_part else "Rotation"
+    unit = "m" if pose_relation is metrics.PoseRelation.translation_part else "deg"
+    return f"{family.upper()} {pose_label} {statistic.upper()} ({unit})"
+
+
+def _encode_primary_metric(key: MetricKey) -> str:
     family, pose_relation, statistic = key
     return f"{family}/{pose_relation.name}/{statistic}"
 
 
-def _decode_primary_metric(encoded: str) -> tuple | None:
+def _decode_primary_metric(encoded: str) -> MetricKey | None:
     parts = encoded.split("/")
     if len(parts) != 3:
         return None
