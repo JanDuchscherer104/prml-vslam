@@ -13,17 +13,8 @@ from pathlib import Path
 
 from pydantic import Field
 
-from prml_vslam.sources.datasets.contracts import (
-    DatasetDownloadResult,
-    DatasetSummary,
-    LocalSceneStatus,
-)
+from prml_vslam.sources.datasets.contracts import ReferenceCloudConfig
 from prml_vslam.utils import BaseConfig, BaseData
-from prml_vslam.utils.geometry import (
-    DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX,
-    DEFAULT_REFERENCE_CLOUD_MAX_POINTS,
-    DEFAULT_REFERENCE_CLOUD_RANDOM_SEED,
-)
 
 
 class TumRgbdPoseSource(StrEnum):
@@ -38,52 +29,6 @@ class TumRgbdPoseSource(StrEnum):
         return {
             self.GROUND_TRUTH: "Ground Truth",
             self.NONE: "No Pose Overlay",
-        }[self]
-
-
-class TumRgbdModality(StrEnum):
-    """Name the downloadable TUM RGB-D modality bundles."""
-
-    RGB = "rgb"
-    DEPTH = "depth"
-    GROUND_TRUTH = "ground_truth"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing modality label shown in TUM RGB-D controls."""
-        return {
-            self.RGB: "RGB Frames",
-            self.DEPTH: "Depth Frames",
-            self.GROUND_TRUTH: "Ground Truth",
-        }[self]
-
-
-class TumRgbdDownloadPreset(StrEnum):
-    """Describe curated modality bundles for common TUM RGB-D workflows."""
-
-    STREAMING = "streaming"
-    OFFLINE = "offline"
-    FULL = "full"
-
-    @property
-    def label(self) -> str:
-        """Return the user-facing preset label shown in TUM RGB-D download controls."""
-        return self.value.capitalize()
-
-    @property
-    def modalities(self) -> tuple[TumRgbdModality, ...]:
-        """Return the effective modality bundle for the selected preset."""
-        return {
-            self.STREAMING: (
-                TumRgbdModality.RGB,
-                TumRgbdModality.GROUND_TRUTH,
-            ),
-            self.OFFLINE: (
-                TumRgbdModality.RGB,
-                TumRgbdModality.DEPTH,
-                TumRgbdModality.GROUND_TRUTH,
-            ),
-            self.FULL: tuple(TumRgbdModality),
         }[self]
 
 
@@ -111,33 +56,7 @@ class TumRgbdDownloadRequest(BaseConfig):
     """Describe one explicit TUM RGB-D download selection."""
 
     sequence_ids: list[str] = Field(default_factory=list)
-    preset: TumRgbdDownloadPreset = TumRgbdDownloadPreset.OFFLINE
-    modalities: list[TumRgbdModality] = Field(default_factory=list)
     overwrite: bool = False
-
-    def resolved_modalities(self) -> tuple[TumRgbdModality, ...]:
-        """Return the effective modality bundle for the request."""
-        return tuple(self.modalities) if self.modalities else self.preset.modalities
-
-
-class TumRgbdDownloadResult(DatasetDownloadResult[str, TumRgbdModality]):
-    """Summary of one explicit TUM RGB-D download action."""
-
-
-class TumRgbdLocalSceneStatus(LocalSceneStatus[TumRgbdSceneMetadata, TumRgbdModality]):
-    """Local availability summary for one TUM RGB-D scene."""
-
-
-class TumRgbdDatasetSummary(DatasetSummary):
-    """High-level summary of committed and local TUM RGB-D coverage."""
-
-
-class ReferenceCloudSamplingConfig(BaseConfig):
-    """Sampling policy for source-prepared TUM RGB-D reference clouds."""
-
-    depth_stride_px: int = Field(default=DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX, ge=1)
-    max_points: int = Field(default=DEFAULT_REFERENCE_CLOUD_MAX_POINTS, ge=1)
-    random_seed: int = Field(default=DEFAULT_REFERENCE_CLOUD_RANDOM_SEED, ge=0)
 
 
 class TumRgbdSequenceConfig(BaseConfig):
@@ -145,4 +64,6 @@ class TumRgbdSequenceConfig(BaseConfig):
 
     dataset_root: Path = Path(".data/tum_rgbd")
     sequence_id: str
-    reference_cloud: ReferenceCloudSamplingConfig = Field(default_factory=ReferenceCloudSamplingConfig)
+    reference_cloud: ReferenceCloudConfig = Field(default_factory=ReferenceCloudConfig)
+    rgb_max_width_px: int = Field(default=392, ge=1)
+    rgb_dimension_multiple: int = Field(default=14, ge=1)

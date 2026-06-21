@@ -37,21 +37,20 @@ from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
 )
-from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.advio.advio_layout import (
-    resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
+from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalization import (
+    dataset_service,
+    normalized_profile_for_dataset,
+    normalized_store_for_service,
 )
-from prml_vslam.sources.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
-from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
-    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
-)
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
+from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -293,10 +292,35 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
                 "pose_source": dataset_serving.pose_source.value,
                 "pose_frame_mode": dataset_serving.pose_frame_mode.value,
             }
-        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode):
+        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode, reference_cloud=reference_cloud):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["metadata"] = {"dataset_id": DatasetId.TUM_RGBD.value}
+            payload["metadata"] = {
+                "dataset_id": DatasetId.TUM_RGBD.value,
+                "reference_cloud_source": ReferenceCloudSource.TUM_RGBD.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
+        case Record3DDatasetSourceConfig(
+            sequence_id=sequence_id,
+            replay_mode=replay_mode,
+            materialization=materialization,
+            reference_cloud=reference_cloud,
+        ):
+            payload["sequence_id"] = sequence_id
+            payload["replay_mode"] = replay_mode.value
+            payload["metadata"] = {
+                "dataset_id": DatasetId.RECORD3D.value,
+                "pose_source": ReferenceSource.ARKIT.value,
+                "pose_frame_mode": materialization.pose_frame_mode.value,
+                "reference_cloud_source": ReferenceCloudSource.RECORD3D_LIDAR.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
         case Record3DSourceConfig(transport=transport, device_index=device_index, device_address=device_address):
             payload["transport"] = transport.value
             payload["device_index"] = device_index
@@ -321,23 +345,49 @@ def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
     if source_backend.target_fps is not None:
         return float(source_backend.target_fps)
-    native_fps = _native_source_fps(source_backend, path_config=path_config)
+    native_fps = _source_fps(source_backend, path_config=path_config)
     if native_fps is None:
         return None
     return native_fps / source_backend.frame_stride
 
 
-def _native_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+def _source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
     try:
         match source_backend:
             case VideoSourceConfig(video_path=video_path):
                 return _video_native_fps(video_path=video_path, path_config=path_config)
-            case AdvioSourceConfig(sequence_id=sequence_id):
-                return _advio_native_fps(sequence_id=sequence_id, path_config=path_config)
-            case TumRgbdSourceConfig(sequence_id=sequence_id):
-                return _tum_rgbd_native_fps(sequence_id=sequence_id, path_config=path_config)
+            case AdvioSourceConfig() | TumRgbdSourceConfig() | Record3DDatasetSourceConfig():
+                return _normalized_source_fps(source_backend, path_config=path_config)
             case Record3DSourceConfig():
                 return None
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    try:
+        match source_backend:
+            case AdvioSourceConfig() as source:
+                dataset_id = DatasetId.ADVIO
+            case TumRgbdSourceConfig() as source:
+                dataset_id = DatasetId.TUM_RGBD
+            case Record3DDatasetSourceConfig() as source:
+                dataset_id = DatasetId.RECORD3D
+            case _:
+                return None
+        service = dataset_service(dataset_id, path_config)
+        profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
+        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+            profile,
+            frame_selection=FrameSelectionConfig(
+                frame_stride=source_backend.frame_stride,
+                target_fps=source_backend.target_fps,
+            ),
+        )
+        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        if manifest.timestamps_path is None:
+            return None
+        return _fps_for_timestamps_ns(load_timestamps_ns(manifest.timestamps_path))
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None
 
@@ -358,39 +408,12 @@ def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | N
         capture.release()
 
 
-def _advio_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.ADVIO.value)
-    sequence_dir = resolve_existing_advio_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
-        return None
-    timestamps_ns = load_advio_frame_timestamps_ns(sequence_dir / "iphone" / "frames.csv")
-    return _fps_for_timestamps_ns(timestamps_ns)
-
-
-def _tum_rgbd_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
-    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
-        return None
-    timestamps_s = [timestamp_s for timestamp_s, _path in load_tum_rgbd_list(sequence_dir / "rgb.txt")]
-    return _fps_for_timestamps_s(timestamps_s)
-
-
 def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
     if len(timestamps_ns) < 2:
         return None
     return _fps_for_duration(
         sample_count=len(timestamps_ns),
         duration_s=(int(timestamps_ns[-1]) - int(timestamps_ns[0])) / 1e9,
-    )
-
-
-def _fps_for_timestamps_s(timestamps_s: Sequence[float]) -> float | None:
-    if len(timestamps_s) < 2:
-        return None
-    return _fps_for_duration(
-        sample_count=len(timestamps_s),
-        duration_s=float(timestamps_s[-1]) - float(timestamps_s[0]),
     )
 
 
@@ -452,7 +475,10 @@ def build_run_config(
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=trajectory_alignment_enabled),
+            align_trajectory=TrajectoryAlignmentStageConfig(
+                enabled=trajectory_alignment_enabled,
+                baseline_source=trajectory_baseline,
+            ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
                 evaluation=trajectory_policy,

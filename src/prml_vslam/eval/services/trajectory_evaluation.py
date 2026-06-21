@@ -221,8 +221,7 @@ class TrajectoryEvaluationService:
             selection=SelectionSnapshot(
                 sequence_slug=sequence_manifest.sequence_id,
                 reference_path=reference.path,
-                target_frame=reference.target_frame
-                or _infer_target_frame(sequence_manifest.dataset_id, reference.path),
+                target_frame=_reference_target_frame_for_evaluation(sequence_manifest.dataset_id, reference),
                 coordinate_status=reference.coordinate_status.value
                 if reference.coordinate_status
                 else _infer_coordinate_status(sequence_manifest.dataset_id, reference.path),
@@ -502,6 +501,16 @@ def _infer_target_frame(dataset: DatasetId | None, reference_path: Path | None) 
     if dataset is DatasetId.TUM_RGBD:
         return "tum_rgbd_world"
     return "world"
+
+
+def _reference_target_frame_for_evaluation(dataset: DatasetId | None, reference: ReferenceTrajectoryRef) -> str:
+    if reference.target_frame is not None:
+        return reference.target_frame
+    if dataset is DatasetId.ADVIO:
+        raise RuntimeError(
+            "ADVIO trajectory evaluation requires explicit ReferenceTrajectoryRef.target_frame metadata."
+        )
+    return _infer_target_frame(dataset, reference.path)
 
 
 def _infer_coordinate_status(dataset: DatasetId | None, reference_path: Path | None) -> str:

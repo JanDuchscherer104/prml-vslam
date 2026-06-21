@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from .tum_rgbd_models import (
     TumRgbdCatalog,
-    TumRgbdModality,
     TumRgbdSceneMetadata,
 )
 
@@ -116,34 +115,21 @@ def list_local_sequence_ids(dataset_root: Path) -> list[str]:
     return sorted(sequence_ids)
 
 
-def local_modalities(dataset_root: Path, scene: TumRgbdSceneMetadata) -> list[TumRgbdModality]:
+def offline_ready(dataset_root: Path, scene: TumRgbdSceneMetadata) -> bool:
     sequence_dir = resolve_existing_sequence_dir(dataset_root, scene.sequence_id)
     if sequence_dir is None:
-        return []
-    return [modality for modality in TumRgbdModality if _modality_present(sequence_dir=sequence_dir, modality=modality)]
-
-
-def archive_member_matches(relative_path: PurePosixPath, modalities: tuple[TumRgbdModality, ...]) -> bool:
-    if not relative_path.parts:
         return False
-    name = relative_path.name
-    first_part = relative_path.parts[0]
-    return any(
-        (modality is TumRgbdModality.RGB and (first_part == "rgb" or name == "rgb.txt"))
-        or (modality is TumRgbdModality.DEPTH and (first_part == "depth" or name == "depth.txt"))
-        or (modality is TumRgbdModality.GROUND_TRUTH and name in {"groundtruth.txt", "pose.txt"})
-        for modality in modalities
+    return (
+        (sequence_dir / "rgb.txt").exists()
+        and (sequence_dir / "rgb").is_dir()
+        and (sequence_dir / "depth.txt").exists()
+        and (sequence_dir / "depth").is_dir()
+        and ((sequence_dir / "groundtruth.txt").exists() or (sequence_dir / "pose.txt").exists())
     )
 
 
-def _modality_present(*, sequence_dir: Path, modality: TumRgbdModality) -> bool:
-    match modality:
-        case TumRgbdModality.RGB:
-            return (sequence_dir / "rgb.txt").exists() and (sequence_dir / "rgb").is_dir()
-        case TumRgbdModality.DEPTH:
-            return (sequence_dir / "depth.txt").exists() and (sequence_dir / "depth").is_dir()
-        case TumRgbdModality.GROUND_TRUTH:
-            return (sequence_dir / "groundtruth.txt").exists() or (sequence_dir / "pose.txt").exists()
+def replay_ready(dataset_root: Path, scene: TumRgbdSceneMetadata) -> bool:
+    return offline_ready(dataset_root, scene)
 
 
 def _archive_url(sequence_id: str) -> str:

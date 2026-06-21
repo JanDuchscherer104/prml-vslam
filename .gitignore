@@ -236,6 +236,7 @@ docs/slides/**/*.svgz
 .agents/tmp/
 .agents/work/
 .agents/skills/repo-context-explorer/
+.omc/
 
 # Local pipeline/demo outputs
 .artifacts/
