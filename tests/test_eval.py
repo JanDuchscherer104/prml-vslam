@@ -48,6 +48,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply, write_point_cloud_ply, write_tum_trajectory
 
@@ -242,6 +243,56 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         "arkit/source_native",
         "arkit/aligned",
     }
+
+
+def test_advio_pipeline_evaluation_requires_explicit_target_frame(tmp_path: Path) -> None:
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+        ],
+        timestamps=[0.0, 1.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.1, ty=0.0, tz=0.0),
+        ],
+        timestamps=[0.0, 1.0],
+    )
+    run_config = build_run_config(
+        experiment_name="advio-missing-frame",
+        output_dir=tmp_path,
+        source_backend=VideoSourceConfig(video_path=tmp_path / "demo.mp4"),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=True,
+    )
+    plan = RunPlan(
+        run_id="advio-missing-frame",
+        mode=PipelineMode.OFFLINE,
+        artifact_root=tmp_path / "run",
+        source=PlannedSource(source_id="video", video_path=tmp_path / "demo.mp4"),
+    )
+    benchmark_inputs = PreparedBenchmarkInputs(
+        reference_trajectories=[
+            ReferenceTrajectoryRef(
+                source=ReferenceSource.GROUND_TRUTH,
+                path=reference_path,
+                coordinate_status=ReferenceCloudCoordinateStatus.SOURCE_NATIVE,
+            )
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="ADVIO trajectory evaluation requires explicit"):
+        TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path)).compute_pipeline_evaluation(
+            run_config=run_config,
+            plan=plan,
+            sequence_manifest=SequenceManifest(sequence_id="advio-20", dataset_id=DatasetId.ADVIO),
+            benchmark_inputs=benchmark_inputs,
+            slam=SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="estimate")),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +679,8 @@ def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
 
     assert _is_gravity_aligned_target("advio_gt_world")
     assert _is_gravity_aligned_target("advio_arkit_world")
+    assert not _is_gravity_aligned_target("advio_gt_world_local_first_pose")
+    assert not _is_gravity_aligned_target("advio_arkit_world_local_first_pose")
     assert not _is_gravity_aligned_target("tum_rgbd_world")
     assert not _is_gravity_aligned_target("world")
 
