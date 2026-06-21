@@ -1,0 +1,28 @@
+# MASt3R-SLAM method template for the sweep runner.
+#
+# IMPORTANT: Only [stages.slam] is read by the sweeper.  All other sections
+# (source, alignment, evaluation, reconstruction, visualization) are ignored.
+# Dataset selection, baseline policy, and downstream stage enablement are
+# controlled by the [[datasets]] entries in the sweep TOML.
+#
+# Run one-off (outside a sweep):
+#   uv run --extra mast3r prml-vslam run-config .configs/pipelines/advio-15-offline-mast3r-smoke.toml
+
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "mast3r"
+    max_frames  = 50
+    random_seed = 43
