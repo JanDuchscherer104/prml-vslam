@@ -14,6 +14,11 @@ __all__ = [
     "RunSnapshot",
     "RunSummary",
     "StageKey",
+    "SweepConfig",
+    "SweepRunItem",
+    "build_run_config_from_sweep_item",
+    "expand_sweep",
+    "load_sweep_config",
 ]
 
 
@@ -54,4 +59,8 @@ def __getattr__(name: str) -> Any:
         from .contracts.stages import StageKey
 
         return StageKey
+    if name in {"SweepConfig", "SweepRunItem", "build_run_config_from_sweep_item", "expand_sweep", "load_sweep_config"}:
+        from . import sweep as _sweep
+
+        return getattr(_sweep, name)
     raise AttributeError(name)

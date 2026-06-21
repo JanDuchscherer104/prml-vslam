@@ -691,6 +691,111 @@ def _run_config_loaded(*, run_cfg: RunConfig, path_config: PathConfig) -> None:
         raise typer.Exit(code=1)
 
 
+@app.command("plan-sweep-config")
+def plan_sweep_config(
+    sweep_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to a sweep TOML file.",
+        ),
+    ],
+) -> None:
+    """Print the expanded sweep plan as JSON without executing any runs.
+
+    Loads the sweep TOML, validates the config, resolves all method template
+    paths, and prints the list of expanded run items.  Use this command to
+    inspect ordering and run IDs before committing to a full sweep execution.
+    """
+    from prml_vslam.pipeline.sweep import expand_sweep, load_sweep_config
+
+    path_config = get_path_config()
+    try:
+        config = load_sweep_config(sweep_path, path_config)
+        items = expand_sweep(config, path_config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print(json.dumps([item.model_dump(mode="json") for item in items], indent=2))
+
+
+@app.command("run-sweep-config")
+def run_sweep_config(
+    sweep_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to a sweep TOML file.",
+        ),
+    ],
+    fail_fast: Annotated[
+        bool,
+        typer.Option(
+            "--fail-fast/--continue-on-failure",
+            help=(
+                "Stop immediately after the first failed run (--fail-fast, default) "
+                "or attempt all runs and report failures at the end (--continue-on-failure)."
+            ),
+        ),
+    ] = True,
+) -> None:
+    """Execute all expanded runs from a sweep TOML sequentially.
+
+    Each run reuses the existing single-run execution path (``_run_config_loaded``)
+    and writes its own timestamped log under the run-log directory.  Local
+    artifacts under ``[sweep].output_dir`` remain the only source of truth.
+
+    Exits with code 1 when one or more runs fail.  With ``--fail-fast`` (default)
+    execution stops on the first failure; with ``--continue-on-failure`` all runs
+    are attempted and a failure summary is printed at the end.  A ``Ctrl-C``
+    interrupt always propagates immediately regardless of the mode.
+    """
+    from prml_vslam.pipeline.sweep import build_run_config_from_sweep_item, expand_sweep, load_sweep_config
+
+    path_config = get_path_config()
+    try:
+        config = load_sweep_config(sweep_path, path_config)
+        items = expand_sweep(config, path_config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    total = len(items)
+    failures: list[str] = []
+
+    for idx, item in enumerate(items, start=1):
+        console.info("Sweep run %d/%d: %s", idx, total, item.run_id)
+        try:
+            run_cfg = build_run_config_from_sweep_item(item)
+        except Exception as exc:
+            console.error("Sweep run %s failed to build config (run %d/%d): %s", item.run_id, idx, total, exc)
+            failures.append(item.run_id)
+            if fail_fast:
+                raise typer.Exit(code=1) from exc
+            continue
+        run_id = path_config.slugify_experiment_name(run_cfg.experiment_name)
+        with _capture_run_config_logs(path_config=path_config, run_id=run_id) as log_path:
+            console.info("Persisting run-config log to '%s'.", log_path)
+            try:
+                _run_config_loaded(run_cfg=run_cfg, path_config=path_config)
+            except typer.Exit as exc:
+                if exc.exit_code == 130:
+                    raise
+                console.error("Sweep run %s failed (run %d/%d).", item.run_id, idx, total)
+                failures.append(item.run_id)
+                if fail_fast:
+                    raise typer.Exit(code=1) from exc
+
+    if failures:
+        console.error(
+            "%d of %d sweep run(s) failed: %s",
+            len(failures),
+            total,
+            ", ".join(failures),
+        )
+        raise typer.Exit(code=1)
+
+    console.info("Sweep complete: %d/%d runs succeeded.", total - len(failures), total)
+
+
 @app.command("eval-trajectory")
 def eval_trajectory(
     artifact_root: Annotated[
