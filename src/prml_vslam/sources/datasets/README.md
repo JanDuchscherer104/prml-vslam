@@ -234,8 +234,10 @@ are diagnostic reference trajectories only and are never benchmark candidates.
 Normalized ADVIO manifests keep calibration/intrinsics but set raw pose refs and
 fixpoints to `None`; raw ADVIO pose/fixpoint CSV sidecars are invalid under a
 normalized datastore entry. The ADVIO normalized profile convention is
-`fixedpoint_common_start_local_rdf_v1`, and older or missing conventions are
-treated as rebuild-required instead of compatible defaults.
+`fixedpoint_common_start_local_rdf_v1`. The known legacy local-first-pose
+convention and legacy `registered` coordinate status are accepted with a warning
+for replay compatibility; missing conventions are treated as rebuild-required
+instead of compatible defaults.
 
 New entries use canonical roots only: source inputs under `<entry>/input/`,
 reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds
@@ -292,20 +294,24 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_profile_for_dataset,
     normalized_store_for_service,
 )
+from prml_vslam.sources.datasets.normalized_source import NormalizedDatasetRuntimeSource
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
 from prml_vslam.utils import PathConfig
 
 path_config = PathConfig()
 service = AdvioDatasetService(path_config)
 source_config = AdvioSourceConfig(sequence_id="advio-15")
-source = service.build_normalized_source(
-    sequence_id=service.resolve_sequence_id(source_config.sequence_id),
-    normalized_store=normalized_store_for_service(DatasetId.ADVIO, path_config),
-    normalized_profile=normalized_profile_for_dataset(
+sequence_id = service.resolve_sequence_id(source_config.sequence_id)
+source = NormalizedDatasetRuntimeSource(
+    label=service.scene(sequence_id).display_name,
+    store=normalized_store_for_service(DatasetId.ADVIO, path_config),
+    profile=normalized_profile_for_dataset(
         dataset_id=DatasetId.ADVIO,
         service=service,
         source_config=source_config,
     ),
+    frame_selection=source_config,
+    replay_mode=source_config.replay_mode,
 )
 stream = source.open_stream(loop=False)
 

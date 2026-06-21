@@ -43,6 +43,7 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.advio import AdvioPoseSource, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalized_source import NormalizedDatasetRuntimeSource
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
@@ -904,8 +905,6 @@ def test_video_source_config_constructs_video_adapter(tmp_path: Path) -> None:
 
 
 def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monkeypatch) -> None:
-    calls: list[tuple[str, object]] = []
-
     class FakeDatasetService:
         def __init__(self, path_config: PathConfig) -> None:
             self.path_config = path_config
@@ -916,9 +915,8 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
                 return 20
             return f"resolved-{sequence_id}"
 
-        def build_normalized_source(self, **kwargs):
-            calls.append(("normalized", kwargs))
-            return _ManifestOnlySource(rgb_dir=tmp_path)
+        def scene(self, sequence_id: object) -> SimpleNamespace:
+            return SimpleNamespace(display_name=f"Scene {sequence_id}")
 
     monkeypatch.setattr("prml_vslam.sources.config.AdvioDatasetService", FakeDatasetService)
     monkeypatch.setattr("prml_vslam.sources.config.TumRgbdDatasetService", FakeDatasetService)
@@ -935,24 +933,22 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
         replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     ).setup_target(path_config=path_config)
 
-    assert tum_source.label == "manifest-only"
-    assert advio_source.label == "manifest-only"
-    assert [call[0] for call in calls] == ["normalized", "normalized"]
-    assert calls[0][1]["sequence_id"] == "resolved-freiburg1_room"
-    assert calls[0][1]["frame_selection"].target_fps == 15.0
-    assert calls[0][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert calls[0][1]["normalized_store"].dataset_id is DatasetId.TUM_RGBD
-    assert calls[0][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
-    assert calls[0][1]["normalized_profile"].dataset_id is DatasetId.TUM_RGBD
-    assert calls[0][1]["normalized_profile"].sequence_id == "resolved-freiburg1_room"
-    assert calls[1][1]["sequence_id"] == 20
-    assert calls[1][1]["replay_mode"] is ReplayMode.FAST_AS_POSSIBLE
-    assert "normalize_video_orientation" not in calls[1][1]
-    assert calls[1][1]["frame_selection"].frame_stride == 3
-    assert calls[1][1]["normalized_store"].dataset_id is DatasetId.ADVIO
-    assert calls[1][1]["normalized_store"].store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
-    assert calls[1][1]["normalized_profile"].dataset_id is DatasetId.ADVIO
-    assert calls[1][1]["normalized_profile"].sequence_id == "advio-20"
+    assert isinstance(tum_source, NormalizedDatasetRuntimeSource)
+    assert isinstance(advio_source, NormalizedDatasetRuntimeSource)
+    assert tum_source.label == "resolved-freiburg1_room"
+    assert advio_source.label == "advio-20"
+    assert tum_source._frame_selection.target_fps == 15.0
+    assert tum_source._replay_mode is ReplayMode.FAST_AS_POSSIBLE
+    assert tum_source._store.dataset_id is DatasetId.TUM_RGBD
+    assert tum_source._store.store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
+    assert tum_source._profile.dataset_id is DatasetId.TUM_RGBD
+    assert tum_source._profile.sequence_id == "resolved-freiburg1_room"
+    assert advio_source._frame_selection.frame_stride == 3
+    assert advio_source._replay_mode is ReplayMode.FAST_AS_POSSIBLE
+    assert advio_source._store.dataset_id is DatasetId.ADVIO
+    assert advio_source._store.store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
+    assert advio_source._profile.dataset_id is DatasetId.ADVIO
+    assert advio_source._profile.sequence_id == "advio-20"
 
 
 def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orientation() -> None:

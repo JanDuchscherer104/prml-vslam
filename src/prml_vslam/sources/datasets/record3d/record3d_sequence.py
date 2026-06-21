@@ -37,7 +37,6 @@ from prml_vslam.sources.replay import ImageSequenceObservationSource, Observatio
 from prml_vslam.utils import BaseData
 from prml_vslam.utils.geometry import (
     depth_map_to_world_points,
-    poses_relative_to_first_pose,
     sample_point_cloud_random,
     write_point_cloud_ply,
     write_tum_trajectory,
@@ -152,12 +151,14 @@ class Record3DSequence(BaseData):
         sample = self.load_offline_sample()
         stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(sample.timestamps_ns)
         selected_frames = list(sample.frames[::stride])
-        normalized_poses_world_camera = poses_relative_to_first_pose(sample.poses_world_camera)
+        normalized_poses_world_camera = _poses_relative_to_first_pose(sample.poses_world_camera)
+        selected_poses_world_camera = [normalized_poses_world_camera[frame.index] for frame in selected_frames]
+        selected_timestamps_s = [sample.timestamps_ns[frame.index] / 1e9 for frame in selected_frames]
         output.mkdir(parents=True, exist_ok=True)
         trajectory_path = write_tum_trajectory(
             output / "record3d_arkit.tum",
-            normalized_poses_world_camera,
-            [timestamp_ns / 1e9 for timestamp_ns in sample.timestamps_ns],
+            selected_poses_world_camera,
+            selected_timestamps_s,
         )
         trajectory_metadata_path = _write_json(
             output / "record3d_arkit.metadata.json",
@@ -429,3 +430,17 @@ def _write_json(path: Path, payload: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path.resolve()
+
+
+def _poses_relative_to_first_pose(poses_world_camera: list[FrameTransform]) -> list[FrameTransform]:
+    if not poses_world_camera:
+        raise ValueError("Record3D benchmark materialization requires at least one camera pose.")
+    first_inv = np.linalg.inv(poses_world_camera[0].as_matrix())
+    return [
+        FrameTransform.from_matrix(
+            first_inv @ pose.as_matrix(),
+            target_frame=pose.target_frame,
+            source_frame=pose.source_frame,
+        )
+        for pose in poses_world_camera
+    ]

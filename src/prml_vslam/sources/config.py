@@ -14,12 +14,13 @@ from prml_vslam.sources.datasets.contracts import (
     FrameSelectionConfig,
     ReferenceCloudConfig,
 )
+from prml_vslam.sources.datasets.normalized_source import NormalizedDatasetRuntimeSource
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetProfile,
     normalized_dataset_profile,
     normalized_store_for_path_config,
 )
-from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DMaterializationConfig, record3d_layout
+from prml_vslam.sources.datasets.record3d import Record3DMaterializationConfig, record3d_layout
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.materialization import VideoOfflineSequenceSource
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
@@ -54,7 +55,7 @@ class NormalizedStoreFrameSelectionConfig(FrameSelectionConfig):
         return self
 
 
-class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
+class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["tum_rgbd"] = "tum_rgbd"
@@ -64,7 +65,7 @@ class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Str
     rgb_max_width_px: int = Field(default=392, ge=1)
     rgb_dimension_multiple: int = Field(default=14, ge=1)
 
-    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> NormalizedDatasetRuntimeSource:
         path_config = get_path_config() if path_config is None else path_config
         service = TumRgbdDatasetService(path_config)
         sequence_id = str(service.resolve_sequence_id(self.sequence_id))
@@ -74,16 +75,16 @@ class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Str
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_normalized_source(
-            sequence_id=sequence_id,
+        return NormalizedDatasetRuntimeSource(
+            label=sequence_id,
+            store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
+            profile=profile,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
-            normalized_store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
-            normalized_profile=profile,
         )
 
 
-class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
+class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["advio"] = "advio"
@@ -94,7 +95,7 @@ class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Strea
     rgb_max_width_px: int = Field(default=392, ge=1)
     rgb_dimension_multiple: int = Field(default=14, ge=1)
 
-    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> NormalizedDatasetRuntimeSource:
         path_config = get_path_config() if path_config is None else path_config
         service = AdvioDatasetService(path_config)
         sequence_id = service.resolve_sequence_id(self.sequence_id)
@@ -105,16 +106,16 @@ class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Strea
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_normalized_source(
-            sequence_id=sequence_id,
+        return NormalizedDatasetRuntimeSource(
+            label=canonical_sequence_id,
+            store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
+            profile=profile,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
-            normalized_store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
-            normalized_profile=profile,
         )
 
 
-class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[StreamingSequenceSource]):
+class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="forbid")
 
     source_id: Literal["record3d_dataset"] = "record3d_dataset"
@@ -125,9 +126,8 @@ class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryCo
     rgb_max_width_px: int = Field(default=392, ge=1)
     rgb_dimension_multiple: int = Field(default=14, ge=1)
 
-    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> StreamingSequenceSource:
+    def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> NormalizedDatasetRuntimeSource:
         path_config = get_path_config() if path_config is None else path_config
-        service = Record3DDatasetService(path_config)
         sequence_id = record3d_layout.normalize_sequence_id(self.sequence_id)
         profile = normalized_profile_for_source_config(
             dataset_id=DatasetId.RECORD3D,
@@ -135,12 +135,12 @@ class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryCo
             source_id=self.source_id,
             payload=self.model_dump(mode="json"),
         )
-        return service.build_normalized_source(
-            sequence_id=sequence_id,
+        return NormalizedDatasetRuntimeSource(
+            label=sequence_id,
+            store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
+            profile=profile,
             frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
             replay_mode=self.replay_mode,
-            normalized_store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
-            normalized_profile=profile,
         )
 
 

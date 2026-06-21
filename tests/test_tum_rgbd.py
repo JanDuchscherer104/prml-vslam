@@ -475,10 +475,9 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
     )
-    raw_source = service._build_raw_streaming_source(
+    raw_source = service._build_normalization_materializer(
         sequence_id="freiburg1_desk",
         frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
         reference_cloud=source_config.reference_cloud,
     )
 
@@ -548,10 +547,9 @@ def test_tum_rgbd_schema_9_entries_remain_read_compatible(tmp_path: Path) -> Non
     )
     entry = store.create_entry_from_source(
         profile=profile,
-        source=service._build_raw_streaming_source(
+        source=service._build_normalization_materializer(
             sequence_id="freiburg1_desk",
             frame_selection=FrameSelectionConfig(),
-            replay_mode=source_config.replay_mode,
             reference_cloud=source_config.reference_cloud,
         ),
     )
