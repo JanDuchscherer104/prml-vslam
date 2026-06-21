@@ -18,6 +18,7 @@ from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     TrajectoryEvaluationManifest,
     TrajectoryMetricResultRow,
+    stable_run_id,
 )
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.sources.contracts import SequenceManifest
@@ -33,7 +34,7 @@ class DatasetRunCoverage(BaseData):
     """Source sequence identifier for this run."""
 
     run_id: str
-    """Run identifier derived from the artifact root name."""
+    """Stable run identifier derived from the artifact root under ``artifacts_dir``."""
 
     artifact_root: Path
     """Run artifact root directory."""
@@ -168,7 +169,7 @@ class TrajectoryEvaluationQueryService:
             coverage.append(
                 DatasetRunCoverage(
                     sequence_id=sequence_id,
-                    run_id=run.artifact_root.name,
+                    run_id=stable_run_id(run.artifact_root, self.path_config),
                     artifact_root=run.artifact_root,
                     method=run.method,
                     manifest_present=evaluation.manifest is not None,

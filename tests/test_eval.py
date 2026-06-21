@@ -195,7 +195,7 @@ def test_sim3_umeyama_preview_rejects_degenerate_trajectory(tmp_path: Path) -> N
         )
 
 
-def test_trajectory_evaluation_service_persists_unsupported_alignment_as_skipped(tmp_path: Path) -> None:
+def test_trajectory_evaluation_service_raises_when_primary_alignment_is_unsupported(tmp_path: Path) -> None:
     reference_path = write_tum_trajectory(
         tmp_path / "reference.tum",
         poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
@@ -209,17 +209,17 @@ def test_trajectory_evaluation_service_persists_unsupported_alignment_as_skipped
     run_root = tmp_path / "run"
     service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts"))
 
-    manifest = service.compute_evaluation(
-        selection=SelectionSnapshot(
-            sequence_slug="seq",
-            reference_path=reference_path,
-            reference_source="ground_truth",
-            run=DiscoveredRun(artifact_root=run_root, estimate_path=estimate_path, label="vista", method="vista"),
+    with pytest.raises(AlignmentUnsupportedError, match="geometric spread"):
+        service.compute_evaluation(
+            selection=SelectionSnapshot(
+                sequence_slug="seq",
+                reference_path=reference_path,
+                reference_source="ground_truth",
+                run=DiscoveredRun(artifact_root=run_root, estimate_path=estimate_path, label="vista", method="vista"),
+            )
         )
-    )
 
-    assert any("Sim(3) alignment" in record.reason for record in manifest.skipped_metrics)
-    assert manifest.evaluation_cases == []
+    assert not (run_root / "evaluation" / "trajectory" / "manifest.json").exists()
 
 
 def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path: Path) -> None:
@@ -342,6 +342,11 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     # At minimum 5 candidates × 2 APE specs = 10 paths; RPE paths may additionally appear
     assert len(artifact.error_series_paths) >= 10
     assert all(path.exists() for path in artifact.error_series_paths)
+    ape_payload = np.load(artifact.error_series_paths[0])
+    assert {"reference_positions_xyz", "estimate_positions_xyz"}.issubset(ape_payload.files)
+    rpe_payload = np.load(next(path for path in artifact.error_series_paths if "__rpe_" in path.name))
+    assert "reference_positions_xyz" not in rpe_payload.files
+    assert "estimate_positions_xyz" not in rpe_payload.files
     # vista is always the first candidate; APE translation then APE rotation are specs 0 and 1
     # Note: PoseRelation.rotation_angle_deg.value == "rotation_angle_in_degrees" in evo
     assert artifact.error_series_paths[0].name == "ground_truth__vista__raw__ape_translation_part.npz"

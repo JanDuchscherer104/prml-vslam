@@ -8,7 +8,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Current State
 
-- The repository has stable top-level package slices: `alignment`, `app`,
+- The repository has stable top-level package slices: `align`, `app`,
   `eval`, `interfaces`, `methods`, `pipeline`, `plotting`, `reconstruction`,
   `sources`, `utils`, and `visualization`.
 - This file is the current canonical location for top-level module ownership and cross-package contract placement rules.
@@ -24,9 +24,9 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Responsibilities
 
-- `alignment`
+- `align`
   - owns derived alignment logic that interprets normalized SLAM artifacts without mutating them
-  - examples include dominant-ground detection, viewer-scoped ground alignment metadata, and future gravity/reference-assisted alignment helpers
+  - examples include dominant-ground detection, Sim(3) trajectory alignment, and ICP point-cloud alignment
   - does not own backend execution, benchmark metric computation, or Rerun logging
 - `app`
   - owns Streamlit pages, typed page state (`prml_vslam.app.models`), UI composition, and launch surfaces

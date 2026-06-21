@@ -19,8 +19,7 @@ is no longer the day-to-day source of truth.
 - [`methods`](./methods/README.md) owns SLAM backend configs, method protocols,
   concrete wrappers such as ViSTA, live method updates, and normalized
   `SlamArtifacts` production.
-- [`alignment`](./alignment/README.md) owns derived alignment logic over
-  normalized SLAM outputs.
+- [`align`](./align) owns derived alignment logic over normalized SLAM outputs.
 - [`eval`](./eval/README.md) owns metric computation and evaluation artifacts.
 - [`reconstruction`](./reconstruction/README.md) owns reconstruction backend
   configs, protocols, implementations, and reconstruction artifacts.

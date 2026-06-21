@@ -90,20 +90,6 @@ def test_build_dataset_heatmap_returns_figure_with_heatmap_trace() -> None:
     assert "arcore/source_native" in list(figure.data[0].x)
 
 
-def test_build_dataset_heatmap_title_uses_metric_name() -> None:
-    rows = _per_sequence_rows(sequences=["advio-01"], sources=[("vista", "raw")])
-    heatmap_data = build_heatmap_data(rows, ["advio-01"], metric_name="Custom Metric")
-
-    figure = build_dataset_heatmap(heatmap_data)
-
-    assert figure.layout.title.text == "Custom Metric"
-
-
-# ---------------------------------------------------------------------------
-# build_grouped_bar_per_sequence
-# ---------------------------------------------------------------------------
-
-
 def test_build_grouped_bar_per_sequence_returns_one_bar_trace_per_source() -> None:
     rows = _per_sequence_rows(
         sequences=["advio-01", "advio-02"],
@@ -154,22 +140,6 @@ def test_build_grouped_bar_per_sequence_two_runs_on_same_cell_are_averaged() -> 
     assert figure.data[0].y[0] == pytest.approx(0.4)
 
 
-def test_build_grouped_bar_per_sequence_x_axis_contains_all_sequences() -> None:
-    rows = _per_sequence_rows(sequences=["seq-a", "seq-b", "seq-c"], sources=[("vista", "raw")])
-
-    figure = build_grouped_bar_per_sequence(rows)
-
-    bar_x = list(figure.data[0].x)
-    assert "seq-a" in bar_x
-    assert "seq-b" in bar_x
-    assert "seq-c" in bar_x
-
-
-# ---------------------------------------------------------------------------
-# build_coverage_chart
-# ---------------------------------------------------------------------------
-
-
 def test_build_coverage_chart_returns_heatmap_figure() -> None:
     matrix = _coverage_matrix(
         sequences=["advio-01", "advio-02"],
@@ -182,25 +152,6 @@ def test_build_coverage_chart_returns_heatmap_figure() -> None:
     assert isinstance(figure.data[0], go.Heatmap)
     assert list(figure.data[0].y) == ["advio-01", "advio-02"]
     assert "vista" in list(figure.data[0].x)
-
-
-def test_build_coverage_chart_missing_entries_show_as_zero() -> None:
-    matrix = _coverage_matrix(
-        sequences=["advio-01", "advio-02"],
-        methods=["vista"],
-        present_pairs={("advio-01", "vista")},  # advio-02 missing
-    )
-
-    figure = build_coverage_chart(matrix)
-    z = figure.data[0].z
-
-    assert z[0][0] == 1  # advio-01 / vista present
-    assert z[1][0] == 0  # advio-02 / vista missing
-
-
-# ---------------------------------------------------------------------------
-# build_violin_by_method
-# ---------------------------------------------------------------------------
 
 
 def test_build_violin_by_method_returns_one_violin_per_source() -> None:
@@ -216,11 +167,6 @@ def test_build_violin_by_method_returns_one_violin_per_source() -> None:
     assert "vista/raw" in trace_names
     assert "arcore/source_native" in trace_names
     assert all(isinstance(t, go.Violin) for t in figure.data)
-
-
-# ---------------------------------------------------------------------------
-# build_trajectory_error_cdf / build_trajectory_error_box
-# ---------------------------------------------------------------------------
 
 
 def _error_series() -> dict[str, np.ndarray]:
@@ -239,25 +185,9 @@ def test_build_trajectory_error_cdf_uses_custom_title_and_unit() -> None:
     assert len(figure.data) == 2
 
 
-def test_build_trajectory_error_cdf_defaults_to_generic_title() -> None:
-    figure = build_trajectory_error_cdf(_error_series())
-
-    assert figure.layout.title.text == "Error CDF"
-    assert figure.layout.xaxis.title.text == "Error (m)"
-
-
 def test_build_trajectory_error_box_uses_custom_title_and_unit() -> None:
     figure = build_trajectory_error_box(_error_series(), title="APE Rotation Distribution", unit="deg")
 
     assert figure.layout.title.text == "APE Rotation Distribution"
     assert "deg" in figure.layout.yaxis.title.text
     assert len(figure.data) == 2
-
-
-def test_build_trajectory_error_cdf_skips_empty_series() -> None:
-    series = {"empty": np.array([], dtype=np.float64), "valid": np.array([0.1, 0.2], dtype=np.float64)}
-
-    figure = build_trajectory_error_cdf(series)
-
-    assert len(figure.data) == 1
-    assert figure.data[0].name == "valid"

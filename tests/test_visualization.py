@@ -553,7 +553,7 @@ def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace
         tmp_path / "rpe_translation_errors.npz",
         tmp_path / "rpe_rotation_errors.npz",
     ]
-    for path, offset in zip(case_paths, [1.0, 1.2, 1.4, 1.6], strict=True):
+    for path, offset in zip(case_paths[:2], [1.0, 1.2], strict=True):
         np.savez(
             path,
             values=np.array([0.0, 0.1], dtype=np.float64),
@@ -561,6 +561,13 @@ def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace
             pair_index=np.array([0, 1], dtype=np.int64),
             reference_positions_xyz=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
             estimate_positions_xyz=np.array([[0.0, 0.0, 0.0], [offset, 0.0, 0.0]], dtype=np.float64),
+        )
+    for path in case_paths[2:]:
+        np.savez(
+            path,
+            values=np.array([0.0, 0.1], dtype=np.float64),
+            timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
+            pair_index=np.array([0, 1], dtype=np.int64),
         )
     manifest = TrajectoryEvaluationManifest(
         artifact_root=tmp_path,
