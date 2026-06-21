@@ -7,7 +7,7 @@ import os
 import shutil
 import time
 import warnings
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, ItemsView, Iterable
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -17,7 +17,7 @@ import pandas as pd  # type: ignore[import-untyped]
 from evo.core import geometry, sync
 from evo.core.trajectory import PoseTrajectory3D
 from evo.tools import file_interface
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, RootModel
 
 from prml_vslam.interfaces import (
     FrameTransform,
@@ -33,15 +33,6 @@ from prml_vslam.sources.contracts import (
     ReferenceSource,
     ReferenceTrajectoryRef,
     SequenceManifest,
-)
-from prml_vslam.sources.datasets.advio.advio_fixedpoints import (
-    ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
-    ADVIO_PROVIDER_WORLD_RDF_FRAMES,
-    advio_common_start_local_trajectories,
-    advio_frame_transform_from_pose,
-    apply_advio_fixedpoint_registration,
-    estimate_advio_fixedpoint_registration,
-    load_advio_fixpoints,
 )
 from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId, FrameSelectionConfig
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
@@ -81,6 +72,54 @@ _ADVIO_ALIGN_MIN_PAIRS = 3
 _ADVIO_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
 
+class NormalizedSourceProfile(RootModel[dict[str, Any]]):
+    """Typed access boundary for byte-affecting normalized source settings."""
+
+    root: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a shallow copy of the persisted profile payload."""
+        return dict(self.root)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Return one profile value by key."""
+        return self.root.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        """Return one required profile value by key."""
+        return self.root[key]
+
+    def __contains__(self, key: str) -> bool:
+        """Return whether a profile key is present."""
+        return key in self.root
+
+    def items(self) -> ItemsView[str, Any]:
+        """Return profile key/value pairs."""
+        return self.root.items()
+
+    @property
+    def frame_stride(self) -> int:
+        """Requested frame stride recorded in the normalized profile."""
+        return int(self.root.get("frame_stride", 1))
+
+    @property
+    def target_fps(self) -> float | None:
+        """Requested target FPS recorded in the normalized profile."""
+        return _optional_float(self.root.get("target_fps"))
+
+    @property
+    def trajectory_convention(self) -> str | None:
+        """Named trajectory convention for normalized entries that define one."""
+        value = self.root.get("trajectory_convention")
+        return value if isinstance(value, str) else None
+
+    @property
+    def dataset_serving(self) -> dict[str, Any]:
+        """Dataset-serving settings embedded in the normalized profile."""
+        value = self.root.get("dataset_serving")
+        return value if isinstance(value, dict) else {}
+
+
 class NormalizedDatasetProfile(BaseData):
     """Canonical byte-affecting profile used to key one normalized entry."""
 
@@ -88,7 +127,7 @@ class NormalizedDatasetProfile(BaseData):
     dataset_id: DatasetId
     sequence_id: str
     source_id: str
-    source_profile: dict[str, Any]
+    source_profile: NormalizedSourceProfile
 
     @property
     def profile_key(self) -> str:
@@ -117,7 +156,7 @@ class NormalizedDatasetEntry(BaseData):
     sequence_id: str
     source_id: str
     profile_key: str
-    profile: dict[str, Any]
+    profile: NormalizedDatasetProfile
     root: Path
     sequence_manifest_path: Path
     benchmark_inputs_path: Path
@@ -178,7 +217,7 @@ class NormalizedDatasetStore:
                 for entry in candidates
                 if _compatible_entry_profile(
                     requested=profile,
-                    selected=(entry_profile := NormalizedDatasetProfile.model_validate(entry.profile)),
+                    selected=(entry_profile := entry.profile),
                     mismatch=(
                         mismatch := _profile_mismatch_report(
                             requested=profile.source_profile,
@@ -207,7 +246,7 @@ class NormalizedDatasetStore:
                 reports = [
                     _profile_mismatch_report(
                         requested=profile.source_profile,
-                        selected=NormalizedDatasetProfile.model_validate(entry.profile).source_profile,
+                        selected=entry.profile.source_profile,
                     )
                     for entry in candidates
                 ]
@@ -444,7 +483,7 @@ class NormalizedDatasetStore:
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
-                profile = NormalizedDatasetProfile.model_validate(entry.profile)
+                profile = entry.profile
                 if not _is_read_compatible_schema(entry, profile):
                     if (entry.sequence_id, entry.source_id) in usable_identities:
                         continue
@@ -467,7 +506,7 @@ class NormalizedDatasetStore:
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
-                profile = NormalizedDatasetProfile.model_validate(entry.profile)
+                profile = entry.profile
                 if not _is_read_compatible_schema(entry, profile):
                     continue
                 self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
@@ -516,7 +555,7 @@ class NormalizedDatasetStore:
                 ("sequence_id", entry.sequence_id, profile.sequence_id),
                 ("source_id", entry.source_id, profile.source_id),
                 ("profile_key", entry.profile_key, profile.profile_key),
-                ("profile", entry.profile, profile.model_dump(mode="json")),
+                ("profile", entry.profile, profile),
             )
             if actual != expected
         }
@@ -992,20 +1031,20 @@ def _selected_indices_and_sampling_payload(
     )
 
 
-def _stored_sampling_payload(source_profile: dict[str, Any], rows: list[Any]) -> JsonObject:
+def _stored_sampling_payload(source_profile: NormalizedSourceProfile, rows: list[Any]) -> JsonObject:
     timestamps_ns = [int(row.timestamp_ns) for row in rows]
     return _sampling_payload(
-        requested_frame_stride=int(source_profile.get("frame_stride", 1)),
-        requested_target_fps=_optional_float(source_profile.get("target_fps")),
+        requested_frame_stride=source_profile.frame_stride,
+        requested_target_fps=source_profile.target_fps,
         resolved_frame_stride=_resolved_source_frame_stride(rows, source_profile),
         resolved_target_fps=_mean_fps(len(timestamps_ns), _duration_s_from_ns(timestamps_ns)),
     )
 
 
-def _source_profile_sampling_payload(source_profile: dict[str, Any], timestamps_ns: list[int]) -> JsonObject:
+def _source_profile_sampling_payload(source_profile: NormalizedSourceProfile, timestamps_ns: list[int]) -> JsonObject:
     frame_selection = FrameSelectionConfig(
-        frame_stride=int(source_profile.get("frame_stride", 1)),
-        target_fps=_optional_float(source_profile.get("target_fps")),
+        frame_stride=source_profile.frame_stride,
+        target_fps=source_profile.target_fps,
     )
     stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
     selected_timestamps_ns = timestamps_ns[::stride]
@@ -1034,13 +1073,13 @@ def _sampling_payload(
     }
 
 
-def _resolved_source_frame_stride(rows: list[Any], source_profile: dict[str, Any]) -> int:
+def _resolved_source_frame_stride(rows: list[Any], source_profile: NormalizedSourceProfile) -> int:
     indices = [int(row.provenance.source_frame_index) for row in rows if row.provenance.source_frame_index is not None]
     if len(indices) < 2:
-        return int(source_profile.get("frame_stride", 1))
+        return source_profile.frame_stride
     deltas = [right - left for left, right in zip(indices, indices[1:], strict=False)]
     positive = [delta for delta in deltas if delta > 0]
-    return int(round(float(np.median(positive)))) if positive else int(source_profile.get("frame_stride", 1))
+    return int(round(float(np.median(positive)))) if positive else source_profile.frame_stride
 
 
 def _validate_requested_target_fps(
@@ -1121,11 +1160,7 @@ def _compatible_entry_identity(entry: NormalizedDatasetEntry, profile: Normalize
         return False
     if entry.sequence_id != profile.sequence_id or entry.source_id != profile.source_id:
         return False
-    try:
-        entry_profile = NormalizedDatasetProfile.model_validate(entry.profile)
-    except Exception:
-        return False
-    return _is_read_compatible_schema(entry, entry_profile)
+    return _is_read_compatible_schema(entry, entry.profile)
 
 
 def _compatible_entry_profile(
@@ -1171,7 +1206,7 @@ def _compatible_entry_score(
     requested: NormalizedDatasetProfile,
     frame_selection: FrameSelectionConfig | None,
 ) -> tuple[int, int, float, int]:
-    selected = NormalizedDatasetProfile.model_validate(entry.profile)
+    selected = entry.profile
     return (
         int(
             _sampling_matches(
@@ -1185,32 +1220,28 @@ def _compatible_entry_score(
 
 
 def _sampling_matches(
-    selected: dict[str, Any],
+    selected: NormalizedSourceProfile,
     *,
-    requested: dict[str, Any],
+    requested: NormalizedSourceProfile,
     frame_selection: FrameSelectionConfig | None,
 ) -> bool:
-    requested_frame_stride = (
-        frame_selection.frame_stride if frame_selection is not None else int(requested.get("frame_stride", 1))
-    )
-    requested_target_fps = (
-        frame_selection.target_fps if frame_selection is not None else _optional_float(requested.get("target_fps"))
-    )
-    selected_frame_stride = int(selected.get("frame_stride", 1))
-    selected_target_fps = _optional_float(selected.get("target_fps"))
+    requested_frame_stride = frame_selection.frame_stride if frame_selection is not None else requested.frame_stride
+    requested_target_fps = frame_selection.target_fps if frame_selection is not None else requested.target_fps
+    selected_frame_stride = selected.frame_stride
+    selected_target_fps = selected.target_fps
     return selected_frame_stride == requested_frame_stride and selected_target_fps == requested_target_fps
 
 
-def _trajectory_convention_matches(selected: dict[str, Any], requested: dict[str, Any]) -> bool:
-    requested_convention = requested.get("trajectory_convention")
-    return requested_convention is None or selected.get("trajectory_convention") == requested_convention
+def _trajectory_convention_matches(selected: NormalizedSourceProfile, requested: NormalizedSourceProfile) -> bool:
+    requested_convention = requested.trajectory_convention
+    return requested_convention is None or selected.trajectory_convention == requested_convention
 
 
-def _stored_profile_cadence_score(source_profile: dict[str, Any]) -> float:
-    target_fps = _optional_float(source_profile.get("target_fps"))
+def _stored_profile_cadence_score(source_profile: NormalizedSourceProfile) -> float:
+    target_fps = source_profile.target_fps
     if target_fps is not None:
         return target_fps
-    frame_stride = max(int(source_profile.get("frame_stride", 1)), 1)
+    frame_stride = max(source_profile.frame_stride, 1)
     return 1.0 / frame_stride
 
 
@@ -1242,9 +1273,13 @@ def _validate_read_frame_selection(
         _validate_requested_target_fps(load_timestamps_ns(manifest.timestamps_path), frame_selection)
 
 
-def _profile_mismatch_report(*, requested: dict[str, Any], selected: dict[str, Any]) -> dict[str, Any]:
-    requested_flat = _flatten_profile(requested)
-    selected_flat = _flatten_profile(selected)
+def _profile_mismatch_report(
+    *,
+    requested: NormalizedSourceProfile,
+    selected: NormalizedSourceProfile,
+) -> dict[str, Any]:
+    requested_flat = _flatten_profile(requested.as_dict())
+    selected_flat = _flatten_profile(selected.as_dict())
     requested_keys = set(requested_flat)
     selected_keys = set(selected_flat)
     common_keys = requested_keys & selected_keys
@@ -1480,7 +1515,7 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
             new_root=new_root,
         ),
     )
-    profile = NormalizedDatasetProfile.model_validate(entry.profile)
+    profile = entry.profile
     stats_long_path = root / STATS_LONG_FILENAME
     metadata_long_path = root / METADATA_LONG_FILENAME
     _write_analysis_table(
@@ -1574,6 +1609,15 @@ def _normalize_advio_benchmark_inputs(
     root: Path,
     sequence_manifest: SequenceManifest,
 ) -> PreparedBenchmarkInputs:
+    from prml_vslam.sources.datasets.advio.advio_fixedpoints import (
+        ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+        ADVIO_PROVIDER_WORLD_RDF_FRAMES,
+        advio_common_start_local_trajectories,
+        apply_advio_fixedpoint_registration,
+        estimate_advio_fixedpoint_registration,
+        load_advio_fixpoints,
+    )
+
     trajectory_root = root / "benchmark" / "trajectories"
     source_refs = {
         ref.source: ref for ref in benchmark_inputs.reference_trajectories if _is_advio_source_native_trajectory(ref)
@@ -1658,6 +1702,8 @@ def _normalize_advio_benchmark_inputs(
 
 
 def _is_advio_source_native_trajectory(ref: ReferenceTrajectoryRef) -> bool:
+    from prml_vslam.sources.datasets.advio.advio_fixedpoints import ADVIO_PROVIDER_WORLD_RDF_FRAMES
+
     return (
         ref.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
         and ref.source in ADVIO_PROVIDER_WORLD_RDF_FRAMES
@@ -1671,6 +1717,11 @@ def _write_advio_registered_references(
     common_start: JsonObject,
     target_root: Path,
 ) -> list[ReferenceTrajectoryRef]:
+    from prml_vslam.sources.datasets.advio.advio_fixedpoints import (
+        ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+        ADVIO_PROVIDER_WORLD_RDF_FRAMES,
+    )
+
     refs: list[ReferenceTrajectoryRef] = []
     for source in (ReferenceSource.GROUND_TRUTH, ReferenceSource.ARCORE, ReferenceSource.ARKIT):
         trajectory = trajectories.get(source)
@@ -1713,6 +1764,8 @@ def _normalize_advio_observation_sequence_ref(
     normalized_trajectories: dict[ReferenceSource, PoseTrajectory3D],
     target_frame: str,
 ) -> ObservationSequenceRef:
+    from prml_vslam.sources.datasets.advio.advio_fixedpoints import advio_frame_transform_from_pose
+
     ground_truth = normalized_trajectories.get(ReferenceSource.GROUND_TRUTH)
     if ground_truth is None:
         return ref
