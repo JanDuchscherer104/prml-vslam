@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from prml_vslam.interfaces import (
+    FrameTransform,
     ObservationIndexEntry,
     ObservationProvenance,
     ObservationSequenceIndex,
@@ -150,10 +151,11 @@ class Record3DSequence(BaseData):
         sample = self.load_offline_sample()
         stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(sample.timestamps_ns)
         selected_frames = list(sample.frames[::stride])
+        normalized_poses_world_camera = _poses_relative_to_first_pose(sample.poses_world_camera)
         output.mkdir(parents=True, exist_ok=True)
         trajectory_path = write_tum_trajectory(
             output / "record3d_arkit.tum",
-            sample.poses_world_camera,
+            normalized_poses_world_camera,
             [timestamp_ns / 1e9 for timestamp_ns in sample.timestamps_ns],
         )
         trajectory_metadata_path = _write_json(
@@ -166,17 +168,21 @@ class Record3DSequence(BaseData):
                 "pose_frame_mode": self.config.materialization.pose_frame_mode.value,
                 "target_frame": RECORD3D_WORLD_FRAME,
                 "native_frame": RECORD3D_WORLD_FRAME,
+                "trajectory_origin": "first_pose",
+                "pose_normalization": "relative_to_first_pose",
             },
         )
         observation_sequence = self._prepare_observation_sequence(
             sample=sample,
             selected_frames=selected_frames,
             output_dir=output / "observations",
+            poses_world_camera=normalized_poses_world_camera,
         )
         reference_cloud = self._prepare_reference_cloud(
             sample=sample,
             selected_frames=selected_frames,
             output_dir=output / "reference",
+            poses_world_camera=normalized_poses_world_camera,
         )
         return PreparedBenchmarkInputs(
             reference_trajectories=[
@@ -223,7 +229,10 @@ class Record3DSequence(BaseData):
         sample: record3d_loading.Record3DOfflineSample,
         selected_frames: list[record3d_loading.Record3DArchiveFrame],
         output_dir: Path,
+        poses_world_camera: list[FrameTransform] | None = None,
     ) -> ObservationSequenceRef:
+        if poses_world_camera is None:
+            poses_world_camera = sample.poses_world_camera
         rgb_dir = output_dir / "rgb"
         depth_dir = output_dir / "depth"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -258,7 +267,7 @@ class Record3DSequence(BaseData):
                     rgb_path=rgb_path.relative_to(output_dir),
                     depth_path=depth_path.relative_to(output_dir),
                     depth_scale_to_m=RECORD3D_DEPTH_SCALE_TO_M,
-                    T_world_camera=sample.poses_world_camera[frame.index],
+                    T_world_camera=poses_world_camera[frame.index],
                     intrinsics=intrinsics,
                     provenance=ObservationProvenance(
                         source_id=RECORD3D_SOURCE_ID,
@@ -309,6 +318,7 @@ class Record3DSequence(BaseData):
         sample: record3d_loading.Record3DOfflineSample,
         selected_frames: list[record3d_loading.Record3DArchiveFrame],
         output_dir: Path,
+        poses_world_camera: list[FrameTransform],
     ) -> ReferenceCloudRef:
         materialization = self.config.materialization
         reference_cloud = self.config.reference_cloud
@@ -339,7 +349,7 @@ class Record3DSequence(BaseData):
             points_xyz_world, colors_rgb = depth_map_to_world_points(
                 depth_for_projection.astype(np.float32, copy=False),
                 sample.depth_intrinsics,
-                sample.poses_world_camera[frame.index],
+                poses_world_camera[frame.index],
                 rgb=rgb,
                 depth_stride_px=reference_cloud.depth_stride_px,
             )
@@ -377,6 +387,8 @@ class Record3DSequence(BaseData):
                 "target_frame": RECORD3D_WORLD_FRAME,
                 "native_frame": RECORD3D_WORLD_FRAME,
                 "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
+                "coordinate_origin": "first_pose",
+                "coordinate_normalization": "relative_to_first_pose",
                 "pose_frame_mode": materialization.pose_frame_mode.value,
                 "selected_frame_count": len(selected_frames),
                 "source_frame_indices": contributed_source_frame_indices,
@@ -402,6 +414,20 @@ class Record3DSequence(BaseData):
             native_frame=RECORD3D_WORLD_FRAME,
             coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
         )
+
+
+def _poses_relative_to_first_pose(poses_world_camera: list[FrameTransform]) -> list[FrameTransform]:
+    if not poses_world_camera:
+        raise ValueError("Record3D benchmark materialization requires at least one camera pose.")
+    T_first_world = np.linalg.inv(poses_world_camera[0].as_matrix())
+    return [
+        FrameTransform.from_matrix(
+            T_first_world @ pose_world_camera.as_matrix(),
+            target_frame=pose_world_camera.target_frame,
+            source_frame=pose_world_camera.source_frame,
+        )
+        for pose_world_camera in poses_world_camera
+    ]
 
 
 def _write_depth_png(path: Path, depth_m: np.ndarray) -> None:

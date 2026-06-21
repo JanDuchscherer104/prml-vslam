@@ -99,9 +99,9 @@ def _write_record3d_archive(
         "fps": 10,
         "frameTimestamps": [0.0, 0.1, 0.2],
         "poses": [
-            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 10.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 11.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 12.0, 0.0, 0.0],
         ],
     }
     with zipfile.ZipFile(archive_path, "w") as archive:
@@ -362,9 +362,22 @@ def test_record3d_sequence_loads_rgbd_observations_and_reference_cloud(tmp_path:
     assert observations[0].depth_m is not None
     assert observations[0].depth_m.shape == (4, 4)
     assert observations[0].intrinsics.width_px == 4
+    np.testing.assert_allclose(observations[0].T_world_camera.as_matrix(), np.eye(4), atol=1e-9)
     assert observations[1].T_world_camera.tx == pytest.approx(1.0)
+    trajectory = load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path)
+    trajectory_metadata = json.loads(
+        benchmark_inputs.reference_trajectories[0].metadata_path.read_text(encoding="utf-8")
+    )
+    np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
+    assert trajectory.positions_xyz[:, 0].tolist() == pytest.approx([0.0, 1.0, 2.0])
+    assert trajectory_metadata["trajectory_origin"] == "first_pose"
+    assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
     assert points_xyz.shape[0] == 20
+    assert points_xyz[:, 0].min() > -1.0
+    assert points_xyz[:, 0].max() < 4.0
     assert colors_rgb is not None
+    assert metadata["coordinate_origin"] == "first_pose"
+    assert metadata["coordinate_normalization"] == "relative_to_first_pose"
     assert metadata["max_points"] == 20
     assert metadata["depth_stride_px"] == 1
     assert metadata["min_confidence"] == 1
@@ -453,6 +466,8 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert len(observations) == 3
     assert observations[0].rgb is not None
     assert observations[0].depth_m is not None
+    np.testing.assert_allclose(observations[0].T_world_camera.as_matrix(), np.eye(4), atol=1e-9)
+    assert observations[1].T_world_camera.tx == pytest.approx(1.0)
     assert stored_inputs.observation_sequences[0].raster_space == "display_downscaled"
     assert observations[0].rgb.shape[:2] == observations[0].depth_m.shape
     assert observations[0].intrinsics is not None
@@ -476,6 +491,12 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
     assert stats[("reference_trajectory", "arkit/aligned", "ego_motion_class")] == "low_curvature"
+    cloud_metadata = json.loads(Path(benchmark_inputs["reference_clouds"][0]["metadata_path"]).read_text())
+    points_xyz, _ = load_point_cloud_ply_with_colors(Path(benchmark_inputs["reference_clouds"][0]["path"]))
+    assert cloud_metadata["coordinate_origin"] == "first_pose"
+    assert cloud_metadata["coordinate_normalization"] == "relative_to_first_pose"
+    assert points_xyz[:, 0].min() > -1.0
+    assert points_xyz[:, 0].max() < 4.0
     assert records[0]["schema_version"] == 9
     assert "sequence_id" not in records[0]["profile"]["source_profile"]
     assert "source_id" not in records[0]["profile"]["source_profile"]
