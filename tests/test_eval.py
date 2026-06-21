@@ -2,29 +2,31 @@
 
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 from evo.core import metrics
 
-from prml_vslam.eval.alignment_contracts import (
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentCloudUseStatus,
-    TrajectoryAlignmentMode,
-)
+from prml_vslam.align.icp import CloudAlignmentService
+from prml_vslam.align.icp.runtime import CloudAlignmentRuntime
+from prml_vslam.align.icp.stage_contracts import CloudAlignmentStageInput
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.runtime import TrajectoryAlignmentRuntime
+from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignmentStageInput
 from prml_vslam.eval.contracts import (
     CloudAlignmentArtifact,
     CloudAlignmentSelection,
     MetricStats,
 )
-from prml_vslam.eval.services import CloudAlignmentService, TrajectoryEvaluationService, compute_trajectory_ape_preview
-from prml_vslam.eval.stage_alignment.contracts import TrajectoryAlignmentStageInput
-from prml_vslam.eval.stage_alignment.runtime import TrajectoryAlignmentRuntime
-from prml_vslam.eval.stage_cloud_alignment.contracts import CloudAlignmentStageInput
-from prml_vslam.eval.stage_cloud_alignment.runtime import CloudAlignmentRuntime
+from prml_vslam.eval.services import (
+    AlignmentUnsupportedError,
+    TrajectoryEvaluationService,
+    compute_trajectory_ape_preview,
+    compute_trajectory_rpe_preview,
+)
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
@@ -124,7 +126,6 @@ def test_sim3_umeyama_preview_recovers_metric_scale(tmp_path: Path) -> None:
     preview = compute_trajectory_ape_preview(
         reference_path=reference_path,
         estimate_path=estimate_path,
-        alignment_mode=TrajectoryAlignmentMode.SIM3_UMEYAMA,
     )
 
     assert preview.alignment is not None
@@ -132,22 +133,126 @@ def test_sim3_umeyama_preview_recovers_metric_scale(tmp_path: Path) -> None:
     assert preview.stats.rmse < 1e-12
 
 
-def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path: Path) -> None:
+def test_sim3_umeyama_preview_aligns_translation_rpe_scale(tmp_path: Path) -> None:
+    translation = np.array([3.0, -1.0, 0.5], dtype=np.float64)
+    scale = 2.0
+    reference_positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float64),
+        np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        np.array([0.0, 1.0, 0.0], dtype=np.float64),
+        np.array([1.0, 1.0, 0.0], dtype=np.float64),
+    ]
     reference_path = write_tum_trajectory(
         tmp_path / "reference.tum",
         poses=[
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(point[0]), ty=float(point[1]), tz=float(point[2]))
+            for point in reference_positions
         ],
-        timestamps=[0.0, 1.0],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
     )
     estimate_path = write_tum_trajectory(
         tmp_path / "estimate.tum",
         poses=[
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.1, ty=0.0, tz=0.0),
+            FrameTransform(
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=float(((point - translation) / scale)[0]),
+                ty=float(((point - translation) / scale)[1]),
+                tz=float(((point - translation) / scale)[2]),
+            )
+            for point in reference_positions
         ],
-        timestamps=[0.0, 1.0],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+
+    aligned = compute_trajectory_rpe_preview(
+        reference_path=reference_path,
+        estimate_path=estimate_path,
+        delta_unit=metrics.Unit.frames,
+    )
+
+    assert aligned.alignment is not None
+    assert aligned.stats.rmse < 1e-12
+
+
+def test_sim3_umeyama_preview_rejects_degenerate_trajectory(tmp_path: Path) -> None:
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+
+    with pytest.raises(AlignmentUnsupportedError, match="geometric spread"):
+        compute_trajectory_ape_preview(
+            reference_path=reference_path,
+            estimate_path=estimate_path,
+        )
+
+
+def test_trajectory_evaluation_service_raises_when_primary_alignment_is_unsupported(tmp_path: Path) -> None:
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+    run_root = tmp_path / "run"
+    service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path / "artifacts"))
+
+    with pytest.raises(AlignmentUnsupportedError, match="geometric spread"):
+        service.compute_evaluation(
+            selection=SelectionSnapshot(
+                sequence_slug="seq",
+                reference_path=reference_path,
+                reference_source="ground_truth",
+                run=DiscoveredRun(artifact_root=run_root, estimate_path=estimate_path, label="vista", method="vista"),
+            )
+        )
+
+    assert not (run_root / "evaluation" / "trajectory" / "manifest.json").exists()
+
+
+def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path: Path) -> None:
+    positions = [
+        np.array([0.0, 0.0, 0.0], dtype=np.float64),
+        np.array([1.0, 0.0, 0.0], dtype=np.float64),
+        np.array([0.0, 1.0, 0.0], dtype=np.float64),
+        np.array([1.0, 1.0, 0.0], dtype=np.float64),
+    ]
+    reference_path = write_tum_trajectory(
+        tmp_path / "reference.tum",
+        poses=[
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(point[0]), ty=float(point[1]), tz=float(point[2]))
+            for point in positions
+        ],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
+    )
+    estimate_path = write_tum_trajectory(
+        tmp_path / "estimate.tum",
+        poses=[
+            FrameTransform(
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
+                tx=float(point[0] * 1.1),
+                ty=float(point[1] * 1.1),
+                tz=float(point[2]),
+            )
+            for point in positions
+        ],
+        timestamps=[0.0, 1.0, 2.0, 3.0],
     )
     candidate_specs = [
         (ReferenceSource.ARCORE, "source_native", tmp_path / "arcore.tum", 1.2),
@@ -159,10 +264,18 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         write_tum_trajectory(
             path,
             poses=[
-                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
-                FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=offset, ty=0.0, tz=0.0),
+                FrameTransform(
+                    qx=0.0,
+                    qy=0.0,
+                    qz=0.0,
+                    qw=1.0,
+                    tx=float(point[0] * offset),
+                    ty=float(point[1] * offset),
+                    tz=float(point[2]),
+                )
+                for point in positions
             ],
-            timestamps=[0.0, 1.0],
+            timestamps=[0.0, 1.0, 2.0, 3.0],
         )
         for _, _, path, offset in candidate_specs
     ]
@@ -230,12 +343,17 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
     # At minimum 5 candidates × 2 APE specs = 10 paths; RPE paths may additionally appear
     assert len(artifact.error_series_paths) >= 10
     assert all(path.exists() for path in artifact.error_series_paths)
+    ape_payload = np.load(artifact.error_series_paths[0])
+    assert {"reference_positions_xyz", "estimate_positions_xyz"}.issubset(ape_payload.files)
+    rpe_payload = np.load(next(path for path in artifact.error_series_paths if "__rpe_" in path.name))
+    assert "reference_positions_xyz" not in rpe_payload.files
+    assert "estimate_positions_xyz" not in rpe_payload.files
     # vista is always the first candidate; APE translation then APE rotation are specs 0 and 1
     # Note: PoseRelation.rotation_angle_deg.value == "rotation_angle_in_degrees" in evo
     assert artifact.error_series_paths[0].name == "ground_truth__vista__raw__ape_translation_part.npz"
     assert artifact.error_series_paths[1].name == "ground_truth__vista__raw__ape_rotation_angle_in_degrees.npz"
-    with metrics_long_path.open("r", encoding="utf-8", newline="") as handle:
-        estimate_sources = {row["estimate_source"] for row in csv.DictReader(handle)}
+    metrics_frame = pd.read_csv(metrics_long_path)
+    estimate_sources = set(metrics_frame["estimate_source"])
     assert estimate_sources == {
         "vista/raw",
         "arcore/source_native",
@@ -243,6 +361,9 @@ def test_trajectory_evaluation_service_computes_pipeline_stage_payload(tmp_path:
         "arkit/source_native",
         "arkit/aligned",
     }
+    assert {"alignment_mode", "alignment_applied", "alignment_status", "alignment_message"}.isdisjoint(
+        metrics_frame.columns
+    )
 
 
 def test_advio_pipeline_evaluation_requires_explicit_target_frame(tmp_path: Path) -> None:
@@ -451,7 +572,6 @@ def test_compute_trajectory_alignment_publishes_cloud_despite_warning_diagnostic
     alignment = TrajectoryAlignmentArtifact.model_validate_json(alignment_path.read_text(encoding="utf-8"))
     assert aligned_cloud_path is not None
     assert aligned_cloud_path.exists()
-    assert alignment.cloud_use_status is TrajectoryAlignmentCloudUseStatus.ACCEPTED
     assert set(alignment.cloud_warning_reasons) & {"rms_error_too_high", "up_axis_tilt_too_high"}
     assert alignment.cloud_rejection_reasons == []
 
@@ -571,8 +691,10 @@ def test_trajectory_alignment_runtime_produces_aligned_artifacts(tmp_path: Path)
         ]
     )
     slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
+    path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts")
     input_payload = TrajectoryAlignmentStageInput(
         artifact_root=artifact_root,
+        path_config=path_config,
         sequence_manifest=SequenceManifest(sequence_id="seq"),
         benchmark_inputs=benchmark_inputs,
         slam=slam,
@@ -602,6 +724,7 @@ def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: P
     slam = SlamArtifacts(trajectory_tum=ArtifactRef(path=estimate_path, kind="tum", fingerprint="est"))
     input_payload = TrajectoryAlignmentStageInput(
         artifact_root=tmp_path / "run",
+        path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts"),
         sequence_manifest=SequenceManifest(sequence_id="seq"),
         benchmark_inputs=None,
         slam=slam,
@@ -616,7 +739,7 @@ def test_trajectory_alignment_runtime_fails_without_benchmark_inputs(tmp_path: P
 
 
 def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
-    from prml_vslam.eval.stage_alignment.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
+    from prml_vslam.align.trajectory_sim3.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
 
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.TRAJECTORY_ALIGNMENT
     assert TRAJECTORY_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
@@ -624,8 +747,8 @@ def test_trajectory_alignment_stage_spec_is_well_formed() -> None:
 
 
 def test_cloud_alignment_stage_spec_is_well_formed() -> None:
+    from prml_vslam.align.icp.spec import CLOUD_ALIGNMENT_STAGE_SPEC
     from prml_vslam.eval.stage_cloud.spec import CLOUD_EVALUATION_STAGE_SPEC
-    from prml_vslam.eval.stage_cloud_alignment.spec import CLOUD_ALIGNMENT_STAGE_SPEC
 
     assert CLOUD_ALIGNMENT_STAGE_SPEC.stage_key is StageKey.CLOUD_ALIGNMENT
     assert CLOUD_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
@@ -661,7 +784,7 @@ def _planar_yawed_pair(
 
 
 def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
-    from prml_vslam.eval.services import _sim3_up_axis_tilt_deg
+    from prml_vslam.align.trajectory_sim3 import sim3_up_axis_tilt_deg as _sim3_up_axis_tilt_deg
     from prml_vslam.utils.geometry import yaw_similarity_align
 
     estimate, reference, _ = _planar_yawed_pair(yaw_deg=175.0, scale=1.3)
@@ -675,7 +798,7 @@ def test_yaw_similarity_align_recovers_planar_yaw_without_up_flip() -> None:
 
 
 def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
-    from prml_vslam.eval.services import _is_gravity_aligned_target
+    from prml_vslam.align.trajectory_sim3 import is_gravity_aligned_target as _is_gravity_aligned_target
 
     assert _is_gravity_aligned_target("advio_gt_world")
     assert _is_gravity_aligned_target("advio_arkit_world")
@@ -688,7 +811,8 @@ def test_is_gravity_aligned_target_only_for_advio_worlds() -> None:
 def test_align_estimate_sim3_gravity_lock_keeps_up_axis_flat() -> None:
     from evo.core.trajectory import PoseTrajectory3D
 
-    from prml_vslam.eval.services import _align_estimate_sim3, _sim3_up_axis_tilt_deg
+    from prml_vslam.align.trajectory_sim3 import align_estimate_sim3 as _align_estimate_sim3
+    from prml_vslam.align.trajectory_sim3 import sim3_up_axis_tilt_deg as _sim3_up_axis_tilt_deg
 
     estimate_xyz, reference_xyz, timestamps = _planar_yawed_pair(yaw_deg=176.0, scale=1.2, vertical_jitter=0.01)
     quaternions = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (len(timestamps), 1))

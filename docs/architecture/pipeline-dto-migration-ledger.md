@@ -204,7 +204,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `ReferenceCloudSource` | `sources.contracts` | Keep source-prepared reference-cloud source enum. | sources | Reference-cloud tests. |
 | `ReferenceCloudCoordinateStatus` | `sources.contracts` | Keep coordinate-status enum for prepared reference clouds. | sources | Reference-cloud metadata tests. |
 | `TrajectoryMetricId` | `eval.contracts` | Keep eval-owned metric identifier enum. | eval | Eval service tests. |
-| `TrajectoryAlignmentMode` | `eval.contracts` | Keep eval-owned metric alignment enum. | eval | Eval service tests. |
 | `TrajectoryEvaluator` | `eval.protocols` | Keep eval-owned protocol seam. | eval | Eval service/protocol tests. |
 | `DenseCloudEvaluator` | `eval.protocols` | Keep eval-owned future dense-cloud protocol. | eval | Future dense-cloud eval tests. |
 | `EfficiencyEvaluator` | `eval.protocols` | Keep eval-owned future efficiency protocol. | eval | Future efficiency eval tests. |

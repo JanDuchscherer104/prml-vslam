@@ -41,6 +41,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
+from prml_vslam.sources.datasets.advio import AdvioPoseSource, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
@@ -219,6 +220,7 @@ def test_sequence_manifest_observation_reader_yields_rgb_observations(tmp_path: 
     assert [observation.seq for observation in observations] == [0, 1]
     assert [observation.timestamp_ns for observation in observations] == [10, 20]
     assert observations[0].rgb is not None
+    assert observations[0].rgb_path == manifest.rgb_dir / "000000.png"
     assert observations[0].rgb.shape == (2, 3, 3)
     assert observations[0].provenance.source_id == "source_manifest"
     assert observations[0].provenance.sequence_id == "seq-rgb"
@@ -464,6 +466,42 @@ def test_image_sequence_replay_preserves_row_provenance_source_frame_index(tmp_p
     assert observation.seq == 0
     assert observation.source_frame_index == 3
     assert observation.provenance.source_frame_index == 3
+
+
+def test_sequence_manifest_observation_reader_can_skip_rgb_payloads(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=2, timestamps_ns=[10, 20])
+
+    observations = list(iter_sequence_manifest_observations(manifest, load_rgb=False))
+
+    assert [observation.seq for observation in observations] == [0, 1]
+    assert [observation.timestamp_ns for observation in observations] == [10, 20]
+    assert [observation.rgb for observation in observations] == [None, None]
+    assert [observation.rgb_path for observation in observations] == [
+        manifest.rgb_dir / "000000.png",
+        manifest.rgb_dir / "000001.png",
+    ]
+    assert observations[0].provenance.source_id == "source_manifest"
+    assert observations[0].provenance.sequence_id == "seq-rgb"
+
+
+def test_sequence_manifest_observation_reader_preserves_provenance_without_rgb(tmp_path: Path) -> None:
+    manifest = _write_rgb_manifest(tmp_path, frame_count=1).model_copy(
+        update={
+            "dataset_id": DatasetId.ADVIO,
+            "dataset_serving": AdvioServingConfig(pose_source=AdvioPoseSource.ARCORE),
+        }
+    )
+
+    loaded = list(iter_sequence_manifest_observations(manifest, load_rgb=True))
+    shells = list(iter_sequence_manifest_observations(manifest, load_rgb=False))
+
+    assert loaded[0].rgb is not None
+    assert shells[0].rgb is None
+    assert loaded[0].rgb_path == shells[0].rgb_path
+    assert loaded[0].provenance == shells[0].provenance
+    assert shells[0].provenance.source_id == DatasetId.ADVIO.value
+    assert shells[0].provenance.dataset_id == DatasetId.ADVIO.value
+    assert shells[0].provenance.pose_source == AdvioPoseSource.ARCORE.value
 
 
 def test_sequence_manifest_observation_reader_requires_rgb_dir(tmp_path: Path) -> None:

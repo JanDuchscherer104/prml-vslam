@@ -18,7 +18,7 @@ import numpy as np
 import ray
 from ray.actor import ActorHandle
 
-from prml_vslam.eval.alignment_contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata

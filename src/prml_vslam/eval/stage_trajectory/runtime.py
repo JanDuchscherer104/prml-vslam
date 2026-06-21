@@ -11,7 +11,6 @@ from prml_vslam.pipeline.contracts.provenance import StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
-from prml_vslam.utils import PathConfig
 from prml_vslam.utils.serialization import stable_hash
 
 
@@ -125,7 +124,7 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
             "Prepared benchmark inputs do not include the requested trajectory baseline "
             f"'{input_payload.baseline_source.value}'."
         )
-    return TrajectoryEvaluationService(path_config=_path_config_for(input_payload)).compute_evaluation(
+    return TrajectoryEvaluationService(path_config=input_payload.path_config).compute_evaluation(
         selection=SelectionSnapshot(
             sequence_slug=input_payload.sequence_manifest.sequence_id,
             reference_path=reference.path,
@@ -146,10 +145,6 @@ def _compute_pipeline_evaluation(input_payload: TrajectoryEvaluationStageInput) 
         ),
         candidate_trajectories=list(input_payload.candidate_trajectories),
     )
-
-
-def _path_config_for(input_payload: TrajectoryEvaluationStageInput) -> PathConfig:
-    return PathConfig(artifacts_dir=input_payload.artifact_root.parent)
 
 
 __all__ = ["TrajectoryEvaluationRuntime"]

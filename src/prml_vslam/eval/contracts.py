@@ -2,7 +2,7 @@
 
 Trajectory metric contracts live in :mod:`prml_vslam.eval.trajectory_contracts`
 and trajectory alignment contracts live in
-:mod:`prml_vslam.eval.alignment_contracts`. Dense-cloud and intrinsics DTOs
+:mod:`prml_vslam.align.trajectory_sim3.contracts`. Dense-cloud and intrinsics DTOs
 remain here temporarily until those evaluation surfaces get the same split.
 """
 
