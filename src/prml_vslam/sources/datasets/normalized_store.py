@@ -34,7 +34,16 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.advio.advio_fixedpoints import (
+    ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+    ADVIO_PROVIDER_WORLD_RDF_FRAMES,
+    advio_common_start_local_trajectories,
+    advio_frame_transform_from_pose,
+    apply_advio_fixedpoint_registration,
+    estimate_advio_fixedpoint_registration,
+    load_advio_fixpoints,
+)
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId, FrameSelectionConfig
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
@@ -70,12 +79,6 @@ STORE_SCHEMA_VERSION = 10
 _ADVIO_ALIGN_MAX_DIFF_S = 0.01
 _ADVIO_ALIGN_MIN_PAIRS = 3
 _ADVIO_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-_ADVIO_GT_LOCAL_FIRST_POSE_FRAME = "advio_gt_world_local_first_pose"
-_ADVIO_LOCAL_FIRST_POSE_FRAMES = {
-    ReferenceSource.GROUND_TRUTH: _ADVIO_GT_LOCAL_FIRST_POSE_FRAME,
-    ReferenceSource.ARCORE: "advio_arcore_world_local_first_pose",
-    ReferenceSource.ARKIT: "advio_arkit_world_local_first_pose",
-}
 
 
 class NormalizedDatasetProfile(BaseData):
@@ -187,18 +190,19 @@ class NormalizedDatasetStore:
             if len(compatible) == 1:
                 entry, mismatch = compatible[0]
                 _validate_read_frame_selection(entry, frame_selection)
-                warnings.warn(
-                    "Using compatible normalized dataset entry despite requested profile mismatch: "
-                    f"requested={profile.profile_key}, selected={entry.profile_key}, "
-                    f"missing_from_request={mismatch['missing_from_request']}, "
-                    f"missing_from_entry={mismatch['missing_from_entry']}, "
-                    f"mismatched_fields={mismatch['mismatched_fields']}.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
+                _warn_profile_mismatch(requested=profile, selected=entry, mismatch=mismatch)
                 return entry
             if not candidates:
                 raise exc
+            if compatible:
+                entry, mismatch = _select_compatible_entry(
+                    compatible,
+                    requested=profile,
+                    frame_selection=frame_selection,
+                )
+                _validate_read_frame_selection(entry, frame_selection)
+                _warn_profile_mismatch(requested=profile, selected=entry, mismatch=mismatch)
+                return entry
             if not compatible:
                 reports = [
                     _profile_mismatch_report(
@@ -213,12 +217,6 @@ class NormalizedDatasetStore:
                     f"source_id={profile.source_id}: {reports}. "
                     "Rebuild the requested normalized profile."
                 ) from exc
-            raise FileNotFoundError(
-                "Missing exact normalized dataset entry and found multiple compatible profiles for "
-                f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
-                f"source_id={profile.source_id}: {[entry.profile_key for entry, _mismatch in compatible]}. "
-                "Re-run with an exact profile or remove stale duplicate profiles."
-            ) from exc
 
     def entry_exists(self, profile: NormalizedDatasetProfile) -> bool:
         """Return whether one complete normalized entry exists."""
@@ -264,7 +262,9 @@ class NormalizedDatasetStore:
         root: Path,
     ) -> NormalizedDatasetEntry:
         root.mkdir(parents=True, exist_ok=True)
-        benchmark_inputs = self._normalize_benchmark_inputs(benchmark_inputs, root=root)
+        benchmark_inputs = self._normalize_benchmark_inputs(
+            benchmark_inputs, root=root, sequence_manifest=sequence_manifest
+        )
         sequence_manifest = self._normalize_sequence_manifest(
             sequence_manifest,
             profile=profile,
@@ -606,6 +606,14 @@ class NormalizedDatasetStore:
             manifest = manifest.model_copy(
                 update={"advio": _normalize_advio_assets(manifest.advio, input_root=input_root)}
             )
+        if self.dataset_id is DatasetId.ADVIO and manifest.dataset_serving is not None:
+            manifest = manifest.model_copy(
+                update={
+                    "dataset_serving": manifest.dataset_serving.model_copy(
+                        update={"pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL}
+                    )
+                }
+            )
         return _dedupe_manifest_rgb(manifest, benchmark_inputs, input_root=input_root)
 
     def _normalize_benchmark_inputs(
@@ -613,9 +621,10 @@ class NormalizedDatasetStore:
         benchmark_inputs: PreparedBenchmarkInputs,
         *,
         root: Path,
+        sequence_manifest: SequenceManifest,
     ) -> PreparedBenchmarkInputs:
         if self.dataset_id is DatasetId.ADVIO:
-            return _normalize_advio_benchmark_inputs(benchmark_inputs, root=root)
+            return _normalize_advio_benchmark_inputs(benchmark_inputs, root=root, sequence_manifest=sequence_manifest)
         trajectory_copies: dict[Path, Path] = {}
         reference_trajectories = _normalize_reference_trajectories(
             benchmark_inputs.reference_trajectories,
@@ -1042,9 +1051,12 @@ def _validate_requested_target_fps(
         return
     stored_fps = _mean_fps(len(timestamps_ns), _duration_s_from_ns(timestamps_ns))
     if stored_fps > 0.0 and frame_selection.target_fps > stored_fps * 1.01:
-        raise ValueError(
+        warnings.warn(
             "Requested target_fps would require upsampling normalized observations: "
-            f"requested={frame_selection.target_fps:.6g}, stored={stored_fps:.6g}."
+            f"requested={frame_selection.target_fps:.6g}, stored={stored_fps:.6g}. "
+            "Using all stored normalized frames instead.",
+            RuntimeWarning,
+            stacklevel=3,
         )
 
 
@@ -1130,7 +1142,93 @@ def _compatible_entry_profile(
     missing_from_request = set(_json_string_list(mismatch["missing_from_request"]))
     missing_from_entry = set(_json_string_list(mismatch["missing_from_entry"]))
     mismatched_fields = set(_json_object(mismatch["mismatched_fields"]))
-    return missing_from_request <= sampling_fields and not missing_from_entry and mismatched_fields <= sampling_fields
+    return (
+        missing_from_request <= sampling_fields
+        and missing_from_entry <= sampling_fields
+        and mismatched_fields <= sampling_fields
+    )
+
+
+def _select_compatible_entry(
+    compatible: list[tuple[NormalizedDatasetEntry, dict[str, Any]]],
+    *,
+    requested: NormalizedDatasetProfile,
+    frame_selection: FrameSelectionConfig | None,
+) -> tuple[NormalizedDatasetEntry, dict[str, Any]]:
+    return max(
+        compatible,
+        key=lambda item: _compatible_entry_score(
+            entry=item[0],
+            requested=requested,
+            frame_selection=frame_selection,
+        ),
+    )
+
+
+def _compatible_entry_score(
+    *,
+    entry: NormalizedDatasetEntry,
+    requested: NormalizedDatasetProfile,
+    frame_selection: FrameSelectionConfig | None,
+) -> tuple[int, int, float, int]:
+    selected = NormalizedDatasetProfile.model_validate(entry.profile)
+    return (
+        int(
+            _sampling_matches(
+                selected.source_profile, requested=requested.source_profile, frame_selection=frame_selection
+            )
+        ),
+        int(_trajectory_convention_matches(selected.source_profile, requested.source_profile)),
+        _stored_profile_cadence_score(selected.source_profile),
+        int(entry.created_at_ns),
+    )
+
+
+def _sampling_matches(
+    selected: dict[str, Any],
+    *,
+    requested: dict[str, Any],
+    frame_selection: FrameSelectionConfig | None,
+) -> bool:
+    requested_frame_stride = (
+        frame_selection.frame_stride if frame_selection is not None else int(requested.get("frame_stride", 1))
+    )
+    requested_target_fps = (
+        frame_selection.target_fps if frame_selection is not None else _optional_float(requested.get("target_fps"))
+    )
+    selected_frame_stride = int(selected.get("frame_stride", 1))
+    selected_target_fps = _optional_float(selected.get("target_fps"))
+    return selected_frame_stride == requested_frame_stride and selected_target_fps == requested_target_fps
+
+
+def _trajectory_convention_matches(selected: dict[str, Any], requested: dict[str, Any]) -> bool:
+    requested_convention = requested.get("trajectory_convention")
+    return requested_convention is None or selected.get("trajectory_convention") == requested_convention
+
+
+def _stored_profile_cadence_score(source_profile: dict[str, Any]) -> float:
+    target_fps = _optional_float(source_profile.get("target_fps"))
+    if target_fps is not None:
+        return target_fps
+    frame_stride = max(int(source_profile.get("frame_stride", 1)), 1)
+    return 1.0 / frame_stride
+
+
+def _warn_profile_mismatch(
+    *,
+    requested: NormalizedDatasetProfile,
+    selected: NormalizedDatasetEntry,
+    mismatch: dict[str, Any],
+) -> None:
+    warnings.warn(
+        "Using compatible normalized dataset entry despite requested profile mismatch: "
+        f"requested={requested.profile_key}, selected={selected.profile_key}, "
+        f"missing_from_request={mismatch['missing_from_request']}, "
+        f"missing_from_entry={mismatch['missing_from_entry']}, "
+        f"mismatched_fields={mismatch['mismatched_fields']}.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 def _validate_read_frame_selection(
@@ -1474,31 +1572,54 @@ def _normalize_advio_benchmark_inputs(
     benchmark_inputs: PreparedBenchmarkInputs,
     *,
     root: Path,
+    sequence_manifest: SequenceManifest,
 ) -> PreparedBenchmarkInputs:
-    trajectory_copies: dict[Path, Path] = {}
     trajectory_root = root / "benchmark" / "trajectories"
-    source_references = [
-        _advio_local_first_pose_trajectory_ref(ref)
-        for ref in benchmark_inputs.reference_trajectories
-        if _is_advio_source_native_trajectory(ref)
-    ]
-    source_candidates = [
-        _advio_local_first_pose_trajectory_ref(ref)
-        for ref in benchmark_inputs.candidate_trajectories
-        if _is_advio_source_native_trajectory(ref) and ref.source is not ReferenceSource.GROUND_TRUTH
-    ]
-    reference_trajectories = _normalize_reference_trajectories(
-        source_references,
+    source_refs = {
+        ref.source: ref for ref in benchmark_inputs.reference_trajectories if _is_advio_source_native_trajectory(ref)
+    }
+    if not source_refs:
+        return benchmark_inputs
+    if sequence_manifest.advio is None or sequence_manifest.advio.fixpoints_csv_path is None:
+        raise RuntimeError("ADVIO fixedpoint-common-start normalization requires manifest ADVIO fixpoints.")
+    fixedpoints = load_advio_fixpoints(sequence_manifest.advio.fixpoints_csv_path)
+    if ReferenceSource.GROUND_TRUTH not in source_refs:
+        raise RuntimeError(
+            "ADVIO fixedpoint-common-start normalization requires a source-native ground-truth trajectory."
+        )
+    registered_trajectories: dict[ReferenceSource, PoseTrajectory3D] = {}
+    registrations: dict[ReferenceSource, JsonObject] = {}
+    for source, ref in source_refs.items():
+        native_frame = ADVIO_PROVIDER_WORLD_RDF_FRAMES[source]
+        try:
+            source_trajectory = load_tum_trajectory(ref.path, canonicalize_timestamps=True)
+            registration = estimate_advio_fixedpoint_registration(
+                source_trajectory,
+                fixedpoints,
+                provider_source=source,
+                native_frame=native_frame,
+            )
+        except ValueError as exc:
+            if source is ReferenceSource.GROUND_TRUTH:
+                raise RuntimeError("Ground-truth ADVIO fixedpoint registration failed.") from exc
+            warnings.warn(
+                f"Skipping ADVIO {source.value} trajectory because fixedpoint registration failed: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        registered_trajectories[source] = apply_advio_fixedpoint_registration(source_trajectory, registration)
+        registrations[source] = registration.model_dump(mode="json")
+    normalized_trajectories, common_start = advio_common_start_local_trajectories(registered_trajectories)
+    reference_trajectories = _write_advio_registered_references(
+        normalized_trajectories,
+        registrations=registrations,
+        common_start=common_start,
         target_root=trajectory_root,
-        copies=trajectory_copies,
-        relative_to_first_pose=True,
     )
-    candidate_trajectories = _normalize_reference_trajectories(
-        source_candidates,
-        target_root=trajectory_root,
-        copies=trajectory_copies,
-        relative_to_first_pose=True,
-    )
+    candidate_trajectories = [
+        ref for ref in reference_trajectories if ref.source in {ReferenceSource.ARCORE, ReferenceSource.ARKIT}
+    ]
     reference_trajectories.extend(
         _advio_aligned_diagnostic_references(reference_trajectories, target_root=trajectory_root)
     )
@@ -1510,6 +1631,11 @@ def _normalize_advio_benchmark_inputs(
             index=index,
         )
         normalized_ref = _normalize_observation_sequence_ref(ref, target_root=target_root)
+        normalized_ref = _normalize_advio_observation_sequence_ref(
+            normalized_ref,
+            normalized_trajectories=normalized_trajectories,
+            target_frame=ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+        )
         _remove_staged_observation_sequence(
             source_root=ref.payload_root,
             normalized_root=normalized_ref.payload_root,
@@ -1534,13 +1660,81 @@ def _normalize_advio_benchmark_inputs(
 def _is_advio_source_native_trajectory(ref: ReferenceTrajectoryRef) -> bool:
     return (
         ref.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
-        and ref.source in _ADVIO_LOCAL_FIRST_POSE_FRAMES
+        and ref.source in ADVIO_PROVIDER_WORLD_RDF_FRAMES
     )
 
 
-def _advio_local_first_pose_trajectory_ref(ref: ReferenceTrajectoryRef) -> ReferenceTrajectoryRef:
-    frame = _ADVIO_LOCAL_FIRST_POSE_FRAMES[ref.source]
-    return ref.model_copy(update={"target_frame": frame, "native_frame": frame})
+def _write_advio_registered_references(
+    trajectories: dict[ReferenceSource, PoseTrajectory3D],
+    *,
+    registrations: dict[ReferenceSource, JsonObject],
+    common_start: JsonObject,
+    target_root: Path,
+) -> list[ReferenceTrajectoryRef]:
+    refs: list[ReferenceTrajectoryRef] = []
+    for source in (ReferenceSource.GROUND_TRUTH, ReferenceSource.ARCORE, ReferenceSource.ARKIT):
+        trajectory = trajectories.get(source)
+        if trajectory is None:
+            continue
+        path = target_root / f"{source.value}.tum"
+        metadata_path = path.with_suffix(".metadata.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_interface.write_tum_trajectory_file(path, trajectory)
+        write_json(
+            metadata_path,
+            {
+                "source": source.value,
+                "target_frame": ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+                "native_frame": ADVIO_PROVIDER_WORLD_RDF_FRAMES[source],
+                "coordinate_status": ReferenceCloudCoordinateStatus.REGISTERED.value,
+                "trajectory_origin": "advio_fixedpoint_common_start",
+                "pose_normalization": "fixedpoint_common_start_local",
+                "trajectory_convention": "fixedpoint_common_start_local_rdf_v1",
+                "frame_registration": registrations[source],
+                "common_start": common_start,
+            },
+        )
+        refs.append(
+            ReferenceTrajectoryRef(
+                source=source,
+                path=path.resolve(),
+                target_frame=ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
+                native_frame=ADVIO_PROVIDER_WORLD_RDF_FRAMES[source],
+                coordinate_status=ReferenceCloudCoordinateStatus.REGISTERED,
+                metadata_path=metadata_path.resolve(),
+            )
+        )
+    return refs
+
+
+def _normalize_advio_observation_sequence_ref(
+    ref: ObservationSequenceRef,
+    *,
+    normalized_trajectories: dict[ReferenceSource, PoseTrajectory3D],
+    target_frame: str,
+) -> ObservationSequenceRef:
+    ground_truth = normalized_trajectories.get(ReferenceSource.GROUND_TRUTH)
+    if ground_truth is None:
+        return ref
+    index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
+    rows = []
+    trajectory_timestamps = np.asarray(ground_truth.timestamps, dtype=np.float64)
+    poses = [np.asarray(pose, dtype=np.float64) for pose in ground_truth.poses_se3]
+    for row in index.rows:
+        timestamp_s = row.timestamp_ns / 1e9
+        pose_index = int(np.argmin(np.abs(trajectory_timestamps - timestamp_s)))
+        T_world_camera = advio_frame_transform_from_pose(poses[pose_index], target_frame=target_frame)
+        rows.append(
+            row.model_copy(
+                update={
+                    "T_world_camera": T_world_camera,
+                    "provenance": row.provenance.model_copy(update={"world_frame": target_frame}),
+                }
+            )
+        )
+    normalized_index = index.model_copy(update={"world_frame": target_frame, "rows": rows})
+    write_json(ref.index_path, normalized_index)
+    return ref.model_copy(update={"world_frame": target_frame})
 
 
 def _advio_aligned_diagnostic_references(
@@ -1553,7 +1747,8 @@ def _advio_aligned_diagnostic_references(
             ref
             for ref in source_references
             if ref.source is ReferenceSource.GROUND_TRUTH
-            and ref.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+            and ref.coordinate_status
+            in {ReferenceCloudCoordinateStatus.SOURCE_NATIVE, ReferenceCloudCoordinateStatus.REGISTERED}
         ),
         None,
     )
@@ -1594,11 +1789,11 @@ def _advio_aligned_diagnostic_reference(
     matched_pairs = int(len(ground_truth_assoc.positions_xyz))
     if matched_pairs < _ADVIO_ALIGN_MIN_PAIRS:
         return None
-    method = "sim3_umeyama_post_local_first_pose"
+    method = "sim3_umeyama_post_fixedpoint_common_start"
     try:
         rotation, translation, scale = provider_assoc.align(ground_truth_assoc, correct_scale=True)
     except (ValueError, geometry.GeometryException):
-        method = "yaw_similarity_umeyama_post_local_first_pose"
+        method = "yaw_similarity_umeyama_post_fixedpoint_common_start"
         scale, rotation, translation = yaw_similarity_align(
             np.asarray(provider_assoc.positions_xyz, dtype=np.float64),
             np.asarray(ground_truth_assoc.positions_xyz, dtype=np.float64),
@@ -1633,8 +1828,8 @@ def _advio_aligned_diagnostic_reference(
             "target_frame": ground_truth_ref.target_frame,
             "native_frame": provider_ref.native_frame,
             "coordinate_status": ReferenceCloudCoordinateStatus.ALIGNED.value,
-            "trajectory_origin": "first_pose",
-            "pose_normalization": "relative_to_first_pose",
+            "trajectory_origin": "advio_fixedpoint_common_start",
+            "pose_normalization": "fixedpoint_common_start_local",
             "alignment": {
                 "method": method,
                 "scale": float(scale),

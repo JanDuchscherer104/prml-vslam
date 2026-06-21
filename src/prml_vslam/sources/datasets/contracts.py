@@ -13,6 +13,7 @@ SequenceKey = int | str
 SceneT = TypeVar("SceneT", bound=BaseData)
 SequenceT = TypeVar("SequenceT", int, str)
 ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION = "local_first_pose_rdf_v1"
+ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION = "fixedpoint_common_start_local_rdf_v1"
 
 
 class DatasetId(StrEnum):
@@ -55,12 +56,14 @@ class AdvioPoseFrameMode(StrEnum):
 
     PROVIDER_WORLD = "provider_world"
     LOCAL_FIRST_POSE = "local_first_pose"
+    FIXEDPOINT_COMMON_START_LOCAL = "fixedpoint_common_start_local"
 
     @property
     def label(self) -> str:
         return {
             self.PROVIDER_WORLD: "Provider World",
             self.LOCAL_FIRST_POSE: "Local First Pose",
+            self.FIXEDPOINT_COMMON_START_LOCAL: "ADVIO Fixedpoint Common Start Local",
         }[self]
 
 

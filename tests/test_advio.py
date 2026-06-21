@@ -41,7 +41,7 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
-from prml_vslam.sources.datasets.contracts import ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION, DatasetId
+from prml_vslam.sources.datasets.contracts import ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION, DatasetId
 from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
 from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
 from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, normalized_store_for_path_config
@@ -138,7 +138,13 @@ def _write_pose_csv_rows(path: Path, *, rows: tuple[tuple[float, float, float, f
 
 def _write_fixpoints_csv(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("0.0,1.0,2.0,3.0\n0.2,2.0,3.0,4.0\n", encoding="utf-8")
+    rows = []
+    for timestamp_s in np.linspace(0.0, 0.2, 6):
+        x = 1.0 + 5.0 * timestamp_s
+        y = 2.0 + 5.0 * timestamp_s
+        z = 3.0 + 5.0 * timestamp_s
+        rows.append(f"{timestamp_s:.6f},{x:.6f},{z:.6f},{y:.6f}")
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
 def _write_advio_sequence(
@@ -644,7 +650,7 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
         (entry.root / "benchmark" / "trajectories" / "arkit.tum").as_posix(),
     ]
     assert all("aligned_to_gt" not in trajectory["path"] for trajectory in benchmark_inputs["candidate_trajectories"])
-    assert sequence_manifest["dataset_serving"]["pose_frame_mode"] == "local_first_pose"
+    assert sequence_manifest["dataset_serving"]["pose_frame_mode"] == "fixedpoint_common_start_local"
     assert sequence_manifest["advio"]["pose_refs"] is None
     assert sequence_manifest["advio"]["fixpoints_csv_path"] is None
     assert not any(
@@ -652,29 +658,29 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
         for path in entry.root.rglob("*.csv")
     )
     source_native_frames = {
-        "ground_truth": "advio_gt_world_local_first_pose",
-        "arcore": "advio_arcore_world_local_first_pose",
-        "arkit": "advio_arkit_world_local_first_pose",
+        "ground_truth": "advio_gt_world_rdf",
+        "arcore": "advio_arcore_world_rdf",
+        "arkit": "advio_arkit_world_rdf",
     }
     for trajectory_ref in benchmark_inputs["reference_trajectories"]:
         trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
         trajectory_metadata = json.loads(Path(trajectory_ref["metadata_path"]).read_text())
-        assert trajectory_metadata["trajectory_origin"] == "first_pose"
-        assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
-        if trajectory_ref["coordinate_status"] == "source_native":
+        assert trajectory_metadata["trajectory_origin"] == "advio_fixedpoint_common_start"
+        assert trajectory_metadata["pose_normalization"] == "fixedpoint_common_start_local"
+        if trajectory_ref["coordinate_status"] == "registered":
             assert np.allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
-            assert trajectory_ref["target_frame"] == source_native_frames[trajectory_ref["source"]]
+            assert trajectory_ref["target_frame"] == "advio_fixedpoint_common_start_local"
             assert trajectory_ref["native_frame"] == source_native_frames[trajectory_ref["source"]]
         else:
-            assert trajectory_ref["target_frame"] == "advio_gt_world_local_first_pose"
+            assert trajectory_ref["target_frame"] == "advio_fixedpoint_common_start_local"
             assert trajectory_ref["native_frame"] == source_native_frames[trajectory_ref["source"]]
             assert trajectory_metadata["alignment"]["matched_pairs"] >= 3
     for trajectory_ref in benchmark_inputs["candidate_trajectories"]:
         trajectory = load_tum_trajectory(Path(trajectory_ref["path"]))
         assert np.allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
-        assert trajectory_ref["coordinate_status"] == "source_native"
+        assert trajectory_ref["coordinate_status"] == "registered"
     assert observation_index.rows[0].rgb_path == Path("rgb/000000.png")
-    assert observation_index.world_frame == "advio_gt_world_local_first_pose"
+    assert observation_index.world_frame == "advio_fixedpoint_common_start_local"
     assert observation_index.rows[0].T_world_camera is not None
     assert observation_index.rows[0].T_world_camera.tx == pytest.approx(0.0, abs=1e-9)
     assert (entry.root / "observations" / observation_index.rows[0].rgb_path).is_file()
@@ -751,6 +757,31 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
 
 
+def test_advio_normalized_store_warns_for_sampling_profile_mismatch(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
+    stored_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=source_config,
+    )
+    requested_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=False,
+    )
+
+    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
+        entry = normalized_store_for_path_config(DatasetId.ADVIO, path_config).resolve_entry(requested_profile)
+
+    assert entry.profile_key == stored_entry.profile_key
+
+
 def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
     path_config = PathConfig(root=tmp_path)
@@ -793,7 +824,9 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
 
     assert legacy_entry.root.exists()
     assert current_profile.profile_key != legacy_profile.profile_key
-    assert current_profile.source_profile["trajectory_convention"] == ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+    assert (
+        current_profile.source_profile["trajectory_convention"] == ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
+    )
     with pytest.raises(FileNotFoundError, match="compatible profiles differ"):
         store.resolve_entry(current_profile)
 

@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import (
-    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
     AdvioPoseFrameMode,
     DatasetId,
     FrameSelectionConfig,
@@ -204,7 +204,7 @@ def normalized_profile_for_source_config(
         serving = source_profile.get("dataset_serving")
         if isinstance(serving, dict):
             source_profile["dataset_serving"] = serving | {"pose_frame_mode": AdvioPoseFrameMode.LOCAL_FIRST_POSE.value}
-        source_profile["trajectory_convention"] = ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+        source_profile["trajectory_convention"] = ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
     return normalized_dataset_profile(
         dataset_id=dataset_id,
         sequence_id=sequence_id,

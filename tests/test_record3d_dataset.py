@@ -617,7 +617,7 @@ def test_normalized_store_rejects_byte_affecting_profile_mismatch(tmp_path: Path
         fixture.store.resolve_entry(requested_profile)
 
 
-def test_normalized_store_rejects_ambiguous_compatible_entries(tmp_path: Path) -> None:
+def test_normalized_store_warns_and_selects_closest_compatible_entry(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
@@ -628,6 +628,7 @@ def test_normalized_store_rejects_ambiguous_compatible_entries(tmp_path: Path) -
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
     second_config = first_config.model_copy(update={"target_fps": 2.5})
+    stored_entries = {}
     for source_config in (first_config, second_config):
         profile = normalized_profile_for_source_config(
             dataset_id=DatasetId.RECORD3D,
@@ -643,7 +644,7 @@ def test_normalized_store_rejects_ambiguous_compatible_entries(tmp_path: Path) -
             materialization=source_config.materialization,
             reference_cloud=source_config.reference_cloud,
         )
-        store.create_entry_from_source(profile=profile, source=source)
+        stored_entries[source_config.target_fps] = store.create_entry_from_source(profile=profile, source=source)
     requested_profile = normalized_profile_for_source_config(
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
@@ -651,8 +652,10 @@ def test_normalized_store_rejects_ambiguous_compatible_entries(tmp_path: Path) -
         payload=first_config.model_dump(mode="json"),
     )
 
-    with pytest.raises(FileNotFoundError, match="multiple compatible profiles"):
-        store.resolve_entry(requested_profile)
+    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
+        entry = store.resolve_entry(requested_profile)
+
+    assert entry.profile_key == stored_entries[5.0].profile_key
 
 
 def test_record3d_normalized_store_reports_invalid_entries_without_aborting_summary(tmp_path: Path) -> None:
@@ -1066,7 +1069,7 @@ def test_record3d_normalized_store_applies_runtime_target_fps_without_copying_pa
     assert timestamps["resolved_target_fps"] == pytest.approx(5.0)
 
 
-def test_record3d_normalized_store_rejects_runtime_upsampling(tmp_path: Path) -> None:
+def test_record3d_normalized_store_warns_and_uses_stored_frames_for_runtime_upsampling(tmp_path: Path) -> None:
     fixture = _create_record3d_normalized_entry(tmp_path)
     source_config = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
@@ -1074,10 +1077,14 @@ def test_record3d_normalized_store_rejects_runtime_upsampling(tmp_path: Path) ->
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
 
-    with pytest.raises(ValueError, match="would require upsampling"):
-        source_config.setup_target(path_config=fixture.path_config).prepare_sequence_manifest(
+    with pytest.warns(RuntimeWarning, match="would require upsampling"):
+        manifest = source_config.setup_target(path_config=fixture.path_config).prepare_sequence_manifest(
             tmp_path / "run" / "input"
         )
+
+    timestamps = json.loads(Path(manifest.timestamps_path).read_text(encoding="utf-8"))
+    assert timestamps["resolved_frame_stride"] == 1
+    assert timestamps["resolved_target_fps"] < 30.0
 
 
 def test_record3d_normalized_store_rejects_tampered_entry_metadata(tmp_path: Path) -> None:

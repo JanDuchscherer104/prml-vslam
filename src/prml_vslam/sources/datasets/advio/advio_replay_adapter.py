@@ -72,6 +72,10 @@ def serve_loaded_advio_trajectory(
             return trajectory
         case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
             return trajectory_relative_to_first_pose(trajectory)
+        case AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL:
+            raise ValueError(
+                "ADVIO fixedpoint-common-start poses are available only from normalized datastore entries."
+            )
 
 
 def _poses_for_frame_timestamps(
@@ -98,6 +102,8 @@ def advio_pose_frames(*, pose_source: AdvioPoseSource, pose_frame_mode: AdvioPos
             target_frame = _advio_provider_world_frame(pose_source)
         case AdvioPoseFrameMode.LOCAL_FIRST_POSE:
             target_frame = f"{_advio_provider_world_frame(pose_source)}_local_first_pose"
+        case AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL:
+            target_frame = "advio_fixedpoint_common_start_local"
     return target_frame, _advio_camera_frame(pose_source)
 
 

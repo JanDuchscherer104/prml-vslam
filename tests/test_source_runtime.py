@@ -989,7 +989,7 @@ def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orienta
     assert profile.profile_key == rotated_profile.profile_key
     assert profile.profile_key == sampled_profile.profile_key
     assert profile.profile_key == target_fps_profile.profile_key
-    assert profile.source_profile["trajectory_convention"] == "local_first_pose_rdf_v1"
+    assert profile.source_profile["trajectory_convention"] == "fixedpoint_common_start_local_rdf_v1"
     assert "frame_stride" not in target_fps_profile.source_profile
     assert "target_fps" not in target_fps_profile.source_profile
     assert "sequence_id" not in target_fps_profile.source_profile
