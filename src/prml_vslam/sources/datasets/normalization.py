@@ -16,7 +16,14 @@ from prml_vslam.sources.config import (
     normalized_profile_for_source_config,
 )
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
+from prml_vslam.sources.datasets.contracts import (
+    AdvioPoseFrameMode,
+    AdvioServingConfig,
+    DatasetId,
+    FrameSelectionConfig,
+    ReferenceCloudConfig,
+    SequenceKey,
+)
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizableDatasetSource,
     NormalizedDatasetEntry,
@@ -87,6 +94,7 @@ def source_config_for_normalization(
             selection = frame_selection or default_frame_selection_for_dataset(dataset_id)
             return AdvioSourceConfig(
                 sequence_id=f"advio-{int(sequence_id):02d}" if isinstance(sequence_id, int) else sequence_id,
+                dataset_serving=AdvioServingConfig(pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE),
                 frame_stride=selection.frame_stride,
                 target_fps=selection.target_fps,
             )
@@ -121,6 +129,7 @@ def normalized_profile_for_dataset(
     include_frame_selection: bool = False,
 ) -> NormalizedDatasetProfile:
     """Return the normalized-store profile for a dataset source config."""
+    source_config = normalized_publication_source_config(dataset_id, source_config)
     canonical_sequence_id = canonical_sequence_id_for_dataset(
         dataset_id=dataset_id,
         service=service,
@@ -135,6 +144,24 @@ def normalized_profile_for_dataset(
     )
 
 
+def normalized_publication_source_config(
+    dataset_id: DatasetId,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
+) -> AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig:
+    """Return the source config whose outputs are allowed into the normalized datastore."""
+    if dataset_id is not DatasetId.ADVIO:
+        return source_config
+    if not isinstance(source_config, AdvioSourceConfig):
+        raise TypeError("ADVIO normalization received mismatched source config.")
+    return source_config.model_copy(
+        update={
+            "dataset_serving": source_config.dataset_serving.model_copy(
+                update={"pose_frame_mode": AdvioPoseFrameMode.LOCAL_FIRST_POSE}
+            )
+        }
+    )
+
+
 def normalize_dataset_entry(
     *,
     dataset_id: DatasetId,
@@ -143,6 +170,7 @@ def normalize_dataset_entry(
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizedDatasetEntry:
     """Create or replace one normalized entry from raw local dataset data."""
+    source_config = normalized_publication_source_config(dataset_id, source_config)
     profile = normalized_profile_for_dataset(
         dataset_id=dataset_id,
         service=service,

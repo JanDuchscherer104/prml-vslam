@@ -13,7 +13,8 @@ from prml_vslam.sources import FileObservationSequenceLoader
 from prml_vslam.sources.config import TumRgbdSourceConfig, normalized_profile_for_source_config
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudCoordinateStatus, ReferenceCloudSource
 from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalized_store import normalized_store_for_path_config
+from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, normalized_store_for_path_config
 from prml_vslam.sources.datasets.registry import list_sequence_slugs, resolve_reference_path
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdCatalog,
@@ -160,7 +161,10 @@ def test_tum_rgbd_sequence_loads_normalizes_and_registers(tmp_path: Path) -> Non
     assert observation_index["rows"][0]["provenance"]["raster_space"] == "display_downscaled"
     assert observation_index["rows"][0]["provenance"]["original_width"] == 64
     assert observation_index["rows"][0]["provenance"]["original_height"] == 48
-    assert load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path).positions_xyz.shape == (3, 3)
+    np.testing.assert_allclose(observations[0].T_world_camera.as_matrix(), np.eye(4), atol=1e-9)
+    ground_truth_trajectory = load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path)
+    assert ground_truth_trajectory.positions_xyz.shape == (3, 3)
+    np.testing.assert_allclose(ground_truth_trajectory.poses_se3[0], np.eye(4), atol=1e-9)
     assert list_sequence_slugs(DatasetId.TUM_RGBD, tmp_path) == ["freiburg1_desk"]
     assert (
         resolve_reference_path(DatasetId.TUM_RGBD, tmp_path, "freiburg1_desk")
@@ -496,7 +500,6 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
 
     assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
     assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
-    assert observation_ref["rgb_video_path"] is None
     assert not (entry.root / "observations" / "rgb.mp4").exists()
     assert (entry.root / "observations" / "rgb").is_dir()
     assert (entry.root / "observations" / "depth").is_dir()
@@ -531,6 +534,59 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
     assert streamed.depth_m[0, 0] == pytest.approx(1.0)
 
 
+def test_tum_rgbd_schema_9_entries_remain_read_compatible(tmp_path: Path) -> None:
+    _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", image_shape=(480, 640))
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = TumRgbdDatasetService(path_config)
+    source_config = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
+    store = normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config)
+    profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.TUM_RGBD,
+        sequence_id="freiburg1_desk",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+    )
+    entry = store.create_entry_from_source(
+        profile=profile,
+        source=service._build_raw_streaming_source(
+            sequence_id="freiburg1_desk",
+            frame_selection=FrameSelectionConfig(),
+            replay_mode=source_config.replay_mode,
+            reference_cloud=source_config.reference_cloud,
+        ),
+    )
+    legacy_profile = NormalizedDatasetProfile(
+        schema_version=9,
+        dataset_id=profile.dataset_id,
+        sequence_id=profile.sequence_id,
+        source_id=profile.source_id,
+        source_profile=profile.source_profile,
+    )
+    legacy_root = store.entry_root(legacy_profile)
+    legacy_root.parent.mkdir(parents=True, exist_ok=True)
+    entry.root.rename(legacy_root)
+    for path in (
+        legacy_root / "entry.json",
+        legacy_root / "sequence_manifest.json",
+        legacy_root / "benchmark_inputs.json",
+    ):
+        payload = path.read_text(encoding="utf-8").replace(entry.root.as_posix(), legacy_root.as_posix())
+        if path.name == "entry.json":
+            data = json.loads(payload)
+            data["schema_version"] = 9
+            data["profile_key"] = legacy_profile.profile_key
+            data["profile"] = legacy_profile.model_dump(mode="json")
+            payload = json.dumps(data)
+        path.write_text(payload, encoding="utf-8")
+
+    assert store.summary(strict=False)[0].root == legacy_root
+    assert store.issues() == []
+    query = query_normalized_dataset(DatasetId.TUM_RGBD, path_config)
+    assert [(record.sequence_id, record.profile_key) for record in query.default_records] == [
+        ("freiburg1_desk", legacy_profile.profile_key)
+    ]
+
+
 def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path, image_shape=(480, 640))
     sequence = TumRgbdSequence(config=TumRgbdSequenceConfig(dataset_root=tmp_path, sequence_id="freiburg1_desk"))
@@ -549,6 +605,7 @@ def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None
     assert observations[0].intrinsics is not None
     assert observations[0].intrinsics.width_px == 392
     assert observations[0].intrinsics.height_px == 294
+    np.testing.assert_allclose(observations[0].T_world_camera.as_matrix(), np.eye(4), atol=1e-9)
     assert observations[2].T_world_camera.tx == 2.0
     assert observations[2].T_world_camera.target_frame == "tum_rgbd_world"
     assert observations[2].T_world_camera.source_frame == CAMERA_RDF_FRAME

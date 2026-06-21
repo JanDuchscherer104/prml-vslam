@@ -61,7 +61,7 @@ class AdvioManifestAssets(BaseData):
     calibration_path: Path
     intrinsics: CameraIntrinsics
     T_cam_imu: FrameTransform
-    pose_refs: AdvioRawPoseRefs
+    pose_refs: AdvioRawPoseRefs | None = None
     fixpoints_csv_path: Path | None = None
 
 

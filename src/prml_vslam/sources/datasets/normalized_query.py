@@ -8,7 +8,12 @@ from typing import Protocol
 
 import pandas as pd
 
-from prml_vslam.sources.datasets.contracts import AdvioPoseSource, DatasetId
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudRef, ReferenceTrajectoryRef
+from prml_vslam.sources.datasets.contracts import (
+    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    AdvioPoseSource,
+    DatasetId,
+)
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
@@ -16,11 +21,13 @@ from prml_vslam.sources.datasets.normalization import (
     source_config_for_normalization,
 )
 from prml_vslam.sources.datasets.normalized_store import (
+    BENCHMARK_INPUTS_FILENAME,
     METADATA_LONG_FILENAME,
     METADATA_LONG_HEADER,
     STATS_LONG_FILENAME,
     STATS_LONG_HEADER,
     NormalizedDatasetEntry,
+    NormalizedDatasetProfile,
     load_normalized_entry_metadata_table,
     load_normalized_entry_stats_table,
     normalized_entry_analysis_summary,
@@ -45,6 +52,28 @@ class NormalizedSequenceRecord(BaseData):
     stats_row_count: int
     metadata_row_count: int
     advio_pose_source: AdvioPoseSource | None = None
+
+
+class NormalizedTrajectoryArtifact(BaseData):
+    """One trajectory artifact available for static normalized-scene plots."""
+
+    dataset_id: DatasetId
+    sequence_id: str
+    profile_key: str
+    scope: str
+    label: str
+    path: Path
+
+
+class NormalizedReferenceCloudArtifact(BaseData):
+    """One reference-cloud artifact available for static normalized-scene plots."""
+
+    dataset_id: DatasetId
+    sequence_id: str
+    profile_key: str
+    label: str
+    path: Path
+    metadata_path: Path
 
 
 class NormalizedDatasetQuery(BaseData):
@@ -74,6 +103,25 @@ class NormalizedDatasetQuery(BaseData):
     @property
     def default_records(self) -> list[NormalizedSequenceRecord]:
         return [record for record in self.records if record.is_default_profile]
+
+    def scene_sequence_records(self) -> list[NormalizedSequenceRecord]:
+        """Return one preferred normalized record per sequence for Scene selectors."""
+        preferred: dict[str, NormalizedSequenceRecord] = {}
+        for record in sorted(
+            self.records, key=lambda item: (item.sequence_id, not item.is_default_profile, item.profile_key)
+        ):
+            preferred.setdefault(record.sequence_id, record)
+        return list(preferred.values())
+
+    def records_for_sequence(self, *, sequence_id: str) -> list[NormalizedSequenceRecord]:
+        """Return all normalized records for one sequence in stable preference order."""
+        records = [record for record in self.records if record.sequence_id == sequence_id]
+        return sorted(records, key=lambda item: (not item.is_default_profile, item.profile_key))
+
+    def preferred_profile_key(self, *, sequence_id: str) -> str | None:
+        """Return the preferred profile key for selected-scene statistics and artifacts."""
+        records = self.records_for_sequence(sequence_id=sequence_id)
+        return None if not records else records[0].profile_key
 
     def table_rows(self) -> list[dict[str, str | int | float | bool | None]]:
         counts = self.profile_counts
@@ -117,21 +165,29 @@ class NormalizedDatasetQuery(BaseData):
             mask &= frame["stat"].isin(stats)
         return frame.loc[mask].reset_index(drop=True)
 
-    def observation_summary_frame(self) -> pd.DataFrame:
+    def observation_summary_frame(
+        self, *, sequence_id: str | None = None, profile_key: str | None = None
+    ) -> pd.DataFrame:
         """Return compact observation count, duration, and FPS statistics."""
-        return _pivot_stats(
-            self.stats_df,
-            scope="observation_sequence",
-            stats=(
-                "observation_frame_count",
-                "rgb_frame_count",
-                "depth_frame_count",
-                "observation_duration_s",
-                "observation_mean_fps",
+        return _filter_summary_frame(
+            _pivot_stats(
+                self.stats_df,
+                scope="observation_sequence",
+                stats=(
+                    "observation_frame_count",
+                    "rgb_frame_count",
+                    "depth_frame_count",
+                    "observation_duration_s",
+                    "observation_mean_fps",
+                ),
             ),
+            sequence_id=sequence_id,
+            profile_key=profile_key,
         )
 
-    def trajectory_summary_frame(self) -> pd.DataFrame:
+    def trajectory_summary_frame(
+        self, *, sequence_id: str | None = None, profile_key: str | None = None
+    ) -> pd.DataFrame:
         """Return compact trajectory motion statistics for reference/candidate rows."""
         frame = self.stats_df
         if frame.empty:
@@ -145,16 +201,27 @@ class NormalizedDatasetQuery(BaseData):
                     "trajectory_path_length_m",
                     "trajectory_mean_speed_m_s",
                     "trajectory_mean_curvature_rad_m",
-                    "ego_motion_class",
                 ]
             )
         ]
-        return _pivot_stats(selected, scope=None, stats=())
+        selected = selected.loc[~_excluded_advio_trajectory_mask(selected)]
+        return _filter_summary_frame(
+            _pivot_stats(selected, scope=None, stats=()),
+            sequence_id=sequence_id,
+            profile_key=profile_key,
+        )
 
-    def payload_footprint_frame(self) -> pd.DataFrame:
+    def payload_footprint_frame(
+        self, *, sequence_id: str | None = None, profile_key: str | None = None
+    ) -> pd.DataFrame:
         """Return stored RGB/depth/video footprint by normalized entry."""
+        records = self.records
+        if sequence_id is not None:
+            records = [record for record in records if record.sequence_id == sequence_id]
+        if profile_key is not None:
+            records = [record for record in records if record.profile_key == profile_key]
         rows: list[dict[str, str | int | float | bool | None]] = []
-        for record in self.records:
+        for record in records:
             observations_root = record.root / "observations"
             rgb_bytes = _sum_payload_bytes(observations_root / "rgb", "*.png")
             depth_bytes = _sum_payload_bytes(observations_root / "depth", "*.png")
@@ -176,12 +243,92 @@ class NormalizedDatasetQuery(BaseData):
             )
         return pd.DataFrame.from_records(rows)
 
+    def reference_cloud_artifacts(
+        self, *, sequence_id: str, profile_key: str | None = None
+    ) -> list[NormalizedReferenceCloudArtifact]:
+        """Return reference-cloud artifact refs for one normalized sequence/profile."""
+        artifacts: list[NormalizedReferenceCloudArtifact] = []
+        seen_paths: set[Path] = set()
+        for record in self._artifact_records(sequence_id=sequence_id, profile_key=profile_key):
+            benchmark_inputs_path = record.root / BENCHMARK_INPUTS_FILENAME
+            if not benchmark_inputs_path.exists():
+                continue
+            benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+                benchmark_inputs_path.read_text(encoding="utf-8")
+            )
+            for cloud_ref in benchmark_inputs.reference_clouds:
+                path = cloud_ref.path.resolve()
+                metadata_path = cloud_ref.metadata_path.resolve()
+                if path in seen_paths or not path.exists() or not metadata_path.exists():
+                    continue
+                seen_paths.add(path)
+                artifacts.append(
+                    NormalizedReferenceCloudArtifact(
+                        dataset_id=record.dataset_id,
+                        sequence_id=record.sequence_id,
+                        profile_key=record.profile_key,
+                        label=_reference_cloud_artifact_label(cloud_ref),
+                        path=path,
+                        metadata_path=metadata_path,
+                    )
+                )
+        return artifacts
+
+    def _artifact_records(self, *, sequence_id: str, profile_key: str | None = None) -> list[NormalizedSequenceRecord]:
+        if profile_key is not None:
+            return [
+                record
+                for record in self.records
+                if record.sequence_id == sequence_id and record.profile_key == profile_key
+            ]
+        return self.records_for_sequence(sequence_id=sequence_id)
+
+    def trajectory_artifacts(
+        self, *, sequence_id: str, profile_key: str | None = None
+    ) -> list[NormalizedTrajectoryArtifact]:
+        """Return trajectory artifact refs for one normalized sequence/profile."""
+        artifacts: list[NormalizedTrajectoryArtifact] = []
+        seen_paths: set[Path] = set()
+        for record in self._artifact_records(sequence_id=sequence_id, profile_key=profile_key):
+            benchmark_inputs_path = record.root / BENCHMARK_INPUTS_FILENAME
+            if not benchmark_inputs_path.exists():
+                continue
+            benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+                benchmark_inputs_path.read_text(encoding="utf-8")
+            )
+            for scope, trajectories in (
+                ("reference_trajectory", benchmark_inputs.reference_trajectories),
+                ("candidate_trajectory", benchmark_inputs.candidate_trajectories),
+            ):
+                for trajectory_ref in trajectories:
+                    if _is_excluded_advio_trajectory(
+                        dataset_id=record.dataset_id,
+                        sequence_id=record.sequence_id,
+                        subject=trajectory_ref.source.value,
+                    ):
+                        continue
+                    path = trajectory_ref.path.resolve()
+                    if path in seen_paths or not path.exists():
+                        continue
+                    seen_paths.add(path)
+                    artifacts.append(
+                        NormalizedTrajectoryArtifact(
+                            dataset_id=record.dataset_id,
+                            sequence_id=record.sequence_id,
+                            profile_key=record.profile_key,
+                            scope=scope,
+                            label=_trajectory_artifact_label(scope=scope, trajectory_ref=trajectory_ref),
+                            path=path,
+                        )
+                    )
+        return artifacts
+
 
 def query_normalized_dataset(dataset_id: DatasetId, path_config: PathConfig) -> NormalizedDatasetQuery:
     """Return a tolerant normalized-store snapshot for one dataset."""
     service = dataset_service(dataset_id, path_config)
     store = normalized_store_for_service(dataset_id, path_config)
-    entries = store.summary(strict=False)
+    entries = [entry for entry in store.summary(strict=False) if _is_query_visible_entry(entry)]
     default_keys = _default_profile_keys(dataset_id=dataset_id, path_config=path_config, entries=entries)
     records = [
         _record_from_entry(entry, sequence_label=_sequence_label(service, entry.sequence_id), default_keys=default_keys)
@@ -227,6 +374,32 @@ def _pivot_stats(stats_df: pd.DataFrame, *, scope: str | None, stats: tuple[str,
         .reset_index()
         .rename_axis(columns=None)
     )
+
+
+def _filter_summary_frame(frame: pd.DataFrame, *, sequence_id: str | None, profile_key: str | None) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    mask = pd.Series(True, index=frame.index)
+    if sequence_id is not None:
+        mask &= frame["sequence_id"].astype(str).eq(sequence_id)
+    if profile_key is not None:
+        mask &= frame["profile_key"].astype(str).eq(profile_key)
+    return frame.loc[mask].reset_index(drop=True)
+
+
+def _excluded_advio_trajectory_mask(frame: pd.DataFrame) -> pd.Series:
+    """Return a boolean mask for ADVIO trajectories to exclude known outliers from static normalized-scene plots."""
+    if frame.empty:
+        return pd.Series(False, index=frame.index)
+    return (
+        frame["dataset_id"].astype(str).eq(DatasetId.ADVIO.value)
+        & frame["sequence_id"].astype(str).eq("advio-23")
+        & frame["subject"].astype(str).str.startswith("arkit/")
+    )
+
+
+def _is_excluded_advio_trajectory(*, dataset_id: DatasetId, sequence_id: str, subject: str) -> bool:
+    return dataset_id is DatasetId.ADVIO and sequence_id == "advio-23" and subject.startswith("arkit")
 
 
 def _sum_payload_bytes(root: Path, pattern: str) -> int:
@@ -321,9 +494,41 @@ def _default_profile_keys(
             source_config=source_config,
             include_frame_selection=True,
         )
-        if entry.profile_key == profile.profile_key:
+        if _is_default_profile_entry(entry, profile):
             keys.add((entry.sequence_id, entry.profile_key))
     return keys
+
+
+def _is_default_profile_entry(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
+    if entry.profile_key == profile.profile_key:
+        return True
+    if entry.dataset_id is not DatasetId.TUM_RGBD:
+        return False
+    if entry.schema_version != 9 or entry.profile.get("schema_version") != 9:
+        return False
+    selected = entry.profile.get("source_profile")
+    if not isinstance(selected, dict):
+        return False
+    selected = _legacy_default_profile_payload(dataset_id=entry.dataset_id, payload=selected)
+    requested = _legacy_default_profile_payload(dataset_id=entry.dataset_id, payload=profile.source_profile)
+    return selected == requested
+
+
+def _legacy_default_profile_payload(dataset_id: DatasetId, payload: dict[str, object]) -> dict[str, object]:
+    normalized = dict(payload)
+    normalized.pop("frame_stride", None)
+    normalized.pop("target_fps", None)
+    return normalized
+
+
+def _is_query_visible_entry(entry: NormalizedDatasetEntry) -> bool:
+    if entry.dataset_id is not DatasetId.ADVIO:
+        return True
+    source_profile = entry.profile.get("source_profile")
+    return (
+        isinstance(source_profile, dict)
+        and source_profile.get("trajectory_convention") == ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+    )
 
 
 def _sequence_label(service: _SceneLookup, sequence_id: str) -> str:
@@ -344,3 +549,17 @@ def _advio_pose_source(entry: NormalizedDatasetEntry) -> AdvioPoseSource | None:
         return AdvioPoseSource(pose_source) if pose_source is not None else AdvioPoseSource.GROUND_TRUTH
     except ValueError:
         return AdvioPoseSource.GROUND_TRUTH
+
+
+def _trajectory_artifact_label(*, scope: str, trajectory_ref: ReferenceTrajectoryRef) -> str:
+    source = trajectory_ref.source.label.title()
+    if source == "Ground Truth":
+        source = "Ground truth"
+    if trajectory_ref.coordinate_status is not None:
+        source = f"{source} ({trajectory_ref.coordinate_status.value.replace('_', ' ')})"
+    return f"Candidate {source}" if scope == "candidate_trajectory" else source
+
+
+def _reference_cloud_artifact_label(cloud_ref: ReferenceCloudRef) -> str:
+    source = cloud_ref.source.value.replace("_", " ").title()
+    return f"{source} ({cloud_ref.coordinate_status.value.replace('_', ' ')})"

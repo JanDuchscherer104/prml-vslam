@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -13,7 +13,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
-from prml_vslam.interfaces.observation import ObservationIndexEntry
 
 from .clock import ReplayClock, ReplayMode
 
@@ -215,129 +214,6 @@ class PyAvVideoObservationSource:
         return poses_by_frame[frame_index]
 
 
-class VideoSequenceObservationSource:
-    """Replay a normalized RGB video synchronized to observation-index rows."""
-
-    def __init__(
-        self,
-        *,
-        video_path: Path,
-        payload_root: Path,
-        rows: list[ObservationIndexEntry],
-        loop: bool = False,
-        replay_mode: ReplayMode = ReplayMode.FAST_AS_POSSIBLE,
-        include_depth: bool = True,
-        depth_loader: Callable[[Path], NDArray[np.float32]] | None = None,
-    ) -> None:
-        self.video_path = video_path
-        self.payload_root = payload_root
-        self.rows = rows
-        self.loop = loop
-        self.include_depth = include_depth
-        self.depth_loader = depth_loader
-        self._clock = ReplayClock(replay_mode)
-        self._container: av.container.InputContainer | None = None
-        self._frames: Iterator[av.VideoFrame] | None = None
-        self._row_index = 0
-        self._video_frame_index = 0
-        self._emitted_seq = 0
-        self._loop_index = 0
-
-    def connect(self) -> Path:
-        """Open the normalized RGB video and reset replay state."""
-        self.disconnect()
-        self._container = av.open(str(self.video_path))
-        if next(iter(self._container.streams.video), None) is None:
-            self.disconnect()
-            raise ValueError(f"No video stream found in {self.video_path}.")
-        self._frames = self._container.decode(video=0)
-        self._row_index = 0
-        self._video_frame_index = 0
-        self._emitted_seq = 0
-        self._loop_index = 0
-        self._clock.reset()
-        return self.video_path
-
-    def disconnect(self) -> None:
-        """Release PyAV resources."""
-        if self._container is not None:
-            self._container.close()
-        self._container = None
-        self._frames = None
-
-    def wait_for_observation(self, timeout_seconds: float | None = None) -> Observation:
-        """Decode the next row-selected video frame."""
-        del timeout_seconds
-        self._require_connected()
-        while True:
-            if self._row_index >= len(self.rows):
-                if not self.loop:
-                    raise EOFError(f"Reached the end of {self.video_path}")
-                self._restart()
-                continue
-            row = self.rows[self._row_index]
-            target_video_index = row.rgb_video_frame_index if row.rgb_video_frame_index is not None else row.seq
-            rgb = self._decode_until(target_video_index)
-            self._row_index += 1
-            self._clock.wait_until(row.timestamp_ns)
-            depth_m = self._load_depth(row)
-            observation_source_frame_index = (
-                row.provenance.source_frame_index
-                if row.provenance.source_frame_index is not None
-                else target_video_index
-            )
-            observation = Observation(
-                seq=self._emitted_seq,
-                timestamp_ns=row.timestamp_ns,
-                source_frame_index=observation_source_frame_index,
-                loop_index=self._loop_index,
-                arrival_timestamp_s=time.time(),
-                rgb=rgb,
-                depth_m=depth_m,
-                intrinsics=row.intrinsics,
-                T_world_camera=row.T_world_camera,
-                provenance=row.provenance.model_copy(update={"source_frame_index": observation_source_frame_index}),
-            )
-            self._emitted_seq += 1
-            return observation
-
-    def _require_connected(self) -> None:
-        if self._container is None or self._frames is None:
-            raise RuntimeError(
-                "VideoSequenceObservationSource.connect() must be called before requesting observations."
-            )
-
-    def _restart(self) -> None:
-        self.disconnect()
-        self._container = av.open(str(self.video_path))
-        self._frames = self._container.decode(video=0)
-        self._row_index = 0
-        self._video_frame_index = 0
-        self._loop_index += 1
-        self._clock.reset()
-
-    def _decode_until(self, target_video_index: int) -> NDArray[np.uint8]:
-        self._require_connected()
-        if target_video_index < self._video_frame_index:
-            raise ValueError("Video-backed observation rows must be sorted by rgb_video_frame_index.")
-        while True:
-            try:
-                frame = next(self._frames)
-            except StopIteration as exc:
-                raise EOFError(f"Video '{self.video_path}' ended before frame index {target_video_index}.") from exc
-            current_index = self._video_frame_index
-            self._video_frame_index += 1
-            if current_index == target_video_index:
-                return np.asarray(frame.to_ndarray(format="rgb24"), dtype=np.uint8)
-
-    def _load_depth(self, row: ObservationIndexEntry) -> NDArray[np.float32] | None:
-        if not self.include_depth or row.depth_path is None:
-            return None
-        if self.depth_loader is None:
-            raise RuntimeError("A depth loader is required when include_depth=True and a row has a depth path.")
-        return self.depth_loader(_resolve_video_payload(row.depth_path, self.payload_root)) * row.depth_scale_to_m
-
-
 def write_rgb_video(path: Path, frames: Iterable[NDArray[np.uint8]], *, fps: float = 15.0) -> Path:
     """Encode RGB frames into a compact normalized video payload."""
     iterator = iter(frames)
@@ -381,10 +257,6 @@ def _as_rgb_frame(frame: NDArray[np.uint8]) -> NDArray[np.uint8]:
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"Expected RGB video frame shape (H, W, 3), got {rgb.shape}.")
     return np.ascontiguousarray(rgb)
-
-
-def _resolve_video_payload(path: Path, root: Path) -> Path:
-    return path if path.is_absolute() else root / path
 
 
 def read_video_rotation_degrees(video_path: Path) -> int:
@@ -522,7 +394,6 @@ def _rotate_intrinsics(intrinsics: CameraIntrinsics | None, rotation_degrees: in
 
 __all__ = [
     "PyAvVideoObservationSource",
-    "VideoSequenceObservationSource",
     "iter_rgb_video_frames",
     "read_video_rotation_degrees",
     "write_rgb_video",

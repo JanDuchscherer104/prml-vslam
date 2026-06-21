@@ -12,6 +12,7 @@ from prml_vslam.utils import BaseConfig, BaseData
 SequenceKey = int | str
 SceneT = TypeVar("SceneT", bound=BaseData)
 SequenceT = TypeVar("SequenceT", int, str)
+ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION = "local_first_pose_rdf_v1"
 
 
 class DatasetId(StrEnum):

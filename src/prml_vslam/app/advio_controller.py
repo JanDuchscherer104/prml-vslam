@@ -11,7 +11,7 @@ from prml_vslam.sources.datasets.advio import (
     AdvioLocalSceneStatus,
     AdvioServingConfig,
 )
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId
 from prml_vslam.sources.datasets.normalization import open_normalized_dataset_stream
 
 from .models import (
@@ -90,7 +90,10 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         scene = context.advio_service.scene(form.sequence_id)
         source_config = AdvioSourceConfig(
             sequence_id=f"advio-{form.sequence_id:02d}",
-            dataset_serving=AdvioServingConfig(pose_source=form.pose_source),
+            dataset_serving=AdvioServingConfig(
+                pose_source=form.pose_source,
+                pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE,
+            ),
             normalize_video_orientation=form.normalize_video_orientation,
         )
         context.advio_runtime.start(

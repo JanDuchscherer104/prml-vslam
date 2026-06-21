@@ -189,7 +189,6 @@ class ObservationIndexEntry(BaseData):
 
     seq: int = Field(ge=0)
     timestamp_ns: int = Field(ge=0)
-    rgb_video_frame_index: int | None = Field(default=None, ge=0)
     rgb_path: Path | None = None
     depth_path: Path | None = None
     depth_scale_to_m: float = Field(default=1.0, gt=0.0)
@@ -229,7 +228,6 @@ class ObservationSequenceRef(BaseData):
     sequence_id: str
     index_path: Path
     payload_root: Path
-    rgb_video_path: Path | None = None
     observation_count: int = Field(ge=0)
     world_frame: str = "world"
     raster_space: str = "source"
