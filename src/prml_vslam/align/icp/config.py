@@ -95,7 +95,7 @@ def _source_reference_cloud_available(
             service=service,
             source_config=source_backend,
         )
-        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+        entry = normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
             profile,
             frame_selection=FrameSelectionConfig(
                 frame_stride=source_backend.frame_stride,

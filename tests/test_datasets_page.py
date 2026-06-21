@@ -1099,7 +1099,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
         store=SimpleNamespace(save=lambda _state: None),
         record3d_dataset_service=service,
         path_config=SimpleNamespace(resolve_output_dir=lambda path, create=False: Path(".artifacts") / path),
-        advio_runtime=SimpleNamespace(
+        dataset_preview_runtime=SimpleNamespace(
             start=lambda **kwargs: started.update(kwargs),
             stop=lambda: None,
         ),
@@ -1109,6 +1109,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
     error = dataset_preview.handle_record3d_dataset_preview_action(
         context=context,
         sequence_id="2026-06-03--18-26-32",
+        profile_key="exact-profile",
         pose_source=Record3DDatasetPoseSource.ARKIT,
         include_depth=False,
         start_requested=True,
@@ -1130,6 +1131,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
             ),
             "include_depth": False,
             "path_config": context.path_config,
+            "profile_key": "exact-profile",
             "output_dir": Path(".artifacts") / "dataset-preview" / "record3d" / "2026-06-03--18-26-32",
         },
     )

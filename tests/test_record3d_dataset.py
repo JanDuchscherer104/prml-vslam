@@ -137,10 +137,9 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
     )
-    raw_source = service._build_raw_streaming_source(
+    raw_source = service._build_normalization_materializer(
         sequence_id="synthetic",
         frame_selection=FrameSelectionConfig(),
-        replay_mode=source_config.replay_mode,
         materialization=source_config.materialization,
         reference_cloud=source_config.reference_cloud,
     )
@@ -392,10 +391,9 @@ def test_record3d_dataset_service_and_registry_discover_local_archives(tmp_path:
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
 
-    source = service._build_raw_streaming_source(
+    source = service._build_normalization_materializer(
         sequence_id="synthetic",
         frame_selection=None,
-        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
     )
     manifest = source.prepare_sequence_manifest(tmp_path / "source")
 
@@ -577,10 +575,9 @@ def test_normalized_store_resolves_sampling_only_profile_mismatch_with_warning(t
         payload=source_config.model_dump(mode="json"),
         include_frame_selection=True,
     )
-    raw_source = service._build_raw_streaming_source(
+    raw_source = service._build_normalization_materializer(
         sequence_id="synthetic",
         frame_selection=FrameSelectionConfig(target_fps=5.0),
-        replay_mode=source_config.replay_mode,
         materialization=source_config.materialization,
         reference_cloud=source_config.reference_cloud,
     )
@@ -600,6 +597,48 @@ def test_normalized_store_resolves_sampling_only_profile_mismatch_with_warning(t
         store.load_entry(requested_profile)
     with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
         entry = store.resolve_entry(requested_profile, frame_selection=FrameSelectionConfig(target_fps=5.0))
+
+    assert entry.root == stored_entry.root
+
+
+def test_normalized_store_resolves_requested_sampling_only_profile_mismatch_with_warning(tmp_path: Path) -> None:
+    _write_record3d_archive(tmp_path / ".data" / "record3d")
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    service = Record3DDatasetService(path_config)
+    store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
+    source_config = Record3DDatasetSourceConfig(
+        sequence_id="synthetic",
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    )
+    requested_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="synthetic",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+    stored_profile = NormalizedDatasetProfile(
+        dataset_id=requested_profile.dataset_id,
+        sequence_id=requested_profile.sequence_id,
+        source_id=requested_profile.source_id,
+        source_profile={
+            key: value
+            for key, value in requested_profile.source_profile.items()
+            if key not in {"frame_stride", "target_fps"}
+        },
+    )
+    raw_source = service._build_normalization_materializer(
+        sequence_id="synthetic",
+        frame_selection=FrameSelectionConfig(),
+        materialization=source_config.materialization,
+        reference_cloud=source_config.reference_cloud,
+    )
+    stored_entry = store.create_entry_from_source(profile=stored_profile, source=raw_source)
+
+    with pytest.raises(FileNotFoundError):
+        store.load_entry(requested_profile)
+    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
+        entry = store.resolve_entry(requested_profile, frame_selection=FrameSelectionConfig())
 
     assert entry.root == stored_entry.root
 
@@ -637,10 +676,9 @@ def test_normalized_store_warns_and_selects_closest_compatible_entry(tmp_path: P
             payload=source_config.model_dump(mode="json"),
             include_frame_selection=True,
         )
-        source = service._build_raw_streaming_source(
+        source = service._build_normalization_materializer(
             sequence_id="synthetic",
             frame_selection=FrameSelectionConfig(target_fps=source_config.target_fps),
-            replay_mode=source_config.replay_mode,
             materialization=source_config.materialization,
             reference_cloud=source_config.reference_cloud,
         )
@@ -1152,25 +1190,23 @@ def test_record3d_dataset_source_requires_normalized_store_entry(tmp_path: Path)
         source.prepare_sequence_manifest(tmp_path / "run" / "input")
 
 
-def test_record3d_raw_ingestion_stream_honors_target_fps(tmp_path: Path) -> None:
+def test_record3d_normalization_materializer_does_not_stream_raw_dataset(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
-    source = service._build_raw_streaming_source(
+    source = service._build_normalization_materializer(
         sequence_id="synthetic",
         frame_selection=FrameSelectionConfig(target_fps=5.0),
-        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
 
-    stream = source.open_stream(loop=False)
-    stream.connect()
-    packet_0 = stream.wait_for_observation()
-    packet_1 = stream.wait_for_observation()
-
-    assert packet_0.source_frame_index == 0
-    assert packet_1.source_frame_index == 2
-    with pytest.raises(EOFError):
-        stream.wait_for_observation()
+    assert not hasattr(source, "open_stream")
+    source.prepare_sequence_manifest(tmp_path / "source")
+    benchmark_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark")
+    index = ObservationSequenceIndex.model_validate_json(
+        benchmark_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8")
+    )
+    assert [row.provenance.source_frame_index for row in index.rows] == [0, 2]
 
 
 def test_record3d_preview_stream_does_not_require_reference_cloud_points(tmp_path: Path) -> None:

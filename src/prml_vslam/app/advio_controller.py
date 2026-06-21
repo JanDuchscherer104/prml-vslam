@@ -19,7 +19,7 @@ from .models import (
     AdvioDownloadFormData,
     AdvioPageData,
     AdvioPreviewFormData,
-    AdvioPreviewSnapshot,
+    DatasetPreviewSnapshot,
     DatasetTableRow,
 )
 from .state import save_model_updates
@@ -62,9 +62,11 @@ def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest
     )
 
 
-def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot | None = None) -> AdvioPreviewSnapshot:
+def sync_advio_preview_state(
+    context: AppContext, snapshot: DatasetPreviewSnapshot | None = None
+) -> DatasetPreviewSnapshot:
     """Keep persisted preview state aligned with the runtime snapshot."""
-    snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
+    snapshot = context.dataset_preview_runtime.snapshot() if snapshot is None else snapshot
     if context.state.advio.preview_is_running and snapshot.state not in ACTIVE_PREVIEW_STREAM_STATES:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
     return snapshot
@@ -81,7 +83,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         preview_normalize_video_orientation=form.normalize_video_orientation,
     )
     if form.stop_requested:
-        context.advio_runtime.stop()
+        context.dataset_preview_runtime.stop()
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return None
     if not form.start_requested:
@@ -96,7 +98,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
             ),
             normalize_video_orientation=form.normalize_video_orientation,
         )
-        context.advio_runtime.start(
+        context.dataset_preview_runtime.start(
             sequence_id=form.sequence_id,
             sequence_label=scene.display_name,
             pose_source=form.pose_source,
@@ -106,6 +108,7 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
                 source_config=source_config,
                 include_depth=True,
                 path_config=context.path_config,
+                profile_key=form.profile_key,
                 output_dir=context.path_config.resolve_output_dir(
                     Path("dataset-preview") / "advio" / f"advio-{form.sequence_id:02d}", create=True
                 ),

@@ -17,6 +17,7 @@ from prml_vslam.sources.datasets.contracts import (
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
+    normalized_publication_source_config,
     normalized_store_for_service,
     source_config_for_normalization,
 )
@@ -489,11 +490,11 @@ def _default_profile_keys(
     keys: set[tuple[str, str]] = set()
     for entry in entries:
         source_config = source_config_for_normalization(dataset_id=dataset_id, sequence_id=entry.sequence_id)
+        source_config = normalized_publication_source_config(dataset_id, source_config)
         profile = normalized_profile_for_dataset(
             dataset_id=dataset_id,
             service=service,
             source_config=source_config,
-            include_frame_selection=True,
         )
         if _is_default_profile_entry(entry, profile):
             keys.add((entry.sequence_id, entry.profile_key))

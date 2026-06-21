@@ -37,7 +37,7 @@ from ..live_session import (
 )
 from ..models import (
     AdvioPageState,
-    AdvioPreviewSnapshot,
+    DatasetPreviewSnapshot,
     PreviewStreamState,
     Record3DDatasetPageState,
     Record3DDatasetPoseSource,
@@ -54,10 +54,10 @@ DatasetPoseSource = AdvioPoseSource | TumRgbdPoseSource | Record3DDatasetPoseSou
 
 
 def sync_tum_rgbd_preview_state(
-    context: AppContext, snapshot: AdvioPreviewSnapshot | None = None
-) -> AdvioPreviewSnapshot:
+    context: AppContext, snapshot: DatasetPreviewSnapshot | None = None
+) -> DatasetPreviewSnapshot:
     """Keep TUM RGB-D preview state aligned with the shared preview runtime."""
-    snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
+    snapshot = context.dataset_preview_runtime.snapshot() if snapshot is None else snapshot
     if context.state.tum_rgbd.preview_is_running and snapshot.state not in {
         PreviewStreamState.CONNECTING,
         PreviewStreamState.STREAMING,
@@ -67,10 +67,10 @@ def sync_tum_rgbd_preview_state(
 
 
 def sync_record3d_dataset_preview_state(
-    context: AppContext, snapshot: AdvioPreviewSnapshot | None = None
-) -> AdvioPreviewSnapshot:
+    context: AppContext, snapshot: DatasetPreviewSnapshot | None = None
+) -> DatasetPreviewSnapshot:
     """Keep Record3D preview state aligned with the shared preview runtime."""
-    snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
+    snapshot = context.dataset_preview_runtime.snapshot() if snapshot is None else snapshot
     if context.state.record3d_dataset.preview_is_running and snapshot.state not in {
         PreviewStreamState.CONNECTING,
         PreviewStreamState.STREAMING,
@@ -83,6 +83,7 @@ def handle_tum_rgbd_preview_action(
     *,
     context: AppContext,
     sequence_id: str,
+    profile_key: str | None,
     pose_source: TumRgbdPoseSource,
     include_depth: bool,
     start_requested: bool,
@@ -98,7 +99,7 @@ def handle_tum_rgbd_preview_action(
         preview_include_depth=include_depth,
     )
     if stop_requested:
-        context.advio_runtime.stop()
+        context.dataset_preview_runtime.stop()
         save_model_updates(context.store, context.state, context.state.tum_rgbd, preview_is_running=False)
         return None
     if not start_requested:
@@ -111,11 +112,12 @@ def handle_tum_rgbd_preview_action(
             source_config=source_config_for_normalization(dataset_id=DatasetId.TUM_RGBD, sequence_id=sequence_id),
             include_depth=include_depth,
             path_config=context.path_config,
+            profile_key=profile_key,
             output_dir=context.path_config.resolve_output_dir(
                 Path("dataset-preview") / "tum_rgbd" / str(sequence_id), create=True
             ),
         )
-        context.advio_runtime.start(
+        context.dataset_preview_runtime.start(
             sequence_id=sequence_id,
             sequence_label=scene.display_name,
             pose_source=pose_source,
@@ -134,6 +136,7 @@ def handle_record3d_dataset_preview_action(
     *,
     context: AppContext,
     sequence_id: str,
+    profile_key: str | None,
     pose_source: Record3DDatasetPoseSource,
     include_depth: bool,
     start_requested: bool,
@@ -150,7 +153,7 @@ def handle_record3d_dataset_preview_action(
         preview_include_depth=include_depth,
     )
     if stop_requested:
-        context.advio_runtime.stop()
+        context.dataset_preview_runtime.stop()
         save_model_updates(context.store, context.state, context.state.record3d_dataset, preview_is_running=False)
         return None
     if not start_requested:
@@ -163,11 +166,12 @@ def handle_record3d_dataset_preview_action(
             source_config=source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id=sequence_id),
             include_depth=include_depth,
             path_config=context.path_config,
+            profile_key=profile_key,
             output_dir=context.path_config.resolve_output_dir(
                 Path("dataset-preview") / "record3d" / str(sequence_id), create=True
             ),
         )
-        context.advio_runtime.start(
+        context.dataset_preview_runtime.start(
             sequence_id=sequence_id,
             sequence_label=scene.display_name,
             pose_source=resolved_pose_source,
@@ -196,11 +200,12 @@ def render_advio_loop_preview(context: AppContext, normalized: NormalizedDataset
         option_key="preview_normalize_video_orientation",
         initial_option_value=context.state.advio.preview_normalize_video_orientation,
         action_key_prefix="advio-loop-preview",
-        action=lambda selected_id, pose_source, option_value, start, stop: handle_advio_preview_action(
+        action=lambda selected_id, profile_key, pose_source, option_value, start, stop: handle_advio_preview_action(
             context,
             AdvioPreviewFormData(
                 sequence_id=int(str(selected_id).split("-", maxsplit=1)[1]),
                 pose_source=cast(AdvioPoseSource, pose_source),
+                profile_key=profile_key,
                 normalize_video_orientation=option_value,
                 start_requested=start,
                 stop_requested=stop,
@@ -221,9 +226,10 @@ def render_tum_rgbd_loop_preview(context: AppContext, normalized: NormalizedData
         option_key="preview_include_depth",
         initial_option_value=context.state.tum_rgbd.preview_include_depth,
         action_key_prefix="tum-rgbd-loop-preview",
-        action=lambda selected_id, pose_source, option_value, start, stop: handle_tum_rgbd_preview_action(
+        action=lambda selected_id, profile_key, pose_source, option_value, start, stop: handle_tum_rgbd_preview_action(
             context=context,
             sequence_id=str(selected_id),
+            profile_key=profile_key,
             pose_source=cast(TumRgbdPoseSource, pose_source),
             include_depth=option_value,
             start_requested=start,
@@ -247,9 +253,15 @@ def render_record3d_loop_preview(
         option_key="preview_include_depth",
         initial_option_value=context.state.record3d_dataset.preview_include_depth,
         action_key_prefix="record3d-dataset-loop-preview",
-        action=lambda selected_id, pose_source, option_value, start, stop: handle_record3d_dataset_preview_action(
+        action=lambda selected_id,
+        profile_key,
+        pose_source,
+        option_value,
+        start,
+        stop: handle_record3d_dataset_preview_action(
             context=context,
             sequence_id=str(selected_id),
+            profile_key=profile_key,
             pose_source=cast(Record3DDatasetPoseSource, pose_source),
             include_depth=option_value,
             start_requested=start,
@@ -269,11 +281,12 @@ def render_loop_preview(
     option_key: str,
     initial_option_value: bool,
     action_key_prefix: str,
-    action: Callable[[str, DatasetPoseSource, bool, bool, bool], str | None],
-    sync_snapshot: Callable[[], AdvioPreviewSnapshot],
+    action: Callable[[str, str | None, DatasetPoseSource, bool, bool, bool], str | None],
+    sync_snapshot: Callable[[], DatasetPreviewSnapshot],
 ) -> None:
     """Render the shared normalized dataset loop-preview control."""
-    previewable_ids: list[str] = [record.sequence_id for record in records]
+    records_by_sequence = {record.sequence_id: record for record in records}
+    previewable_ids: list[str] = list(records_by_sequence)
     with st.container(border=True):
         st.subheader("Loop Preview")
         st.caption(caption)
@@ -317,7 +330,15 @@ def render_loop_preview(
             stop_label="Stop preview",
             key=action_key_prefix,
         )
-        error_message = action(selected_id, pose_source, option_value, start_requested, stop_requested)
+        selected_record = records_by_sequence.get(selected_id)
+        error_message = action(
+            selected_id,
+            None if selected_record is None else selected_record.profile_key,
+            pose_source,
+            option_value,
+            start_requested,
+            stop_requested,
+        )
         if rerun_after_action(action_requested=start_requested or stop_requested, error_message=error_message):
             return
         if error_message:
@@ -328,7 +349,7 @@ def render_loop_preview(
         )
 
 
-def render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
+def render_preview_snapshot(snapshot: DatasetPreviewSnapshot) -> None:
     """Render the current shared preview-runtime snapshot."""
     render_live_session_shell(
         title=None,
@@ -350,7 +371,7 @@ def render_preview_snapshot(snapshot: AdvioPreviewSnapshot) -> None:
     )
 
 
-def preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
+def preview_metrics(snapshot: DatasetPreviewSnapshot) -> tuple[LiveMetric, ...]:
     """Return compact live preview metrics."""
     packet = snapshot.preview_packet
     loop_index = 0 if packet is None else packet.loop_index
@@ -362,7 +383,7 @@ def preview_metrics(snapshot: AdvioPreviewSnapshot) -> tuple[LiveMetric, ...]:
     )
 
 
-def preview_caption(snapshot: AdvioPreviewSnapshot) -> str | None:
+def preview_caption(snapshot: DatasetPreviewSnapshot) -> str | None:
     """Return a compact preview caption for the active sequence and pose source."""
     if not snapshot.sequence_label:
         return None
@@ -391,7 +412,7 @@ def render_preview_frame(packet: Observation) -> None:
         render_live_image(packet.depth_m, clamp=True, width="stretch")
 
 
-def render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
+def render_preview_status_notice(snapshot: DatasetPreviewSnapshot) -> None:
     """Render preview runtime state as a Streamlit notice."""
     match snapshot.state:
         case PreviewStreamState.IDLE:
@@ -407,7 +428,7 @@ def render_preview_status_notice(snapshot: AdvioPreviewSnapshot) -> None:
                 st.warning(snapshot.error_message)
 
 
-def preview_frame_details(snapshot: AdvioPreviewSnapshot, packet: Observation) -> JsonObject:
+def preview_frame_details(snapshot: DatasetPreviewSnapshot, packet: Observation) -> JsonObject:
     """Return compact observation details for the live packet details tab."""
     pose: JsonObject | None = (
         None

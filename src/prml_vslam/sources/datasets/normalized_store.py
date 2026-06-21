@@ -34,7 +34,13 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.contracts import (
+    ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
+    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    AdvioPoseFrameMode,
+    DatasetId,
+    FrameSelectionConfig,
+)
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSource
 from prml_vslam.sources.replay import ImageSequenceObservationSource, ObservationStream, ReplayMode
@@ -70,6 +76,13 @@ STORE_SCHEMA_VERSION = 10
 _ADVIO_ALIGN_MAX_DIFF_S = 0.01
 _ADVIO_ALIGN_MIN_PAIRS = 3
 _ADVIO_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+_ADVIO_LEGACY_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION = ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
+_ADVIO_GT_LOCAL_FIRST_POSE_FRAME = "advio_gt_world_local_first_pose"
+_ADVIO_LOCAL_FIRST_POSE_FRAMES = {
+    ReferenceSource.GROUND_TRUTH: _ADVIO_GT_LOCAL_FIRST_POSE_FRAME,
+    ReferenceSource.ARCORE: "advio_arcore_world_local_first_pose",
+    ReferenceSource.ARKIT: "advio_arkit_world_local_first_pose",
+}
 
 
 class NormalizedSourceProfile(RootModel[dict[str, Any]]):
@@ -195,6 +208,38 @@ class NormalizedDatasetStore:
         entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
+        return entry
+
+    def load_entry_for_runtime(
+        self,
+        profile: NormalizedDatasetProfile,
+        *,
+        frame_selection: FrameSelectionConfig | None = None,
+    ) -> NormalizedDatasetEntry:
+        """Load the exact normalized entry required by runtime paths."""
+        entry = self.load_entry(profile)
+        _validate_read_frame_selection(entry, frame_selection)
+        return entry
+
+    def load_entry_by_key_for_runtime(
+        self,
+        *,
+        sequence_id: str,
+        profile_key: str,
+        frame_selection: FrameSelectionConfig | None = None,
+    ) -> NormalizedDatasetEntry:
+        """Load an exact normalized entry selected by sequence/profile key for runtime replay."""
+        entry_path = self.store_root / sequence_id / profile_key / ENTRY_FILENAME
+        if not entry_path.exists():
+            raise FileNotFoundError(
+                f"Missing normalized dataset entry dataset_id={self.dataset_id.value} "
+                f"sequence_id={sequence_id} profile_key={profile_key}."
+            )
+        entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+        profile = NormalizedDatasetProfile.model_validate(entry.profile)
+        self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
+        self._validate_entry_payloads(entry)
+        _validate_read_frame_selection(entry, frame_selection)
         return entry
 
     def resolve_entry(
@@ -1177,6 +1222,12 @@ def _compatible_entry_profile(
     missing_from_request = set(_json_string_list(mismatch["missing_from_request"]))
     missing_from_entry = set(_json_string_list(mismatch["missing_from_entry"]))
     mismatched_fields = set(_json_object(mismatch["mismatched_fields"]))
+    if _is_compatible_advio_trajectory_convention_mismatch(
+        requested=requested,
+        selected=selected,
+        mismatched_fields=mismatched_fields,
+    ):
+        mismatched_fields.remove("trajectory_convention")
     return (
         missing_from_request <= sampling_fields
         and missing_from_entry <= sampling_fields
@@ -1260,6 +1311,26 @@ def _warn_profile_mismatch(
         RuntimeWarning,
         stacklevel=3,
     )
+
+
+def _is_compatible_advio_trajectory_convention_mismatch(
+    *,
+    requested: NormalizedDatasetProfile,
+    selected: NormalizedDatasetProfile,
+    mismatched_fields: set[str],
+) -> bool:
+    if requested.dataset_id is not DatasetId.ADVIO or selected.dataset_id is not DatasetId.ADVIO:
+        return False
+    if "trajectory_convention" not in mismatched_fields:
+        return False
+    conventions = {
+        requested.source_profile.get("trajectory_convention"),
+        selected.source_profile.get("trajectory_convention"),
+    }
+    return conventions == {
+        ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
+        _ADVIO_LEGACY_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    }
 
 
 def _validate_read_frame_selection(

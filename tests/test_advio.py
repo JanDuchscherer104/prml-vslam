@@ -41,7 +41,11 @@ from prml_vslam.sources.datasets.advio.advio_loading import (
     load_advio_calibration,
     load_advio_trajectory,
 )
-from prml_vslam.sources.datasets.contracts import ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION, DatasetId
+from prml_vslam.sources.datasets.contracts import (
+    ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
+    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
+    DatasetId,
+)
 from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
 from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
 from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, normalized_store_for_path_config
@@ -562,22 +566,19 @@ def test_advio_benchmark_inputs_project_near_so3_optional_provider_rotations(tmp
     )
 
 
-def test_advio_dataset_service_builds_raw_ingestion_source(tmp_path: Path) -> None:
+def test_advio_dataset_service_builds_normalization_materializer(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path / "advio")
 
-    source = AdvioDatasetService(PathConfig(root=tmp_path, data_dir=tmp_path))._build_raw_streaming_source(
+    source = AdvioDatasetService(PathConfig(root=tmp_path, data_dir=tmp_path))._build_normalization_materializer(
         sequence_id=15,
         dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.GROUND_TRUTH),
     )
 
     assert source is not None
     assert source.prepare_sequence_manifest(tmp_path / "manifest").sequence_id == "advio-15"
-    stream = source.open_stream(loop=False)
-    stream.connect()
-    packet = stream.wait_for_observation()
-    stream.disconnect()
-    assert packet.T_world_camera is not None
-    assert [packet.T_world_camera.tx, packet.T_world_camera.ty, packet.T_world_camera.tz] == [3.0, -2.0, 1.0]
+    assert not hasattr(source, "open_stream")
+    benchmark_inputs = source.prepare_benchmark_inputs(tmp_path / "benchmark")
+    assert benchmark_inputs.candidate_trajectories[0].path.exists()
 
 
 def test_advio_source_config_requires_normalized_store_entry(tmp_path: Path) -> None:
@@ -718,7 +719,6 @@ def test_advio_normalized_entry_rejects_raw_sidecars_under_entry_root(tmp_path: 
         sequence_id="advio-15",
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
-        include_frame_selection=True,
     )
     rogue_sidecar = entry.root / "input" / "advio" / "arcore.csv"
     rogue_sidecar.parent.mkdir(parents=True, exist_ok=True)
@@ -805,10 +805,9 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
     store = normalized_store_for_path_config(DatasetId.ADVIO, path_config)
     legacy_entry = store.create_entry_from_source(
         profile=legacy_profile,
-        source=service._build_raw_streaming_source(
+        source=service._build_normalization_materializer(
             sequence_id=15,
             frame_selection=source_config,
-            replay_mode=source_config.replay_mode,
             dataset_serving=source_config.dataset_serving,
             rgb_max_width_px=source_config.rgb_max_width_px,
             rgb_dimension_multiple=source_config.rgb_dimension_multiple,
@@ -829,10 +828,58 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
     )
     with pytest.raises(FileNotFoundError, match="compatible profiles differ"):
         store.resolve_entry(current_profile)
+    with pytest.raises(FileNotFoundError):
+        source_config.setup_target(path_config=path_config).prepare_sequence_manifest(tmp_path / "runtime")
 
     query = query_normalized_dataset(DatasetId.ADVIO, path_config)
     assert query.records == []
     assert query.default_records == []
+
+
+def test_advio_profile_convention_accepts_legacy_local_first_pose_convention_with_warning(
+    tmp_path: Path,
+) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    source_config = AdvioSourceConfig(sequence_id="advio-15")
+    current_profile = normalized_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
+        include_frame_selection=True,
+    )
+    legacy_profile = NormalizedDatasetProfile(
+        dataset_id=current_profile.dataset_id,
+        sequence_id=current_profile.sequence_id,
+        source_id=current_profile.source_id,
+        source_profile=current_profile.source_profile.as_dict()
+        | {"trajectory_convention": ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION},
+    )
+    store = normalized_store_for_path_config(DatasetId.ADVIO, path_config)
+    legacy_entry = store.create_entry_from_source(
+        profile=legacy_profile,
+        source=service._build_normalization_materializer(
+            sequence_id=15,
+            frame_selection=source_config,
+            dataset_serving=source_config.dataset_serving,
+            rgb_max_width_px=source_config.rgb_max_width_px,
+            rgb_dimension_multiple=source_config.rgb_dimension_multiple,
+        ),
+    )
+    benchmark_payload = json.loads(legacy_entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    for collection in ("reference_trajectories", "candidate_trajectories"):
+        for trajectory in benchmark_payload[collection]:
+            if trajectory["coordinate_status"] == "source_native":
+                trajectory["coordinate_status"] = "registered"
+    legacy_entry.benchmark_inputs_path.write_text(json.dumps(benchmark_payload), encoding="utf-8")
+
+    assert current_profile.profile_key != legacy_profile.profile_key
+    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
+        entry = store.resolve_entry(current_profile)
+
+    assert entry.root == legacy_entry.root
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:

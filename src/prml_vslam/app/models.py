@@ -90,7 +90,7 @@ class Record3DStreamSnapshot(PreviewSessionSnapshot):
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
-class AdvioPreviewSnapshot(PreviewSessionSnapshot):
+class DatasetPreviewSnapshot(PreviewSessionSnapshot):
     """Latest dataset loop-preview snapshot shared inside the app layer."""
 
     sequence_id: int | str | None = None
@@ -115,6 +115,7 @@ class AdvioPreviewFormData(BaseData):
 
     sequence_id: int
     pose_source: AdvioPoseSource
+    profile_key: str | None = None
     normalize_video_orientation: bool = True
     start_requested: bool = False
     stop_requested: bool = False
@@ -563,7 +564,7 @@ __all__ = [
     "AppState",
     "ArtifactInspectorPageState",
     "AdvioPageState",
-    "AdvioPreviewSnapshot",
+    "DatasetPreviewSnapshot",
     "MetricsPageState",
     "PipelinePageState",
     "PipelineSourceId",
