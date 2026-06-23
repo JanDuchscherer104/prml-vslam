@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 import pandas as pd
 
@@ -14,13 +14,7 @@ from prml_vslam.sources.datasets.contracts import (
     AdvioPoseSource,
     DatasetId,
 )
-from prml_vslam.sources.datasets.normalization import (
-    dataset_service,
-    normalized_profile_for_dataset,
-    normalized_publication_source_config,
-    normalized_store_for_service,
-    source_config_for_normalization,
-)
+from prml_vslam.sources.datasets.normalization import dataset_service, normalized_store_for_service
 from prml_vslam.sources.datasets.normalized_store import (
     BENCHMARK_INPUTS_FILENAME,
     METADATA_LONG_FILENAME,
@@ -28,8 +22,6 @@ from prml_vslam.sources.datasets.normalized_store import (
     STATS_LONG_FILENAME,
     STATS_LONG_HEADER,
     NormalizedDatasetEntry,
-    NormalizedDatasetProfile,
-    NormalizedSourceProfile,
     load_normalized_entry_metadata_table,
     load_normalized_entry_stats_table,
     normalized_entry_analysis_summary,
@@ -92,19 +84,11 @@ class NormalizedDatasetQuery(BaseData):
         return {record.sequence_id for record in self.records}
 
     @property
-    def default_profile_sequence_ids(self) -> set[str]:
-        return {record.sequence_id for record in self.records if record.is_default_profile}
-
-    @property
     def profile_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
         for record in self.records:
             counts[record.sequence_id] = counts.get(record.sequence_id, 0) + 1
         return counts
-
-    @property
-    def default_records(self) -> list[NormalizedSequenceRecord]:
-        return [record for record in self.records if record.is_default_profile]
 
     def scene_sequence_records(self) -> list[NormalizedSequenceRecord]:
         """Return one preferred normalized record per sequence for Scene selectors."""
@@ -331,10 +315,8 @@ def query_normalized_dataset(dataset_id: DatasetId, path_config: PathConfig) -> 
     service = dataset_service(dataset_id, path_config)
     store = normalized_store_for_service(dataset_id, path_config)
     entries = [entry for entry in store.summary(strict=False) if _is_query_visible_entry(entry)]
-    default_keys = _default_profile_keys(dataset_id=dataset_id, path_config=path_config, entries=entries)
     records = [
-        _record_from_entry(entry, sequence_label=_sequence_label(service, entry.sequence_id), default_keys=default_keys)
-        for entry in entries
+        _record_from_entry(entry, sequence_label=_sequence_label(service, entry.sequence_id)) for entry in entries
     ]
     return NormalizedDatasetQuery(
         dataset_id=dataset_id,
@@ -434,14 +416,14 @@ def normalized_query_fingerprint(path_config: PathConfig, dataset_id: DatasetId)
 def resolve_normalized_advio_sequence_id(
     *, sequence_slug: str, path_config: PathConfig
 ) -> tuple[int | None, str | None]:
-    """Resolve an ADVIO slug only if a matching normalized default-profile entry exists."""
+    """Resolve an ADVIO slug only if a current normalized entry exists."""
     suffix = sequence_slug.split("-", maxsplit=1)[1] if sequence_slug.startswith("advio-") else sequence_slug
     sequence_id = int(suffix) if suffix.isdigit() else None
     if sequence_id is None:
         return None, f"ADVIO sequence '{sequence_slug}' is not a valid ADVIO sequence id."
     query = query_normalized_dataset(DatasetId.ADVIO, path_config)
     canonical = f"advio-{sequence_id:02d}"
-    if canonical not in query.default_profile_sequence_ids:
+    if canonical not in query.sequence_ids:
         return None, f"ADVIO sequence '{canonical}' is missing from the normalized datastore."
     return sequence_id, None
 
@@ -463,7 +445,6 @@ def _record_from_entry(
     entry: NormalizedDatasetEntry,
     *,
     sequence_label: str,
-    default_keys: set[tuple[str, str]],
 ) -> NormalizedSequenceRecord:
     analysis = normalized_entry_analysis_summary(entry)
     return NormalizedSequenceRecord(
@@ -473,55 +454,11 @@ def _record_from_entry(
         source_id=entry.source_id,
         profile_key=entry.profile_key,
         root=entry.root,
-        is_default_profile=(entry.sequence_id, entry.profile_key) in default_keys,
+        is_default_profile=False,
         stats_row_count=int(analysis["stats_long_row_count"]),
         metadata_row_count=int(analysis["metadata_long_row_count"]),
         advio_pose_source=_advio_pose_source(entry),
     )
-
-
-def _default_profile_keys(
-    *,
-    dataset_id: DatasetId,
-    path_config: PathConfig,
-    entries: list[NormalizedDatasetEntry],
-) -> set[tuple[str, str]]:
-    service = dataset_service(dataset_id, path_config)
-    keys: set[tuple[str, str]] = set()
-    for entry in entries:
-        source_config = source_config_for_normalization(dataset_id=dataset_id, sequence_id=entry.sequence_id)
-        source_config = normalized_publication_source_config(dataset_id, source_config)
-        profile = normalized_profile_for_dataset(
-            dataset_id=dataset_id,
-            service=service,
-            source_config=source_config,
-        )
-        if _is_default_profile_entry(entry, profile):
-            keys.add((entry.sequence_id, entry.profile_key))
-    return keys
-
-
-def _is_default_profile_entry(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
-    if entry.profile_key == profile.profile_key:
-        return True
-    if entry.dataset_id is not DatasetId.TUM_RGBD:
-        return False
-    if entry.schema_version != 9 or entry.profile.schema_version != 9:
-        return False
-    selected = _legacy_default_profile_payload(dataset_id=entry.dataset_id, profile=entry.profile.source_profile)
-    requested = _legacy_default_profile_payload(dataset_id=entry.dataset_id, profile=profile.source_profile)
-    return selected == requested
-
-
-def _legacy_default_profile_payload(
-    *,
-    dataset_id: DatasetId,
-    profile: NormalizedSourceProfile,
-) -> dict[str, Any]:
-    normalized = profile.as_dict()
-    normalized.pop("frame_stride", None)
-    normalized.pop("target_fps", None)
-    return normalized
 
 
 def _is_query_visible_entry(entry: NormalizedDatasetEntry) -> bool:

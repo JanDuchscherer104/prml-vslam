@@ -85,7 +85,6 @@ def sync_pipeline_page_state_from_template(
                 "dataset_target_fps": source_backend.target_fps,
                 "pose_source": source_backend.dataset_serving.pose_source,
                 "pose_frame_mode": source_backend.dataset_serving.pose_frame_mode,
-                "normalize_video_orientation": source_backend.normalize_video_orientation,
             }
         case Record3DSourceConfig() as record3d_source:
             source_updates = {
@@ -144,7 +143,6 @@ def build_run_config_from_action(
                     pose_source=action.pose_source,
                     pose_frame_mode=action.pose_frame_mode,
                 ),
-                normalize_video_orientation=action.normalize_video_orientation,
             )
         else:
             source_backend = record3d_source_config_from_action(action)
@@ -351,7 +349,6 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
             target_fps=target_fps,
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
-            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["source"] = {
                 "kind": "advio",
@@ -360,7 +357,6 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
                 "target_fps": target_fps,
                 "replay_mode": replay_mode.value,
                 "dataset_serving": None if dataset_serving is None else dataset_serving.model_dump(mode="json"),
-                "normalize_video_orientation": normalize_video_orientation,
             }
         case _:
             payload["source"] = request.stages.source.backend.model_dump(mode="json")

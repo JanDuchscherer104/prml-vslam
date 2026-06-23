@@ -454,7 +454,6 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     assert isinstance(advio.backend, AdvioSourceConfig)
     assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
     assert advio.backend.replay_mode is ReplayMode.REALTIME
-    assert advio.backend.normalize_video_orientation is True
     assert isinstance(record3d.backend, Record3DSourceConfig)
     assert record3d.backend.transport is Record3DTransportId.USB
 

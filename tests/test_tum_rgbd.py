@@ -533,7 +533,7 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
     assert streamed.depth_m[0, 0] == pytest.approx(1.0)
 
 
-def test_tum_rgbd_schema_9_entries_remain_read_compatible(tmp_path: Path) -> None:
+def test_tum_rgbd_schema_9_entries_are_reported_stale(tmp_path: Path) -> None:
     _write_tum_rgbd_sequence(tmp_path / ".data" / "tum_rgbd", image_shape=(480, 640))
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = TumRgbdDatasetService(path_config)
@@ -577,12 +577,14 @@ def test_tum_rgbd_schema_9_entries_remain_read_compatible(tmp_path: Path) -> Non
             payload = json.dumps(data)
         path.write_text(payload, encoding="utf-8")
 
-    assert store.summary(strict=False)[0].root == legacy_root
-    assert store.issues() == []
+    assert store.summary(strict=False) == []
+    issues = store.issues()
+    assert len(issues) == 1
+    assert issues[0].status == "stale_schema"
+    assert issues[0].profile_key == legacy_profile.profile_key
     query = query_normalized_dataset(DatasetId.TUM_RGBD, path_config)
-    assert [(record.sequence_id, record.profile_key) for record in query.default_records] == [
-        ("freiburg1_desk", legacy_profile.profile_key)
-    ]
+    assert query.records == []
+    assert query.issues[0]["status"] == "stale_schema"
 
 
 def test_tum_rgbd_prepares_file_backed_rgbd_observations(tmp_path: Path) -> None:

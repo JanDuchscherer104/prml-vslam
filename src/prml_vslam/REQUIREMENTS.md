@@ -51,10 +51,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   - owns reusable normalized dataset stores under
     `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`; store entries
     persist source-selected replay payloads once plus source-owned long-form
-    Core/Motion statistics and metadata tables; normalize-time `frame_stride`,
-    `target_fps`, RGB preprocessing, and reference-cloud sampling are
-    byte-affecting source profile settings, while runtime-only downsampling is
-    applied by readers through lightweight selected-index sidecars
+    Core/Motion statistics and metadata tables; normalize-time
+    `normalized_frame_stride`, `normalized_target_fps`, RGB preprocessing, and
+    reference-cloud sampling are byte-affecting source profile settings, while
+    runtime-only downsampling is applied by readers through lightweight
+    selected-index sidecars
   - keeps normalized entry layout canonical: the common single RGB-D observation
     sequence lives at `<entry>/observations/`, and Record3D depth stays benchmark
     observation material without duplicating matching RGB payloads

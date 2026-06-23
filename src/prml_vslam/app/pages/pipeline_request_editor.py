@@ -65,7 +65,6 @@ def render_request_editor(
             record3d_frame_timeout_seconds,
             pose_source,
             pose_frame_mode,
-            normalize_video_orientation,
             source_input_error,
         ) = _render_source_settings(
             context=context,
@@ -140,7 +139,6 @@ def render_request_editor(
                 "record3d_frame_timeout_seconds": record3d_frame_timeout_seconds,
                 "pose_source": pose_source,
                 "pose_frame_mode": pose_frame_mode,
-                "normalize_video_orientation": normalize_video_orientation,
             }
         ),
         slam_input_error or visualization_input_error,
@@ -204,7 +202,6 @@ def _render_source_settings(
     float,
     AdvioPoseSource,
     AdvioPoseFrameMode,
-    bool,
     str | None,
 ]:
     advio_sequence_id = page_state.advio_sequence_id
@@ -214,7 +211,6 @@ def _render_source_settings(
     record3d_frame_timeout_seconds = page_state.record3d_frame_timeout_seconds
     pose_source = page_state.pose_source
     pose_frame_mode = page_state.pose_frame_mode
-    normalize_video_orientation = page_state.normalize_video_orientation
     dataset_frame_stride = page_state.dataset_frame_stride
     dataset_target_fps = page_state.dataset_target_fps
     source_input_error = None
@@ -223,7 +219,6 @@ def _render_source_settings(
             advio_sequence_id,
             pose_source,
             pose_frame_mode,
-            normalize_video_orientation,
             dataset_frame_stride,
             dataset_target_fps,
             source_input_error,
@@ -252,7 +247,6 @@ def _render_source_settings(
         record3d_frame_timeout_seconds,
         pose_source,
         pose_frame_mode,
-        normalize_video_orientation,
         source_input_error,
     )
 
@@ -262,7 +256,7 @@ def _render_advio_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     advio_records: list[NormalizedSequenceRecord],
-) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, bool, int, float | None, str | None]:
+) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, int, float | None, str | None]:
     del context
     record_by_numeric_id = {_advio_record_sequence_id(record): record for record in advio_records}
     available_ids = list(record_by_numeric_id)
@@ -300,10 +294,6 @@ def _render_advio_source_settings(
         index=list(AdvioPoseFrameMode).index(page_state.pose_frame_mode),
         format_func=lambda item: item.label,
     )
-    normalize_video_orientation = st.toggle(
-        "Normalize video display orientation",
-        value=page_state.normalize_video_orientation,
-    )
     dataset_frame_stride = int(
         st.number_input("Dataset Frame Stride", min_value=1, max_value=120, value=page_state.dataset_frame_stride)
     )
@@ -325,7 +315,6 @@ def _render_advio_source_settings(
         advio_sequence_id,
         pose_source,
         pose_frame_mode,
-        normalize_video_orientation,
         dataset_frame_stride,
         dataset_target_fps,
         sampling_error,

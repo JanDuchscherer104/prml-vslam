@@ -19,6 +19,7 @@ enabled = true
     [stages.source.backend]
     source_id    = "tum_rgbd"
     sequence_id  = "freiburg3_large_cabinet"
+    normalized_target_fps = 30.0
     frame_stride = 3
     replay_mode  = "fast_as_possible"
 

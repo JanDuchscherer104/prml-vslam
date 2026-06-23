@@ -5,13 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from prml_vslam.sources.config import AdvioSourceConfig
 from prml_vslam.sources.datasets.advio import (
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
-    AdvioServingConfig,
 )
-from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalization import open_normalized_dataset_stream
 
 from .models import (
@@ -80,7 +78,6 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         context.state.advio,
         preview_sequence_id=form.sequence_id,
         preview_pose_source=form.pose_source,
-        preview_normalize_video_orientation=form.normalize_video_orientation,
     )
     if form.stop_requested:
         context.dataset_preview_runtime.stop()
@@ -90,25 +87,17 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         return None
     try:
         scene = context.advio_service.scene(form.sequence_id)
-        source_config = AdvioSourceConfig(
-            sequence_id=f"advio-{form.sequence_id:02d}",
-            dataset_serving=AdvioServingConfig(
-                pose_source=form.pose_source,
-                pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE,
-            ),
-            normalize_video_orientation=form.normalize_video_orientation,
-        )
         context.dataset_preview_runtime.start(
             sequence_id=form.sequence_id,
             sequence_label=scene.display_name,
             pose_source=form.pose_source,
             stream=open_normalized_dataset_stream(
                 dataset_id=DatasetId.ADVIO,
-                service=context.advio_service,
-                source_config=source_config,
+                sequence_id=f"advio-{form.sequence_id:02d}",
+                profile_key=form.profile_key,
+                frame_selection=FrameSelectionConfig(),
                 include_depth=True,
                 path_config=context.path_config,
-                profile_key=form.profile_key,
                 output_dir=context.path_config.resolve_output_dir(
                     Path("dataset-preview") / "advio" / f"advio-{form.sequence_id:02d}", create=True
                 ),

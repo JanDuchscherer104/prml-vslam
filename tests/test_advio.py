@@ -733,7 +733,7 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
     full_config = AdvioSourceConfig(sequence_id="advio-15")
-    sampled_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
+    sampled_config = AdvioSourceConfig(sequence_id="advio-15", normalized_target_fps=5.0)
 
     full_entry = normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
@@ -757,12 +757,12 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
 
 
-def test_advio_normalized_store_warns_for_sampling_profile_mismatch(tmp_path: Path) -> None:
+def test_advio_normalized_store_rejects_sampling_profile_mismatch(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
-    source_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
-    stored_entry = normalize_dataset_entry(
+    source_config = AdvioSourceConfig(sequence_id="advio-15", normalized_target_fps=5.0)
+    normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
         path_config=path_config,
         service=service,
@@ -772,14 +772,11 @@ def test_advio_normalized_store_warns_for_sampling_profile_mismatch(tmp_path: Pa
         dataset_id=DatasetId.ADVIO,
         sequence_id="advio-15",
         source_id=source_config.source_id,
-        payload=source_config.model_dump(mode="json"),
-        include_frame_selection=False,
+        payload=source_config.model_copy(update={"normalized_target_fps": None}).model_dump(mode="json"),
     )
 
-    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
-        entry = normalized_store_for_path_config(DatasetId.ADVIO, path_config).resolve_entry(requested_profile)
-
-    assert entry.profile_key == stored_entry.profile_key
+    with pytest.raises(FileNotFoundError):
+        normalized_store_for_path_config(DatasetId.ADVIO, path_config).load_entry_for_runtime(requested_profile)
 
 
 def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: Path) -> None:
@@ -792,7 +789,6 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
         sequence_id="advio-15",
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
-        include_frame_selection=True,
     )
     legacy_profile = NormalizedDatasetProfile(
         dataset_id=legacy_profile.dataset_id,
@@ -818,7 +814,6 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
         sequence_id="advio-15",
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
-        include_frame_selection=True,
     )
 
     assert legacy_entry.root.exists()
@@ -826,17 +821,18 @@ def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: P
     assert (
         current_profile.source_profile["trajectory_convention"] == ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
     )
-    with pytest.raises(FileNotFoundError, match="compatible profiles differ"):
-        store.resolve_entry(current_profile)
+    with pytest.raises(FileNotFoundError):
+        store.load_entry_for_runtime(current_profile)
+    with pytest.raises(RuntimeError, match="fixedpoint common-start"):
+        store.load_entry_by_key_for_runtime(sequence_id="advio-15", profile_key=legacy_profile.profile_key)
     with pytest.raises(FileNotFoundError):
         source_config.setup_target(path_config=path_config).prepare_sequence_manifest(tmp_path / "runtime")
 
     query = query_normalized_dataset(DatasetId.ADVIO, path_config)
     assert query.records == []
-    assert query.default_records == []
 
 
-def test_advio_profile_convention_accepts_legacy_local_first_pose_convention_with_warning(
+def test_advio_profile_convention_rejects_legacy_local_first_pose_convention_by_key(
     tmp_path: Path,
 ) -> None:
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
@@ -848,7 +844,6 @@ def test_advio_profile_convention_accepts_legacy_local_first_pose_convention_wit
         sequence_id="advio-15",
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
-        include_frame_selection=True,
     )
     legacy_profile = NormalizedDatasetProfile(
         dataset_id=current_profile.dataset_id,
@@ -876,10 +871,10 @@ def test_advio_profile_convention_accepts_legacy_local_first_pose_convention_wit
     legacy_entry.benchmark_inputs_path.write_text(json.dumps(benchmark_payload), encoding="utf-8")
 
     assert current_profile.profile_key != legacy_profile.profile_key
-    with pytest.warns(RuntimeWarning, match="requested profile mismatch"):
-        entry = store.resolve_entry(current_profile)
-
-    assert entry.root == legacy_entry.root
+    with pytest.raises(FileNotFoundError):
+        store.load_entry_for_runtime(current_profile)
+    with pytest.raises(RuntimeError, match="fixedpoint common-start"):
+        store.load_entry_by_key_for_runtime(sequence_id="advio-15", profile_key=legacy_entry.profile_key)
 
 
 def test_advio_local_first_pose_mode_rebases_provider_poses(tmp_path: Path) -> None:

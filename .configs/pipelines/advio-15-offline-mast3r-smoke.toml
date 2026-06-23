@@ -9,6 +9,7 @@ enabled = true
     [stages.source.backend]
     source_id   = "tum_rgbd"
     sequence_id = "freiburg3_large_cabinet"
+    normalized_target_fps = 30.0
 
         [stages.source.backend.dataset_serving]
         pose_source     = "ground_truth"

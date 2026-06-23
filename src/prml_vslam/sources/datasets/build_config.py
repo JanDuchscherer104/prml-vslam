@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig
-from prml_vslam.sources.datasets.contracts import FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.contracts import ReferenceCloudConfig
 from prml_vslam.utils import BaseConfig
 
 
-class AdvioNormalizedDatasetBuildSource(FrameSelectionConfig):
+class NormalizedCadenceConfig(BaseConfig):
+    """Normalize-time frame selection that contributes to datastore identity."""
+
+    normalized_frame_stride: int | None = Field(default=None, ge=1)
+    normalized_target_fps: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_single_normalized_sampling_mode(self) -> Self:
+        if self.normalized_target_fps is not None and self.normalized_frame_stride not in (None, 1):
+            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
+        return self
+
+
+class AdvioNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped ADVIO normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")
@@ -26,8 +39,8 @@ class AdvioNormalizedDatasetBuildSource(FrameSelectionConfig):
         return [
             AdvioSourceConfig(
                 sequence_id=sequence_id,
-                frame_stride=self.frame_stride,
-                target_fps=self.target_fps,
+                normalized_frame_stride=self.normalized_frame_stride,
+                normalized_target_fps=self.normalized_target_fps,
                 rgb_max_width_px=self.rgb_max_width_px,
                 rgb_dimension_multiple=self.rgb_dimension_multiple,
             )
@@ -35,7 +48,7 @@ class AdvioNormalizedDatasetBuildSource(FrameSelectionConfig):
         ]
 
 
-class TumRgbdNormalizedDatasetBuildSource(FrameSelectionConfig):
+class TumRgbdNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped TUM RGB-D normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")
@@ -51,8 +64,8 @@ class TumRgbdNormalizedDatasetBuildSource(FrameSelectionConfig):
         return [
             TumRgbdSourceConfig(
                 sequence_id=sequence_id,
-                frame_stride=self.frame_stride,
-                target_fps=self.target_fps,
+                normalized_frame_stride=self.normalized_frame_stride,
+                normalized_target_fps=self.normalized_target_fps,
                 reference_cloud=self.reference_cloud.model_copy(deep=True),
                 rgb_max_width_px=self.rgb_max_width_px,
                 rgb_dimension_multiple=self.rgb_dimension_multiple,
@@ -61,7 +74,7 @@ class TumRgbdNormalizedDatasetBuildSource(FrameSelectionConfig):
         ]
 
 
-class Record3DNormalizedDatasetBuildSource(FrameSelectionConfig):
+class Record3DNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped Record3D normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")
@@ -77,8 +90,8 @@ class Record3DNormalizedDatasetBuildSource(FrameSelectionConfig):
         return [
             Record3DDatasetSourceConfig(
                 sequence_id=sequence_id,
-                frame_stride=self.frame_stride,
-                target_fps=self.target_fps,
+                normalized_frame_stride=self.normalized_frame_stride,
+                normalized_target_fps=self.normalized_target_fps,
                 reference_cloud=self.reference_cloud.model_copy(deep=True),
                 rgb_max_width_px=self.rgb_max_width_px,
                 rgb_dimension_multiple=self.rgb_dimension_multiple,

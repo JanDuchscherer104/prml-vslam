@@ -951,9 +951,8 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert advio_source._profile.sequence_id == "advio-20"
 
 
-def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orientation() -> None:
-    source = AdvioSourceConfig(sequence_id="advio-20", normalize_video_orientation=True)
-    rotated_source = source.model_copy(update={"normalize_video_orientation": False})
+def test_advio_normalized_profile_ignores_run_local_sampling() -> None:
+    source = AdvioSourceConfig(sequence_id="advio-20")
     sampled_source = source.model_copy(update={"frame_stride": 3, "replay_mode": ReplayMode.FAST_AS_POSSIBLE})
     target_fps_source = source.model_copy(update={"target_fps": 15.0})
 
@@ -962,12 +961,6 @@ def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orienta
         sequence_id="advio-20",
         source_id=source.source_id,
         payload=source.model_dump(mode="json"),
-    )
-    rotated_profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.ADVIO,
-        sequence_id="advio-20",
-        source_id=rotated_source.source_id,
-        payload=rotated_source.model_dump(mode="json"),
     )
     sampled_profile = normalized_profile_for_source_config(
         dataset_id=DatasetId.ADVIO,
@@ -982,7 +975,6 @@ def test_advio_normalized_profile_ignores_run_local_sampling_and_display_orienta
         payload=target_fps_source.model_dump(mode="json"),
     )
 
-    assert profile.profile_key == rotated_profile.profile_key
     assert profile.profile_key == sampled_profile.profile_key
     assert profile.profile_key == target_fps_profile.profile_key
     assert profile.source_profile["trajectory_convention"] == "fixedpoint_common_start_local_rdf_v1"
