@@ -91,7 +91,6 @@ class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Norma
     sequence_id: str
     dataset_serving: AdvioServingConfig = Field(default_factory=AdvioServingConfig)
     replay_mode: ReplayMode = ReplayMode.REALTIME
-    normalize_video_orientation: bool = True
     rgb_max_width_px: int = Field(default=392, ge=1)
     rgb_dimension_multiple: int = Field(default=14, ge=1)
 
@@ -181,25 +180,22 @@ def normalized_profile_for_source_config(
     sequence_id: str,
     source_id: str,
     payload: dict[str, Any],
-    include_frame_selection: bool = False,
 ) -> NormalizedDatasetProfile:
     excluded_keys = {
         "replay_mode",
-        "normalize_video_orientation",
         "normalized_frame_stride",
         "normalized_target_fps",
+        "frame_stride",
+        "target_fps",
     }
-    if not include_frame_selection:
-        excluded_keys.update({"frame_stride", "target_fps"})
     source_profile = {key: value for key, value in payload.items() if key not in excluded_keys}
-    if not include_frame_selection:
-        normalized_frame_stride = payload.get("normalized_frame_stride")
-        normalized_target_fps = payload.get("normalized_target_fps")
-        if normalized_target_fps is not None and normalized_frame_stride not in (None, 1):
-            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
-        if normalized_frame_stride is not None or normalized_target_fps is not None:
-            source_profile["frame_stride"] = 1 if normalized_frame_stride is None else normalized_frame_stride
-            source_profile["target_fps"] = normalized_target_fps
+    normalized_frame_stride = payload.get("normalized_frame_stride")
+    normalized_target_fps = payload.get("normalized_target_fps")
+    if normalized_target_fps is not None and normalized_frame_stride not in (None, 1):
+        raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
+    if normalized_frame_stride is not None or normalized_target_fps is not None:
+        source_profile["frame_stride"] = 1 if normalized_frame_stride is None else normalized_frame_stride
+        source_profile["target_fps"] = normalized_target_fps
     if dataset_id is DatasetId.ADVIO:
         serving = source_profile.get("dataset_serving")
         if isinstance(serving, dict):

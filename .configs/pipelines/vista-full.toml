@@ -22,8 +22,7 @@ enabled = true
     # sequence_id = "2026-06-03--18-29-08"
     source_id   = "advio"
     sequence_id = "advio-20"
-    frame_stride = 1
-    target_fps  = 15.0
+    normalized_target_fps = 15.0
     replay_mode = "fast_as_possible"
 
 [stages.slam]

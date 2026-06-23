@@ -282,11 +282,9 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             sequence_id=sequence_id,
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
-            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["normalize_video_orientation"] = normalize_video_orientation
             payload["metadata"] = {
                 "dataset_id": DatasetId.ADVIO.value,
                 "pose_source": dataset_serving.pose_source.value,

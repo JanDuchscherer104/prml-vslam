@@ -1049,7 +1049,7 @@ def test_normalized_analysis_filters_use_dataset_scoped_widget_keys(monkeypatch)
     assert len(keys) == len(set(keys))
 
 
-def test_record3d_loop_preview_uses_normalized_default_records(monkeypatch) -> None:
+def test_record3d_loop_preview_uses_current_normalized_records(monkeypatch) -> None:
     captured: dict[str, list[NormalizedSequenceRecord]] = {}
     context = SimpleNamespace(
         state=SimpleNamespace(record3d_dataset=SimpleNamespace(preview_include_depth=True)),
@@ -1124,14 +1124,11 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
         "stream",
         {
             "dataset_id": dataset_preview.DatasetId.RECORD3D,
-            "service": service,
-            "source_config": dataset_preview.source_config_for_normalization(
-                dataset_id=dataset_preview.DatasetId.RECORD3D,
-                sequence_id="2026-06-03--18-26-32",
-            ),
+            "sequence_id": "2026-06-03--18-26-32",
+            "profile_key": "exact-profile",
+            "frame_selection": dataset_preview.FrameSelectionConfig(),
             "include_depth": False,
             "path_config": context.path_config,
-            "profile_key": "exact-profile",
             "output_dir": Path(".artifacts") / "dataset-preview" / "record3d" / "2026-06-03--18-26-32",
         },
     )

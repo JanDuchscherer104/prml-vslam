@@ -141,7 +141,6 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
             ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
             ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
-            ("--stages.source.backend.normalize_video_orientation", "Normalize video display orientation."),
             ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
             ("--stages.source.backend.device_index", "Record3D USB device index."),
             ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
@@ -1055,13 +1054,6 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseFrameMode.PROVIDER_WORLD,
-    normalize_video_orientation: Annotated[
-        bool,
-        typer.Option(
-            "--normalize-video-orientation/--raw-video-orientation",
-            help="Whether to normalize video display orientation during replay.",
-        ),
-    ] = True,
     dataset_frame_stride: Annotated[
         int,
         typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
@@ -1091,7 +1083,6 @@ def pipeline_demo(
         method=method,
         pose_source=pose_source,
         pose_frame_mode=pose_frame_mode,
-        normalize_video_orientation=normalize_video_orientation,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
@@ -1454,7 +1445,6 @@ def dataset_summary(
             "dataset_id": dataset_id.value,
             "store_root": path_config.resolve_normalized_datastore_dir(dataset_id.value),
             "record_count": len(query.records),
-            "default_record_count": len(query.default_records),
             "sequence_count": len(query.sequence_ids),
             "issue_count": len(query.issues),
             **_dataset_summary_tables(query, sequence=sequence, profile_key=profile_key, verbose=verbose),
@@ -1710,7 +1700,7 @@ def _resolve_demo_sequence_id(path_config: PathConfig, *, explicit_sequence_id: 
     """Resolve one normalized ADVIO sequence for the CLI demo."""
     if explicit_sequence_id is not None:
         return explicit_sequence_id
-    records = query_normalized_dataset(DatasetId.ADVIO, path_config).default_records
+    records = query_normalized_dataset(DatasetId.ADVIO, path_config).records
     sequence_ids = [
         int(record.sequence_id.split("-", maxsplit=1)[1])
         for record in records

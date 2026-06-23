@@ -33,7 +33,7 @@ from prml_vslam.sources.datasets.normalized_store import (
 )
 from prml_vslam.sources.datasets.record3d import Record3DDatasetService
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
-from prml_vslam.sources.replay import ObservationStream
+from prml_vslam.sources.replay import ObservationStream, ReplayMode
 from prml_vslam.utils import JsonObject
 from prml_vslam.utils.path_config import PathConfig
 
@@ -95,24 +95,24 @@ def source_config_for_normalization(
             return AdvioSourceConfig(
                 sequence_id=f"advio-{int(sequence_id):02d}" if isinstance(sequence_id, int) else sequence_id,
                 dataset_serving=AdvioServingConfig(pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE),
-                frame_stride=selection.frame_stride,
-                target_fps=selection.target_fps,
+                normalized_frame_stride=selection.frame_stride,
+                normalized_target_fps=selection.target_fps,
             )
         case DatasetId.TUM_RGBD:
             selection = frame_selection or default_frame_selection_for_dataset(dataset_id)
             return TumRgbdSourceConfig(
                 sequence_id=str(sequence_id),
                 reference_cloud=reference_cloud or ReferenceCloudConfig(),
-                frame_stride=selection.frame_stride,
-                target_fps=selection.target_fps,
+                normalized_frame_stride=selection.frame_stride,
+                normalized_target_fps=selection.target_fps,
             )
         case DatasetId.RECORD3D:
             selection = frame_selection or default_frame_selection_for_dataset(dataset_id)
             return Record3DDatasetSourceConfig(
                 sequence_id=str(sequence_id),
                 reference_cloud=reference_cloud or ReferenceCloudConfig(min_confidence=1),
-                frame_stride=selection.frame_stride,
-                target_fps=selection.target_fps,
+                normalized_frame_stride=selection.frame_stride,
+                normalized_target_fps=selection.target_fps,
             )
 
 
@@ -126,7 +126,6 @@ def normalized_profile_for_dataset(
     dataset_id: DatasetId,
     service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
-    include_frame_selection: bool = False,
 ) -> NormalizedDatasetProfile:
     """Return the normalized-store profile for a dataset source config."""
     canonical_sequence_id = canonical_sequence_id_for_dataset(
@@ -139,21 +138,15 @@ def normalized_profile_for_dataset(
         sequence_id=canonical_sequence_id,
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
-        include_frame_selection=include_frame_selection,
     )
 
 
-def normalized_publication_source_config(
+def _materialization_source_config(
     dataset_id: DatasetId,
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig:
     """Return the source config whose outputs are allowed into the normalized datastore."""
     updates: dict[str, Any] = {"frame_stride": 1, "target_fps": None}
-    if source_config.normalized_frame_stride is None and source_config.normalized_target_fps is None:
-        if source_config.target_fps is not None:
-            updates["normalized_target_fps"] = source_config.target_fps
-        elif source_config.frame_stride != 1:
-            updates["normalized_frame_stride"] = source_config.frame_stride
     if dataset_id is DatasetId.ADVIO:
         if not isinstance(source_config, AdvioSourceConfig):
             raise TypeError("ADVIO normalization received mismatched source config.")
@@ -171,7 +164,7 @@ def normalize_dataset_entry(
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> NormalizedDatasetEntry:
     """Create or replace one normalized entry from raw local dataset data."""
-    source_config = normalized_publication_source_config(dataset_id, source_config)
+    source_config = _materialization_source_config(dataset_id, source_config)
     profile = normalized_profile_for_dataset(
         dataset_id=dataset_id,
         service=service,
@@ -301,40 +294,28 @@ def _dataset_source_config_from_payload(
 def open_normalized_dataset_stream(
     *,
     dataset_id: DatasetId,
-    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
-    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
+    sequence_id: str,
+    profile_key: str,
+    frame_selection: FrameSelectionConfig | None = None,
+    replay_mode: ReplayMode = ReplayMode.REALTIME,
     include_depth: bool,
     path_config: PathConfig,
     output_dir: Path | None = None,
-    profile_key: str | None = None,
 ) -> ObservationStream:
     """Open a replay stream from one normalized dataset entry."""
     store = normalized_store_for_service(dataset_id, path_config)
-    frame_selection = FrameSelectionConfig(frame_stride=source_config.frame_stride, target_fps=source_config.target_fps)
-    if profile_key is None:
-        profile = normalized_profile_for_dataset(
-            dataset_id=dataset_id,
-            service=service,
-            source_config=source_config,
-        )
-        entry = store.load_entry_for_runtime(profile, frame_selection=frame_selection)
-    else:
-        sequence_id = canonical_sequence_id_for_dataset(
-            dataset_id=dataset_id,
-            service=service,
-            sequence_id=source_config.sequence_id,
-        )
-        entry = store.load_entry_by_key_for_runtime(
-            sequence_id=sequence_id,
-            profile_key=profile_key,
-            frame_selection=frame_selection,
-        )
+    runtime_frame_selection = frame_selection or FrameSelectionConfig()
+    entry = store.load_entry_by_key_for_runtime(
+        sequence_id=sequence_id,
+        profile_key=profile_key,
+        frame_selection=runtime_frame_selection,
+    )
     return store.open_stream(
         entry,
-        frame_selection=frame_selection,
+        frame_selection=runtime_frame_selection,
         output_dir=entry.root / "preview" if output_dir is None else output_dir,
         loop=True,
-        replay_mode=source_config.replay_mode,
+        replay_mode=replay_mode,
         include_depth=include_depth,
     )
 
@@ -374,7 +355,6 @@ def raw_dataset_source(
                 rgb_max_width_px=source_config.rgb_max_width_px,
                 rgb_dimension_multiple=source_config.rgb_dimension_multiple,
                 dataset_serving=source_config.dataset_serving,
-                normalize_video_orientation=source_config.normalize_video_orientation,
             )
         case DatasetId.TUM_RGBD:
             if not isinstance(service, TumRgbdDatasetService) or not isinstance(source_config, TumRgbdSourceConfig):
@@ -405,10 +385,6 @@ def _normalized_store_frame_selection(
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> FrameSelectionConfig:
     return FrameSelectionConfig(
-        frame_stride=source_config.normalized_frame_stride or source_config.frame_stride,
-        target_fps=(
-            source_config.normalized_target_fps
-            if source_config.normalized_target_fps is not None
-            else source_config.target_fps
-        ),
+        frame_stride=source_config.normalized_frame_stride or 1,
+        target_fps=source_config.normalized_target_fps,
     )

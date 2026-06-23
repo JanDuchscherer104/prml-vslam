@@ -22,7 +22,11 @@ from prml_vslam.sources.datasets.advio import AdvioDownloadRequest
 from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
 from prml_vslam.sources.datasets.normalized_query import NormalizedDatasetQuery, NormalizedSequenceRecord
-from prml_vslam.sources.datasets.normalized_store import STORE_SCHEMA_VERSION, NormalizedDatasetEntry
+from prml_vslam.sources.datasets.normalized_store import (
+    STORE_SCHEMA_VERSION,
+    NormalizedDatasetEntry,
+    NormalizedDatasetProfile,
+)
 from prml_vslam.sources.datasets.record3d import Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDownloadRequest
 from prml_vslam.utils import PathConfig
@@ -194,7 +198,8 @@ def test_dataset_summary_sequence_filter_includes_trajectory_details(monkeypatch
 
 
 def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Path) -> None:
-    entry_root = tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / "profile"
+    profile_key = "0123456789abcdef01234567"
+    entry_root = tmp_path / ".data" / "vslam-datastore" / "record3d" / "synthetic" / profile_key
     entry_root.mkdir(parents=True)
     manifest_path = entry_root / "sequence_manifest.json"
     benchmark_path = entry_root / "benchmark_inputs.json"
@@ -211,8 +216,13 @@ def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Pa
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id="record3d_dataset",
-        profile_key="profile",
-        profile={},
+        profile_key=profile_key,
+        profile=NormalizedDatasetProfile(
+            dataset_id=DatasetId.RECORD3D,
+            sequence_id="synthetic",
+            source_id="record3d_dataset",
+            source_profile={},
+        ),
         root=entry_root,
         sequence_manifest_path=manifest_path,
         benchmark_inputs_path=benchmark_path,
@@ -226,7 +236,7 @@ def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Pa
                 sequence_id="synthetic",
                 sequence_label="Synthetic",
                 source_id="record3d_dataset",
-                profile_key="profile",
+                profile_key=profile_key,
                 root=entry_root,
                 is_default_profile=True,
                 stats_row_count=1,
@@ -239,7 +249,7 @@ def test_dataset_inspect_reports_single_entry_metadata(monkeypatch, tmp_path: Pa
                 {
                     "dataset_id": "record3d",
                     "sequence_id": "synthetic",
-                    "profile_key": "profile",
+                    "profile_key": profile_key,
                     "source_id": "record3d_dataset",
                     "scope": "reference_trajectory",
                     "subject": "ground_truth/source_native",
@@ -478,7 +488,7 @@ def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_
                 {
                     "source_id": "record3d_dataset",
                     "sequence_ids": ["scene-a", "scene-b"],
-                    "target_fps": 30.0,
+                    "normalized_target_fps": 30.0,
                 }
             ],
         }
@@ -503,7 +513,8 @@ def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_
 
     assert result.exit_code == 0
     assert [source.sequence_id for source in captured["source_configs"]] == ["scene-a", "scene-b"]
-    assert {source.target_fps for source in captured["source_configs"]} == {30.0}
+    assert {source.target_fps for source in captured["source_configs"]} == {None}
+    assert {source.normalized_target_fps for source in captured["source_configs"]} == {30.0}
     assert captured["workers"] == 4
     assert "'source_count': 2" in result.stdout
     assert "'workers': 2" in result.stdout

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 import warnings
@@ -36,7 +37,6 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.contracts import (
     ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
-    ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
     AdvioPoseFrameMode,
     DatasetId,
     FrameSelectionConfig,
@@ -76,8 +76,8 @@ STORE_SCHEMA_VERSION = 10
 _ADVIO_ALIGN_MAX_DIFF_S = 0.01
 _ADVIO_ALIGN_MIN_PAIRS = 3
 _ADVIO_RDF_DOWN_AXIS = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-_ADVIO_LEGACY_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION = ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION
 _ADVIO_GT_LOCAL_FIRST_POSE_FRAME = "advio_gt_world_local_first_pose"
+_PROFILE_KEY_PATTERN = re.compile(r"^[0-9a-f]{24}$")
 _ADVIO_LOCAL_FIRST_POSE_FRAMES = {
     ReferenceSource.GROUND_TRUTH: _ADVIO_GT_LOCAL_FIRST_POSE_FRAME,
     ReferenceSource.ARCORE: "advio_arcore_world_local_first_pose",
@@ -198,7 +198,7 @@ class NormalizedDatasetStore:
 
     def entry_root(self, profile: NormalizedDatasetProfile) -> Path:
         """Return the root directory for one profile."""
-        return self.store_root / profile.sequence_id / profile.profile_key
+        return self._entry_root_for_identity(sequence_id=profile.sequence_id, profile_key=profile.profile_key)
 
     def load_entry(self, profile: NormalizedDatasetProfile) -> NormalizedDatasetEntry:
         """Load one complete normalized entry."""
@@ -218,6 +218,7 @@ class NormalizedDatasetStore:
     ) -> NormalizedDatasetEntry:
         """Load the exact normalized entry required by runtime paths."""
         entry = self.load_entry(profile)
+        self._validate_runtime_entry(entry)
         _validate_read_frame_selection(entry, frame_selection)
         return entry
 
@@ -229,7 +230,7 @@ class NormalizedDatasetStore:
         frame_selection: FrameSelectionConfig | None = None,
     ) -> NormalizedDatasetEntry:
         """Load an exact normalized entry selected by sequence/profile key for runtime replay."""
-        entry_path = self.store_root / sequence_id / profile_key / ENTRY_FILENAME
+        entry_path = self._entry_root_for_identity(sequence_id=sequence_id, profile_key=profile_key) / ENTRY_FILENAME
         if not entry_path.exists():
             raise FileNotFoundError(
                 f"Missing normalized dataset entry dataset_id={self.dataset_id.value} "
@@ -239,68 +240,9 @@ class NormalizedDatasetStore:
         profile = NormalizedDatasetProfile.model_validate(entry.profile)
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
+        self._validate_runtime_entry(entry)
         _validate_read_frame_selection(entry, frame_selection)
         return entry
-
-    def resolve_entry(
-        self,
-        profile: NormalizedDatasetProfile,
-        *,
-        frame_selection: FrameSelectionConfig | None = None,
-    ) -> NormalizedDatasetEntry:
-        """Load the exact entry or the only compatible current-schema entry."""
-        try:
-            entry = self.load_entry(profile)
-            _validate_read_frame_selection(entry, frame_selection)
-            return entry
-        except FileNotFoundError as exc:
-            candidates = [
-                entry for entry in self._scan_entries(strict=False) if _compatible_entry_identity(entry, profile)
-            ]
-            compatible = [
-                (entry, mismatch)
-                for entry in candidates
-                if _compatible_entry_profile(
-                    requested=profile,
-                    selected=(entry_profile := entry.profile),
-                    mismatch=(
-                        mismatch := _profile_mismatch_report(
-                            requested=profile.source_profile,
-                            selected=entry_profile.source_profile,
-                        )
-                    ),
-                )
-            ]
-            if len(compatible) == 1:
-                entry, mismatch = compatible[0]
-                _validate_read_frame_selection(entry, frame_selection)
-                _warn_profile_mismatch(requested=profile, selected=entry, mismatch=mismatch)
-                return entry
-            if not candidates:
-                raise exc
-            if compatible:
-                entry, mismatch = _select_compatible_entry(
-                    compatible,
-                    requested=profile,
-                    frame_selection=frame_selection,
-                )
-                _validate_read_frame_selection(entry, frame_selection)
-                _warn_profile_mismatch(requested=profile, selected=entry, mismatch=mismatch)
-                return entry
-            if not compatible:
-                reports = [
-                    _profile_mismatch_report(
-                        requested=profile.source_profile,
-                        selected=entry.profile.source_profile,
-                    )
-                    for entry in candidates
-                ]
-                raise FileNotFoundError(
-                    "Missing exact normalized dataset entry and compatible profiles differ in byte-affecting fields for "
-                    f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
-                    f"source_id={profile.source_id}: {reports}. "
-                    "Rebuild the requested normalized profile."
-                ) from exc
 
     def entry_exists(self, profile: NormalizedDatasetProfile) -> bool:
         """Return whether one complete normalized entry exists."""
@@ -524,14 +466,11 @@ class NormalizedDatasetStore:
         if not self.store_root.exists():
             return []
         issues: list[NormalizedDatasetStoreIssue] = []
-        usable_identities = {(entry.sequence_id, entry.source_id) for entry in self._scan_entries(strict=False)}
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
                 profile = entry.profile
-                if not _is_read_compatible_schema(entry, profile):
-                    if (entry.sequence_id, entry.source_id) in usable_identities:
-                        continue
+                if not _is_current_schema(entry, profile):
                     issues.append(
                         _stale_schema_issue(
                             dataset_id=self.dataset_id, entry=entry, profile=profile, entry_path=entry_path
@@ -540,6 +479,7 @@ class NormalizedDatasetStore:
                     continue
                 self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
                 self._validate_entry_payloads(entry)
+                self._validate_runtime_entry(entry)
             except Exception as exc:
                 issues.append(_invalid_entry_issue(dataset_id=self.dataset_id, entry_path=entry_path, exc=exc))
         return issues
@@ -552,16 +492,23 @@ class NormalizedDatasetStore:
             try:
                 entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
                 profile = entry.profile
-                if not _is_read_compatible_schema(entry, profile):
+                if not _is_current_schema(entry, profile):
                     continue
                 self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
                 self._validate_entry_payloads(entry)
+                self._validate_runtime_entry(entry)
             except Exception:
                 if strict:
                     raise
                 continue
             entries.append(entry)
         return entries
+
+    def _entry_root_for_identity(self, *, sequence_id: str, profile_key: str) -> Path:
+        _validate_entry_identity_components(sequence_id=sequence_id, profile_key=profile_key)
+        root = (self.store_root / sequence_id / profile_key).resolve()
+        _ensure_under(self.store_root, root)
+        return root
 
     def _validate_entry(
         self,
@@ -581,11 +528,12 @@ class NormalizedDatasetStore:
                 f"Normalized entry dataset_id does not belong to store '{self.dataset_id.value}': "
                 f"entry={entry.dataset_id.value}, profile={profile.dataset_id.value}."
             )
-        if not _is_read_compatible_schema(entry, profile):
+        if not _is_current_schema(entry, profile):
             raise RuntimeError(
                 "Normalized entry schema_version does not match the current store schema: "
                 f"entry={entry.schema_version}, profile={profile.schema_version}, expected={STORE_SCHEMA_VERSION}."
             )
+        _validate_entry_identity_components(sequence_id=entry.sequence_id, profile_key=entry.profile_key)
         _validate_entry_paths(entry)
         if entry.root.parent.name != profile.sequence_id or entry.root.name != profile.profile_key:
             raise RuntimeError(
@@ -606,6 +554,9 @@ class NormalizedDatasetStore:
         }
         if mismatches:
             raise RuntimeError(f"Normalized entry metadata does not match requested profile: {mismatches}")
+
+    def _validate_runtime_entry(self, entry: NormalizedDatasetEntry) -> None:
+        _validate_current_runtime_entry(entry)
 
     def _validate_entry_payloads(self, entry: NormalizedDatasetEntry) -> None:
         manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
@@ -1189,148 +1140,31 @@ def _csv_value(value: int | float | str) -> str:
     return str(value)
 
 
-def _is_read_compatible_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
-    if entry.schema_version == STORE_SCHEMA_VERSION and profile.schema_version == STORE_SCHEMA_VERSION:
-        return True
-    return (
-        entry.schema_version == 9
-        and profile.schema_version == 9
-        and entry.dataset_id is profile.dataset_id
-        and entry.dataset_id is DatasetId.TUM_RGBD
-    )
+def _is_current_schema(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
+    return entry.schema_version == STORE_SCHEMA_VERSION and profile.schema_version == STORE_SCHEMA_VERSION
 
 
-def _compatible_entry_identity(entry: NormalizedDatasetEntry, profile: NormalizedDatasetProfile) -> bool:
-    if entry.dataset_id is not profile.dataset_id:
-        return False
-    if entry.sequence_id != profile.sequence_id or entry.source_id != profile.source_id:
-        return False
-    return _is_read_compatible_schema(entry, entry.profile)
-
-
-def _compatible_entry_profile(
-    *,
-    requested: NormalizedDatasetProfile,
-    selected: NormalizedDatasetProfile,
-    mismatch: dict[str, Any],
-) -> bool:
-    if requested.dataset_id is not selected.dataset_id:
-        return False
-    if requested.sequence_id != selected.sequence_id or requested.source_id != selected.source_id:
-        return False
-    sampling_fields = {"frame_stride", "target_fps"}
-    missing_from_request = set(_json_string_list(mismatch["missing_from_request"]))
-    missing_from_entry = set(_json_string_list(mismatch["missing_from_entry"]))
-    mismatched_fields = set(_json_object(mismatch["mismatched_fields"]))
-    if _is_compatible_advio_trajectory_convention_mismatch(
-        requested=requested,
-        selected=selected,
-        mismatched_fields=mismatched_fields,
+def _validate_current_runtime_entry(entry: NormalizedDatasetEntry) -> None:
+    if entry.schema_version != STORE_SCHEMA_VERSION or entry.profile.schema_version != STORE_SCHEMA_VERSION:
+        raise RuntimeError(
+            "Normalized runtime entries must use the current store schema: "
+            f"entry={entry.schema_version}, profile={entry.profile.schema_version}, expected={STORE_SCHEMA_VERSION}."
+        )
+    if (
+        entry.dataset_id is DatasetId.ADVIO
+        and entry.profile.source_profile.trajectory_convention != ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION
     ):
-        mismatched_fields.remove("trajectory_convention")
-    return (
-        missing_from_request <= sampling_fields
-        and missing_from_entry <= sampling_fields
-        and mismatched_fields <= sampling_fields
-    )
+        raise RuntimeError(
+            "ADVIO normalized runtime entries must use the fixedpoint common-start trajectory convention. "
+            "Rebuild this normalized entry."
+        )
 
 
-def _select_compatible_entry(
-    compatible: list[tuple[NormalizedDatasetEntry, dict[str, Any]]],
-    *,
-    requested: NormalizedDatasetProfile,
-    frame_selection: FrameSelectionConfig | None,
-) -> tuple[NormalizedDatasetEntry, dict[str, Any]]:
-    return max(
-        compatible,
-        key=lambda item: _compatible_entry_score(
-            entry=item[0],
-            requested=requested,
-            frame_selection=frame_selection,
-        ),
-    )
-
-
-def _compatible_entry_score(
-    *,
-    entry: NormalizedDatasetEntry,
-    requested: NormalizedDatasetProfile,
-    frame_selection: FrameSelectionConfig | None,
-) -> tuple[int, int, float, int]:
-    selected = entry.profile
-    return (
-        int(
-            _sampling_matches(
-                selected.source_profile, requested=requested.source_profile, frame_selection=frame_selection
-            )
-        ),
-        int(_trajectory_convention_matches(selected.source_profile, requested.source_profile)),
-        _stored_profile_cadence_score(selected.source_profile),
-        int(entry.created_at_ns),
-    )
-
-
-def _sampling_matches(
-    selected: NormalizedSourceProfile,
-    *,
-    requested: NormalizedSourceProfile,
-    frame_selection: FrameSelectionConfig | None,
-) -> bool:
-    requested_frame_stride = frame_selection.frame_stride if frame_selection is not None else requested.frame_stride
-    requested_target_fps = frame_selection.target_fps if frame_selection is not None else requested.target_fps
-    selected_frame_stride = selected.frame_stride
-    selected_target_fps = selected.target_fps
-    return selected_frame_stride == requested_frame_stride and selected_target_fps == requested_target_fps
-
-
-def _trajectory_convention_matches(selected: NormalizedSourceProfile, requested: NormalizedSourceProfile) -> bool:
-    requested_convention = requested.trajectory_convention
-    return requested_convention is None or selected.trajectory_convention == requested_convention
-
-
-def _stored_profile_cadence_score(source_profile: NormalizedSourceProfile) -> float:
-    target_fps = source_profile.target_fps
-    if target_fps is not None:
-        return target_fps
-    frame_stride = max(source_profile.frame_stride, 1)
-    return 1.0 / frame_stride
-
-
-def _warn_profile_mismatch(
-    *,
-    requested: NormalizedDatasetProfile,
-    selected: NormalizedDatasetEntry,
-    mismatch: dict[str, Any],
-) -> None:
-    warnings.warn(
-        "Using compatible normalized dataset entry despite requested profile mismatch: "
-        f"requested={requested.profile_key}, selected={selected.profile_key}, "
-        f"missing_from_request={mismatch['missing_from_request']}, "
-        f"missing_from_entry={mismatch['missing_from_entry']}, "
-        f"mismatched_fields={mismatch['mismatched_fields']}.",
-        RuntimeWarning,
-        stacklevel=3,
-    )
-
-
-def _is_compatible_advio_trajectory_convention_mismatch(
-    *,
-    requested: NormalizedDatasetProfile,
-    selected: NormalizedDatasetProfile,
-    mismatched_fields: set[str],
-) -> bool:
-    if requested.dataset_id is not DatasetId.ADVIO or selected.dataset_id is not DatasetId.ADVIO:
-        return False
-    if "trajectory_convention" not in mismatched_fields:
-        return False
-    conventions = {
-        requested.source_profile.get("trajectory_convention"),
-        selected.source_profile.get("trajectory_convention"),
-    }
-    return conventions == {
-        ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
-        _ADVIO_LEGACY_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
-    }
+def _validate_entry_identity_components(*, sequence_id: str, profile_key: str) -> None:
+    if sequence_id in {"", ".", ".."} or "/" in sequence_id or "\\" in sequence_id:
+        raise ValueError(f"Invalid normalized sequence_id path component: {sequence_id!r}.")
+    if not _PROFILE_KEY_PATTERN.fullmatch(profile_key):
+        raise ValueError(f"Invalid normalized profile_key: {profile_key!r}.")
 
 
 def _validate_read_frame_selection(
@@ -1342,51 +1176,6 @@ def _validate_read_frame_selection(
     manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
     if manifest.timestamps_path is not None:
         _validate_requested_target_fps(load_timestamps_ns(manifest.timestamps_path), frame_selection)
-
-
-def _profile_mismatch_report(
-    *,
-    requested: NormalizedSourceProfile,
-    selected: NormalizedSourceProfile,
-) -> dict[str, Any]:
-    requested_flat = _flatten_profile(requested.as_dict())
-    selected_flat = _flatten_profile(selected.as_dict())
-    requested_keys = set(requested_flat)
-    selected_keys = set(selected_flat)
-    common_keys = requested_keys & selected_keys
-    mismatched = {
-        key: {"requested": requested_flat[key], "selected": selected_flat[key]}
-        for key in sorted(common_keys)
-        if requested_flat[key] != selected_flat[key]
-    }
-    return {
-        "missing_from_request": sorted(selected_keys - requested_keys),
-        "missing_from_entry": sorted(requested_keys - selected_keys),
-        "mismatched_fields": mismatched,
-    }
-
-
-def _flatten_profile(payload: dict[str, Any], *, prefix: str = "") -> dict[str, JsonValue]:
-    flattened: dict[str, JsonValue] = {}
-    for key, value in payload.items():
-        dotted = key if not prefix else f"{prefix}.{key}"
-        if isinstance(value, dict):
-            flattened.update(_flatten_profile(value, prefix=dotted))
-        else:
-            flattened[dotted] = value
-    return flattened
-
-
-def _json_string_list(value: Any) -> list[str]:
-    if isinstance(value, list) and all(isinstance(item, str) for item in value):
-        return value
-    raise TypeError(f"Expected list[str], got {value!r}.")
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    raise TypeError(f"Expected JSON object, got {value!r}.")
 
 
 def _stale_schema_issue(

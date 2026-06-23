@@ -8,6 +8,7 @@ enabled = true
 [stages.source.backend]
 source_id = "advio"
 sequence_id = "advio-15"
+normalized_target_fps = 15.0
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
