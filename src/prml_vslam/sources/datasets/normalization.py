@@ -95,24 +95,24 @@ def source_config_for_normalization(
             return AdvioSourceConfig(
                 sequence_id=f"advio-{int(sequence_id):02d}" if isinstance(sequence_id, int) else sequence_id,
                 dataset_serving=AdvioServingConfig(pose_frame_mode=AdvioPoseFrameMode.LOCAL_FIRST_POSE),
-                normalized_frame_stride=selection.frame_stride,
-                normalized_target_fps=selection.target_fps,
+                frame_stride=selection.frame_stride,
+                target_fps=selection.target_fps,
             )
         case DatasetId.TUM_RGBD:
             selection = frame_selection or default_frame_selection_for_dataset(dataset_id)
             return TumRgbdSourceConfig(
                 sequence_id=str(sequence_id),
                 reference_cloud=reference_cloud or ReferenceCloudConfig(),
-                normalized_frame_stride=selection.frame_stride,
-                normalized_target_fps=selection.target_fps,
+                frame_stride=selection.frame_stride,
+                target_fps=selection.target_fps,
             )
         case DatasetId.RECORD3D:
             selection = frame_selection or default_frame_selection_for_dataset(dataset_id)
             return Record3DDatasetSourceConfig(
                 sequence_id=str(sequence_id),
                 reference_cloud=reference_cloud or ReferenceCloudConfig(min_confidence=1),
-                normalized_frame_stride=selection.frame_stride,
-                normalized_target_fps=selection.target_fps,
+                frame_stride=selection.frame_stride,
+                target_fps=selection.target_fps,
             )
 
 
@@ -146,7 +146,7 @@ def _materialization_source_config(
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig:
     """Return the source config whose outputs are allowed into the normalized datastore."""
-    updates: dict[str, Any] = {"frame_stride": 1, "target_fps": None}
+    updates: dict[str, Any] = {}
     if dataset_id is DatasetId.ADVIO:
         if not isinstance(source_config, AdvioSourceConfig):
             raise TypeError("ADVIO normalization received mismatched source config.")
@@ -385,6 +385,6 @@ def _normalized_store_frame_selection(
     source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
 ) -> FrameSelectionConfig:
     return FrameSelectionConfig(
-        frame_stride=source_config.normalized_frame_stride or 1,
-        target_fps=source_config.normalized_target_fps,
+        frame_stride=source_config.frame_stride,
+        target_fps=source_config.target_fps,
     )

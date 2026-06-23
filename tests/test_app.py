@@ -535,6 +535,7 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
         output_dir=context.path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
+            target_fps=15.0,
             dataset_serving={
                 "pose_source": "ground_truth",
                 "pose_frame_mode": "provider_world",
@@ -565,12 +566,15 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
     assert context.state.pipeline.pose_source.value == "ground_truth"
     assert context.state.pipeline.pose_frame_mode.value == "provider_world"
+    assert context.state.pipeline.dataset_target_fps == 15.0
+    assert context.state.pipeline.dataset_frame_stride == 1
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
     rebuilt_run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
     assert isinstance(rebuilt_run_config, RunConfig)
     assert rebuilt_run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert rebuilt_run_config.stages.source.backend.target_fps == 15.0
 
 
 def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) -> None:

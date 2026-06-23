@@ -733,7 +733,7 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
     full_config = AdvioSourceConfig(sequence_id="advio-15")
-    sampled_config = AdvioSourceConfig(sequence_id="advio-15", normalized_target_fps=5.0)
+    sampled_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
 
     full_entry = normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
@@ -761,7 +761,7 @@ def test_advio_normalized_store_rejects_sampling_profile_mismatch(tmp_path: Path
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
-    source_config = AdvioSourceConfig(sequence_id="advio-15", normalized_target_fps=5.0)
+    source_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
     normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
         path_config=path_config,
@@ -772,7 +772,7 @@ def test_advio_normalized_store_rejects_sampling_profile_mismatch(tmp_path: Path
         dataset_id=DatasetId.ADVIO,
         sequence_id="advio-15",
         source_id=source_config.source_id,
-        payload=source_config.model_copy(update={"normalized_target_fps": None}).model_dump(mode="json"),
+        payload=source_config.model_copy(update={"target_fps": None}).model_dump(mode="json"),
     )
 
     with pytest.raises(FileNotFoundError):

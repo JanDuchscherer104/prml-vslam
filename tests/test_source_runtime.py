@@ -937,13 +937,13 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert isinstance(advio_source, NormalizedDatasetRuntimeSource)
     assert tum_source.label == "resolved-freiburg1_room"
     assert advio_source.label == "advio-20"
-    assert tum_source._frame_selection.target_fps == 15.0
+    assert tum_source._frame_selection == FrameSelectionConfig()
     assert tum_source._replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert tum_source._store.dataset_id is DatasetId.TUM_RGBD
     assert tum_source._store.store_root == (tmp_path / ".data" / "vslam-datastore" / "tum_rgbd").resolve()
     assert tum_source._profile.dataset_id is DatasetId.TUM_RGBD
     assert tum_source._profile.sequence_id == "resolved-freiburg1_room"
-    assert advio_source._frame_selection.frame_stride == 3
+    assert advio_source._frame_selection == FrameSelectionConfig()
     assert advio_source._replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert advio_source._store.dataset_id is DatasetId.ADVIO
     assert advio_source._store.store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
@@ -951,7 +951,7 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert advio_source._profile.sequence_id == "advio-20"
 
 
-def test_advio_normalized_profile_ignores_run_local_sampling() -> None:
+def test_advio_normalized_profile_includes_store_sampling() -> None:
     source = AdvioSourceConfig(sequence_id="advio-20")
     sampled_source = source.model_copy(update={"frame_stride": 3, "replay_mode": ReplayMode.FAST_AS_POSSIBLE})
     target_fps_source = source.model_copy(update={"target_fps": 15.0})
@@ -975,11 +975,11 @@ def test_advio_normalized_profile_ignores_run_local_sampling() -> None:
         payload=target_fps_source.model_dump(mode="json"),
     )
 
-    assert profile.profile_key == sampled_profile.profile_key
-    assert profile.profile_key == target_fps_profile.profile_key
+    assert profile.profile_key != sampled_profile.profile_key
+    assert profile.profile_key != target_fps_profile.profile_key
     assert profile.source_profile["trajectory_convention"] == "fixedpoint_common_start_local_rdf_v1"
-    assert "frame_stride" not in target_fps_profile.source_profile
-    assert "target_fps" not in target_fps_profile.source_profile
+    assert target_fps_profile.source_profile["frame_stride"] == 1
+    assert target_fps_profile.source_profile["target_fps"] == 15.0
     assert "sequence_id" not in target_fps_profile.source_profile
     assert "source_id" not in target_fps_profile.source_profile
 

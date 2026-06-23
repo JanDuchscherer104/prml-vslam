@@ -185,28 +185,28 @@ def test_sweep_config_accepts_same_sequence_id_different_dataset() -> None:
     assert len(cfg.datasets) == 2
 
 
-def test_sweep_dataset_rejects_ambiguous_normalized_sampling() -> None:
-    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+def test_sweep_dataset_rejects_ambiguous_sampling() -> None:
+    with pytest.raises(ValidationError, match="frame_stride.*target_fps"):
         SweepDataset.model_validate(
             {
                 "dataset_id": "tum_rgbd",
                 "sequence_id": "freiburg1_xyz",
-                "normalized_frame_stride": 2,
-                "normalized_target_fps": 30.0,
+                "frame_stride": 2,
+                "target_fps": 30.0,
             }
         )
 
 
 @pytest.mark.parametrize("config_type", [AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig])
-def test_dataset_source_configs_reject_ambiguous_normalized_sampling(
+def test_dataset_source_configs_reject_ambiguous_sampling(
     config_type: type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],
 ) -> None:
-    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+    with pytest.raises(ValidationError, match="frame_stride.*target_fps"):
         config_type.model_validate(
             {
                 "sequence_id": "sequence",
-                "normalized_frame_stride": 2,
-                "normalized_target_fps": 30.0,
+                "frame_stride": 2,
+                "target_fps": 30.0,
             }
         )
 
@@ -226,29 +226,14 @@ def test_normalized_dataset_build_config_rejects_empty_sequence_ids() -> None:
 
 
 def test_normalized_dataset_build_config_rejects_ambiguous_sampling() -> None:
-    with pytest.raises(ValidationError, match="normalized_frame_stride.*normalized_target_fps"):
+    with pytest.raises(ValidationError, match="frame_stride.*target_fps"):
         NormalizedDatasetBuildConfig.model_validate(
             {
                 "sources": [
                     {
                         "source_id": "tum_rgbd",
                         "sequence_ids": ["freiburg1_xyz"],
-                        "normalized_frame_stride": 2,
-                        "normalized_target_fps": 30.0,
-                    }
-                ]
-            }
-        )
-
-
-def test_normalized_dataset_build_config_rejects_runtime_sampling_keys() -> None:
-    with pytest.raises(ValidationError, match="target_fps"):
-        NormalizedDatasetBuildConfig.model_validate(
-            {
-                "sources": [
-                    {
-                        "source_id": "tum_rgbd",
-                        "sequence_ids": ["freiburg1_xyz"],
+                        "frame_stride": 2,
                         "target_fps": 30.0,
                     }
                 ]
@@ -263,14 +248,14 @@ def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets(
                 {
                     "source_id": "advio",
                     "sequence_ids": ["advio-01", "advio-02"],
-                    "normalized_target_fps": 15.0,
+                    "target_fps": 15.0,
                     "rgb_max_width_px": 280,
                     "rgb_dimension_multiple": 7,
                 },
                 {
                     "source_id": "tum_rgbd",
                     "sequence_ids": ["freiburg1_xyz"],
-                    "normalized_target_fps": 30.0,
+                    "target_fps": 30.0,
                     "rgb_max_width_px": 392,
                     "rgb_dimension_multiple": 14,
                     "reference_cloud": {
@@ -282,7 +267,7 @@ def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets(
                 {
                     "source_id": "record3d_dataset",
                     "sequence_ids": ["scene-a"],
-                    "normalized_target_fps": 24.0,
+                    "target_fps": 24.0,
                     "rgb_max_width_px": 448,
                     "rgb_dimension_multiple": 28,
                     "reference_cloud": {
@@ -301,15 +286,13 @@ def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets(
     assert isinstance(advio_a, AdvioSourceConfig)
     assert isinstance(advio_b, AdvioSourceConfig)
     assert [advio_a.sequence_id, advio_b.sequence_id] == ["advio-01", "advio-02"]
-    assert {advio_a.target_fps, advio_b.target_fps} == {None}
-    assert {advio_a.normalized_target_fps, advio_b.normalized_target_fps} == {15.0}
+    assert {advio_a.target_fps, advio_b.target_fps} == {15.0}
     assert {advio_a.rgb_max_width_px, advio_b.rgb_max_width_px} == {280}
     assert {advio_a.rgb_dimension_multiple, advio_b.rgb_dimension_multiple} == {7}
 
     assert isinstance(tum, TumRgbdSourceConfig)
     assert tum.sequence_id == "freiburg1_xyz"
-    assert tum.target_fps is None
-    assert tum.normalized_target_fps == 30.0
+    assert tum.target_fps == 30.0
     assert tum.rgb_max_width_px == 392
     assert tum.rgb_dimension_multiple == 14
     assert tum.reference_cloud.depth_stride_px == 6
@@ -318,8 +301,7 @@ def test_normalized_dataset_build_config_expands_shared_fields_for_all_datasets(
 
     assert isinstance(record3d, Record3DDatasetSourceConfig)
     assert record3d.sequence_id == "scene-a"
-    assert record3d.target_fps is None
-    assert record3d.normalized_target_fps == 24.0
+    assert record3d.target_fps == 24.0
     assert record3d.rgb_max_width_px == 448
     assert record3d.rgb_dimension_multiple == 28
     assert record3d.reference_cloud.depth_stride_px == 10

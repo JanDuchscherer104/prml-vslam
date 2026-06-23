@@ -334,12 +334,14 @@ def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: P
         mode=PipelineMode.STREAMING,
         method=MethodId.VISTA,
         pose_source=AdvioPoseSource.ARCORE,
+        dataset_target_fps=15.0,
     )
 
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.ARCORE,
         pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
     )
+    assert request.stages.source.backend.target_fps == 15.0
 
 
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
