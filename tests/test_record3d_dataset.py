@@ -46,6 +46,7 @@ from prml_vslam.sources.datasets.normalization import (
     source_config_for_normalization,
 )
 from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
+from prml_vslam.sources.datasets.normalized_source import NormalizedDatasetRuntimeSource
 from prml_vslam.sources.datasets.normalized_store import (
     NormalizedDatasetEntry,
     NormalizedDatasetProfile,
@@ -135,7 +136,7 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id=source_config.source_id,
-        payload=source_config.model_copy(update={"normalized_target_fps": None}).model_dump(mode="json"),
+        payload=source_config.model_copy(update={"target_fps": None}).model_dump(mode="json"),
     )
     raw_source = service._build_normalization_materializer(
         sequence_id="synthetic",
@@ -568,7 +569,7 @@ def test_normalized_store_rejects_stored_sampling_profile_mismatch(tmp_path: Pat
     store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     source_config = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
-        normalized_target_fps=5.0,
+        target_fps=5.0,
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
     stored_profile = normalized_profile_for_source_config(
@@ -616,7 +617,7 @@ def test_normalized_store_rejects_requested_sampling_profile_mismatch(tmp_path: 
     store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     source_config = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
-        normalized_target_fps=5.0,
+        target_fps=5.0,
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
     requested_profile = normalized_profile_for_source_config(
@@ -677,10 +678,10 @@ def test_normalized_store_target_fps_requires_exact_normalized_profile(tmp_path:
     store = normalized_store_for_path_config(DatasetId.RECORD3D, path_config)
     first_config = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
-        normalized_target_fps=5.0,
+        target_fps=5.0,
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
-    second_config = first_config.model_copy(update={"normalized_target_fps": 2.5})
+    second_config = first_config.model_copy(update={"target_fps": 2.5})
     stored_entries = {}
     for source_config in (first_config, second_config):
         profile = normalized_profile_for_source_config(
@@ -691,11 +692,11 @@ def test_normalized_store_target_fps_requires_exact_normalized_profile(tmp_path:
         )
         source = service._build_normalization_materializer(
             sequence_id="synthetic",
-            frame_selection=FrameSelectionConfig(target_fps=source_config.normalized_target_fps),
+            frame_selection=FrameSelectionConfig(target_fps=source_config.target_fps),
             materialization=source_config.materialization,
             reference_cloud=source_config.reference_cloud,
         )
-        stored_entries[source_config.normalized_target_fps] = store.create_entry_from_source(
+        stored_entries[source_config.target_fps] = store.create_entry_from_source(
             profile=profile,
             source=source,
         )
@@ -703,7 +704,7 @@ def test_normalized_store_target_fps_requires_exact_normalized_profile(tmp_path:
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id=first_config.source_id,
-        payload=first_config.model_copy(update={"normalized_target_fps": None}).model_dump(mode="json"),
+        payload=first_config.model_copy(update={"target_fps": None}).model_dump(mode="json"),
     )
 
     with pytest.raises(FileNotFoundError):
@@ -799,19 +800,16 @@ def test_source_config_for_normalization_preserves_dataset_reference_cloud_defau
     record3d_config = source_config_for_normalization(dataset_id=DatasetId.RECORD3D, sequence_id="synthetic")
 
     assert isinstance(advio_config, AdvioSourceConfig)
-    assert advio_config.target_fps is None
-    assert advio_config.normalized_target_fps == 15.0
+    assert advio_config.target_fps == 15.0
     assert advio_config.rgb_max_width_px == 392
     assert advio_config.rgb_dimension_multiple == 14
     assert isinstance(tum_config, TumRgbdSourceConfig)
-    assert tum_config.target_fps is None
-    assert tum_config.normalized_target_fps == 30.0
+    assert tum_config.target_fps == 30.0
     assert tum_config.reference_cloud == ReferenceCloudConfig()
     assert tum_config.rgb_max_width_px == 392
     assert tum_config.rgb_dimension_multiple == 14
     assert isinstance(record3d_config, Record3DDatasetSourceConfig)
-    assert record3d_config.target_fps is None
-    assert record3d_config.normalized_target_fps == 30.0
+    assert record3d_config.target_fps == 30.0
     assert record3d_config.reference_cloud == ReferenceCloudConfig(min_confidence=1)
     assert record3d_config.rgb_max_width_px == 392
     assert record3d_config.rgb_dimension_multiple == 14
@@ -1069,19 +1067,14 @@ def test_normalized_store_rejects_multiple_observation_sequences(tmp_path: Path)
 
 def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tmp_path: Path) -> None:
     fixture = _create_record3d_normalized_entry(tmp_path)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
-    )
     fixture.archive_path.rename(fixture.archive_path.with_suffix(".r3d.bak"))
-    sampled_config = source_config.model_copy(update={"frame_stride": 2})
-    sampled_profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.RECORD3D,
-        sequence_id="synthetic",
-        source_id=sampled_config.source_id,
-        payload=sampled_config.model_dump(mode="json"),
+    normalized_source = NormalizedDatasetRuntimeSource(
+        label="record3d_dataset:synthetic",
+        store=fixture.store,
+        profile=fixture.profile,
+        frame_selection=FrameSelectionConfig(frame_stride=2),
+        replay_mode=ReplayMode.REALTIME,
     )
-    normalized_source = sampled_config.setup_target(path_config=fixture.path_config)
 
     manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
     benchmark_inputs = normalized_source.prepare_benchmark_inputs(tmp_path / "run" / "benchmark")
@@ -1090,7 +1083,6 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
     observation_ref = benchmark_inputs.observation_sequences[0]
     observation_index = json.loads(observation_ref.index_path.read_text(encoding="utf-8"))
 
-    assert sampled_profile.profile_key == fixture.profile.profile_key
     assert fixture.entry.root.joinpath("input", "rgb").exists() is False
     assert manifest.video_path is None
     assert manifest.rgb_dir == observation_ref.payload_root / "rgb"
@@ -1109,13 +1101,14 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
 
 def test_record3d_normalized_store_applies_runtime_target_fps_without_copying_payloads(tmp_path: Path) -> None:
     fixture = _create_record3d_normalized_entry(tmp_path)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        target_fps=5.0,
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    normalized_source = NormalizedDatasetRuntimeSource(
+        label="record3d_dataset:synthetic",
+        store=fixture.store,
+        profile=fixture.profile,
+        frame_selection=FrameSelectionConfig(target_fps=5.0),
+        replay_mode=ReplayMode.REALTIME,
     )
     fixture.archive_path.rename(fixture.archive_path.with_suffix(".r3d.bak"))
-    normalized_source = source_config.setup_target(path_config=fixture.path_config)
 
     manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
@@ -1133,16 +1126,16 @@ def test_record3d_normalized_store_applies_runtime_target_fps_without_copying_pa
 
 def test_record3d_normalized_store_warns_and_uses_stored_frames_for_runtime_upsampling(tmp_path: Path) -> None:
     fixture = _create_record3d_normalized_entry(tmp_path)
-    source_config = Record3DDatasetSourceConfig(
-        sequence_id="synthetic",
-        target_fps=30.0,
-        reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
+    normalized_source = NormalizedDatasetRuntimeSource(
+        label="record3d_dataset:synthetic",
+        store=fixture.store,
+        profile=fixture.profile,
+        frame_selection=FrameSelectionConfig(target_fps=30.0),
+        replay_mode=ReplayMode.REALTIME,
     )
 
     with pytest.warns(RuntimeWarning, match="would require upsampling"):
-        manifest = source_config.setup_target(path_config=fixture.path_config).prepare_sequence_manifest(
-            tmp_path / "run" / "input"
-        )
+        manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
 
     timestamps = json.loads(Path(manifest.timestamps_path).read_text(encoding="utf-8"))
     assert timestamps["resolved_frame_stride"] == 1
@@ -1416,7 +1409,6 @@ def test_record3d_source_config_plans_arkit_and_cloud_alignment_path(tmp_path: P
     path_config = fixture.path_config.model_copy(update={"artifacts_dir": tmp_path / ".artifacts"})
     source_backend = Record3DDatasetSourceConfig(
         sequence_id="synthetic",
-        frame_stride=2,
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
     run_config = build_run_config(
@@ -1437,7 +1429,7 @@ def test_record3d_source_config_plans_arkit_and_cloud_alignment_path(tmp_path: P
     assert plan.source.source_id == "record3d_dataset"
     assert plan.source.sequence_id == "synthetic"
     assert plan.source.replay_mode == "realtime"
-    assert plan.source.expected_fps == pytest.approx(10.0 / 2)
+    assert plan.source.expected_fps == pytest.approx(10.0)
     assert plan.source.metadata["dataset_id"] == DatasetId.RECORD3D.value
     assert plan.source.metadata["pose_source"] == ReferenceSource.ARKIT.value
     assert plan.source.metadata["reference_cloud_source"] == ReferenceCloudSource.RECORD3D_LIDAR.value

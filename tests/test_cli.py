@@ -488,7 +488,7 @@ def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_
                 {
                     "source_id": "record3d_dataset",
                     "sequence_ids": ["scene-a", "scene-b"],
-                    "normalized_target_fps": 30.0,
+                    "target_fps": 30.0,
                 }
             ],
         }
@@ -513,8 +513,7 @@ def test_dataset_normalize_accepts_benchmark_build_config_toml(monkeypatch, tmp_
 
     assert result.exit_code == 0
     assert [source.sequence_id for source in captured["source_configs"]] == ["scene-a", "scene-b"]
-    assert {source.target_fps for source in captured["source_configs"]} == {None}
-    assert {source.normalized_target_fps for source in captured["source_configs"]} == {30.0}
+    assert {source.target_fps for source in captured["source_configs"]} == {30.0}
     assert captured["workers"] == 4
     assert "'source_count': 2" in result.stdout
     assert "'workers': 2" in result.stdout

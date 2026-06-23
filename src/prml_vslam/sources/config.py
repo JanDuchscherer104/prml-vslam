@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 
 from prml_vslam.sources.contracts import Record3DTransportId
 from prml_vslam.sources.datasets.advio import AdvioDatasetService, AdvioServingConfig
@@ -44,18 +44,7 @@ class VideoSourceConfig(FrameSelectionConfig, FactoryConfig[OfflineSequenceSourc
         )
 
 
-class NormalizedStoreFrameSelectionConfig(FrameSelectionConfig):
-    normalized_frame_stride: int | None = Field(default=None, ge=1)
-    normalized_target_fps: float | None = Field(default=None, gt=0.0)
-
-    @model_validator(mode="after")
-    def validate_single_normalized_sampling_mode(self) -> Self:
-        if self.normalized_target_fps is not None and self.normalized_frame_stride not in (None, 1):
-            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
-        return self
-
-
-class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
+class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["tum_rgbd"] = "tum_rgbd"
@@ -79,12 +68,12 @@ class TumRgbdSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Nor
             label=sequence_id,
             store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(),
             replay_mode=self.replay_mode,
         )
 
 
-class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
+class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="ignore")
 
     source_id: Literal["advio"] = "advio"
@@ -109,12 +98,12 @@ class AdvioSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[Norma
             label=canonical_sequence_id,
             store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(),
             replay_mode=self.replay_mode,
         )
 
 
-class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
+class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[NormalizedDatasetRuntimeSource]):
     model_config = ConfigDict(extra="forbid")
 
     source_id: Literal["record3d_dataset"] = "record3d_dataset"
@@ -138,7 +127,7 @@ class Record3DDatasetSourceConfig(NormalizedStoreFrameSelectionConfig, FactoryCo
             label=sequence_id,
             store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(frame_stride=self.frame_stride, target_fps=self.target_fps),
+            frame_selection=FrameSelectionConfig(),
             replay_mode=self.replay_mode,
         )
 
@@ -181,21 +170,8 @@ def normalized_profile_for_source_config(
     source_id: str,
     payload: dict[str, Any],
 ) -> NormalizedDatasetProfile:
-    excluded_keys = {
-        "replay_mode",
-        "normalized_frame_stride",
-        "normalized_target_fps",
-        "frame_stride",
-        "target_fps",
-    }
+    excluded_keys = {"replay_mode"}
     source_profile = {key: value for key, value in payload.items() if key not in excluded_keys}
-    normalized_frame_stride = payload.get("normalized_frame_stride")
-    normalized_target_fps = payload.get("normalized_target_fps")
-    if normalized_target_fps is not None and normalized_frame_stride not in (None, 1):
-        raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
-    if normalized_frame_stride is not None or normalized_target_fps is not None:
-        source_profile["frame_stride"] = 1 if normalized_frame_stride is None else normalized_frame_stride
-        source_profile["target_fps"] = normalized_target_fps
     if dataset_id is DatasetId.ADVIO:
         serving = source_profile.get("dataset_serving")
         if isinstance(serving, dict):

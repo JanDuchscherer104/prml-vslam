@@ -50,8 +50,6 @@ classDiagram
         source_id
         frame_stride
         target_fps
-        normalized_frame_stride
-        normalized_target_fps
         +setup_target(path_config)
     }
 
@@ -98,13 +96,12 @@ classDiagram
     SourceBackendConfig <|-- Record3DSourceConfig
 ```
 
-`normalized_frame_stride` and `normalized_target_fps` are byte-affecting
-normalization cadence fields and therefore participate in normalized-store
-profile identity. `frame_stride` and `target_fps` are read-time source backend
-policy fields; dataset sources apply them only when replaying an existing
-normalized entry. Shared dataset `reference_cloud` config only controls depth
-pixel sampling, point capping, random sampling seed, and dataset-specific
-confidence filtering.
+For dataset-backed source configs, `frame_stride` and `target_fps` are
+byte-affecting normalization cadence fields and therefore participate in
+normalized-store profile identity. Runtime replay sampling is passed explicitly
+to normalized-store readers when needed. Shared dataset `reference_cloud` config
+only controls depth pixel sampling, point capping, random sampling seed, and
+dataset-specific confidence filtering.
 
 ## Source I/O Contracts
 

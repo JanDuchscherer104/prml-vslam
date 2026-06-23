@@ -416,10 +416,10 @@ class PipelinePageState(BaseData):
     """Selected ADVIO sequence id when the source family is `ADVIO`."""
 
     dataset_frame_stride: int = 1
-    """Dataset frame stride used by the bounded pipeline source."""
+    """Dataset frame stride identifying the ADVIO datastore profile."""
 
     dataset_target_fps: float | None = None
-    """Optional target FPS used instead of dataset frame stride."""
+    """Optional target FPS identifying the ADVIO datastore profile."""
 
     mode: PipelineMode = PipelineMode.OFFLINE
     """Selected pipeline mode."""

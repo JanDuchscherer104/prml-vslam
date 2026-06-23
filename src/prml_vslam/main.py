@@ -969,11 +969,19 @@ def write_demo_config(
     ] = None,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo run config."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Frame stride identifying the ADVIO normalized datastore profile.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo run config."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Target FPS identifying the ADVIO normalized datastore profile.",
+        ),
     ] = None,
 ) -> None:
     """Persist the canonical ADVIO demo run config as TOML."""
@@ -1056,11 +1064,19 @@ def pipeline_demo(
     ] = AdvioPoseFrameMode.PROVIDER_WORLD,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Frame stride identifying the ADVIO normalized datastore profile.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Target FPS used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Target FPS identifying the ADVIO normalized datastore profile.",
+        ),
     ] = None,
     poll_interval_seconds: Annotated[
         float,
