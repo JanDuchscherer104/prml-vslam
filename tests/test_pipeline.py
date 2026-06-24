@@ -291,7 +291,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -320,7 +320,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -427,7 +427,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,
@@ -2429,7 +2429,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,

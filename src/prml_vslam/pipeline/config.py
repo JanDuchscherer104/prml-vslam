@@ -44,7 +44,7 @@ from prml_vslam.sources.config import (
     VideoSourceConfig,
 )
 from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId, FrameSelectionConfig
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
     normalized_profile_for_dataset,
@@ -288,7 +288,7 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             payload["metadata"] = {
                 "dataset_id": DatasetId.ADVIO.value,
                 "pose_source": dataset_serving.pose_source.value,
-                "pose_frame_mode": dataset_serving.pose_frame_mode.value,
+                "pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL.value,
             }
         case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode, reference_cloud=reference_cloud):
             payload["sequence_id"] = sequence_id

@@ -210,7 +210,7 @@ def _render_source_settings(
     record3d_wifi_device_address = page_state.record3d_wifi_device_address
     record3d_frame_timeout_seconds = page_state.record3d_frame_timeout_seconds
     pose_source = page_state.pose_source
-    pose_frame_mode = page_state.pose_frame_mode
+    pose_frame_mode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
     dataset_frame_stride = page_state.dataset_frame_stride
     dataset_target_fps = page_state.dataset_target_fps
     source_input_error = None
@@ -288,12 +288,7 @@ def _render_advio_source_settings(
         index=provider_options.index(resolved_pose_source),
         format_func=lambda item: item.label,
     )
-    pose_frame_mode = st.selectbox(
-        "Pose Frame Mode",
-        options=list(AdvioPoseFrameMode),
-        index=list(AdvioPoseFrameMode).index(page_state.pose_frame_mode),
-        format_func=lambda item: item.label,
-    )
+    pose_frame_mode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
     dataset_frame_stride = int(
         st.number_input("Dataset Frame Stride", min_value=1, max_value=120, value=page_state.dataset_frame_stride)
     )

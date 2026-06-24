@@ -14,6 +14,7 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.sources.datasets.advio import (
+    AdvioPoseFrameMode,
     AdvioServingConfig,
 )
 from prml_vslam.sources.datasets.normalized_query import resolve_normalized_advio_sequence_id
@@ -84,7 +85,7 @@ def sync_pipeline_page_state_from_template(
                 "dataset_frame_stride": source_backend.frame_stride,
                 "dataset_target_fps": source_backend.target_fps,
                 "pose_source": source_backend.dataset_serving.pose_source,
-                "pose_frame_mode": source_backend.dataset_serving.pose_frame_mode,
+                "pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
             }
         case Record3DSourceConfig() as record3d_source:
             source_updates = {
@@ -141,7 +142,7 @@ def build_run_config_from_action(
                 target_fps=action.dataset_target_fps,
                 dataset_serving=AdvioServingConfig(
                     pose_source=action.pose_source,
-                    pose_frame_mode=action.pose_frame_mode,
+                    pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
                 ),
             )
         else:
@@ -356,7 +357,11 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
                 "frame_stride": frame_stride,
                 "target_fps": target_fps,
                 "replay_mode": replay_mode.value,
-                "dataset_serving": None if dataset_serving is None else dataset_serving.model_dump(mode="json"),
+                "dataset_serving": None
+                if dataset_serving is None
+                else dataset_serving.model_copy(
+                    update={"pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL}
+                ).model_dump(mode="json"),
             }
         case _:
             payload["source"] = request.stages.source.backend.model_dump(mode="json")
