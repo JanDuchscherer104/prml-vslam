@@ -49,7 +49,7 @@ from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationStageConfig,
 )
 from prml_vslam.methods.stage.config import SlamStageConfig
-from prml_vslam.pipeline.config import RunConfig, StageBundle
+from prml_vslam.pipeline.config import RunConfig, StageBundle, default_trajectory_baseline_for_source
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
@@ -232,7 +232,7 @@ class SweepDataset(BaseConfig):
     target_fps: float | None = Field(default=None, gt=0.0)
     """Read-time target FPS for replaying stored normalized observations."""
 
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    baseline_source: ReferenceSource | None = None
     """Reference trajectory source used by the trajectory-evaluation stage."""
 
     align_ground: bool = False
@@ -504,7 +504,10 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
     """
     ds = item.dataset
     source_backend = _build_source_backend_for_sweep(ds)
-    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=ds.baseline_source)
+    baseline_source = (
+        default_trajectory_baseline_for_source(source_backend) if ds.baseline_source is None else ds.baseline_source
+    )
+    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=baseline_source)
 
     return RunConfig(
         experiment_name=item.run_id,
@@ -516,7 +519,7 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
             align_ground=GroundAlignmentStageConfig(enabled=ds.align_ground),
             align_trajectory=TrajectoryAlignmentStageConfig(
                 enabled=ds.align_trajectory,
-                baseline_source=ds.baseline_source,
+                baseline_source=baseline_source,
             ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=ds.evaluate_trajectory,

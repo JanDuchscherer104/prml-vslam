@@ -567,7 +567,7 @@ def _make_item(
     reconstruction: bool = False,
     align_cloud: bool = False,
     evaluate_cloud: bool = False,
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    baseline_source: ReferenceSource | None = None,
 ) -> SweepRunItem:
     vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
     slam = _load_slam_stage_from_template(vista)
@@ -695,6 +695,47 @@ def test_build_run_config_baseline_source_propagates(tmp_path: Path) -> None:
         baseline_source=ReferenceSource.ARKIT,
     )
     run_cfg = build_run_config_from_sweep_item(item)
+    assert run_cfg.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
+
+
+def test_build_run_config_defaults_record3d_baseline_to_arkit(tmp_path: Path) -> None:
+    item = _make_item(
+        tmp_path,
+        dataset_id="record3d_dataset",
+        sequence_id="2026-06-03--18-17-10",
+        align_trajectory=True,
+        evaluate_trajectory=True,
+    )
+    run_cfg = build_run_config_from_sweep_item(item)
+
+    assert run_cfg.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
+
+
+def test_sweep_toml_record3d_omitted_baseline_expands_to_arkit(tmp_path: Path) -> None:
+    vista = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
+    mast3r = _write_template(tmp_path, "mast3r.toml", _MAST3R_SLAM_SECTION)
+    sweep_path = tmp_path / "sweep.toml"
+    sweep_path.write_text(
+        _minimal_sweep_toml(
+            vista_template=vista,
+            mast3r_template=mast3r,
+            extra_datasets="""
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-17-10"
+align_trajectory    = true
+evaluate_trajectory = true
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_sweep_config(sweep_path)
+    item = next(item for item in expand_sweep(cfg) if item.dataset.dataset_id == "record3d_dataset")
+    run_cfg = build_run_config_from_sweep_item(item)
+
     assert run_cfg.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
     assert run_cfg.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
 

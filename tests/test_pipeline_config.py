@@ -785,6 +785,7 @@ def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
         "torchvision==0.20.1",
         "lingbot-map",
         "flashinfer-python",
+        "torch-c-dlpack-ext==0.1.5",
     }
     assert pyproject["tool"]["uv"]["sources"]["lingbot-map"] == {
         "path": "external/lingbot-map",
