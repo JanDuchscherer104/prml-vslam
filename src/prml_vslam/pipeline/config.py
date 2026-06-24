@@ -186,6 +186,20 @@ class RunConfig(BaseConfig):
         """Return lenient config warnings captured during TOML load."""
         return list(self._config_warnings)
 
+    @model_validator(mode="after")
+    def apply_dataset_default_baselines(self) -> Self:
+        """Fill omitted trajectory baselines from the selected source backend."""
+        source_backend = self.stages.source.backend
+        if source_backend is None:
+            return self
+
+        baseline = default_trajectory_baseline_for_source(source_backend)
+        if "baseline_source" not in self.stages.align_trajectory.model_fields_set:
+            self.stages.align_trajectory.baseline_source = baseline
+        if "baseline_source" not in self.stages.evaluate_trajectory.evaluation.model_fields_set:
+            self.stages.evaluate_trajectory.evaluation.baseline_source = baseline
+        return self
+
     def compile_plan(
         self,
         path_config: PathConfig | None = None,
@@ -440,6 +454,15 @@ def _fps_for_duration(*, sample_count: int, duration_s: float) -> float | None:
     return None if duration_s <= 0.0 else (sample_count - 1) / duration_s
 
 
+def default_trajectory_baseline_for_source(source_backend: SourceBackendConfig) -> ReferenceSource:
+    """Return the dataset-owned reference trajectory default for one source."""
+    match source_backend:
+        case Record3DDatasetSourceConfig():
+            return ReferenceSource.ARKIT
+        case _:
+            return ReferenceSource.GROUND_TRUTH
+
+
 def build_run_config(
     *,
     experiment_name: str,
@@ -455,7 +478,7 @@ def build_run_config(
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
     cloud_alignment_enabled: bool = False,
-    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    trajectory_baseline: ReferenceSource | None = None,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
@@ -477,7 +500,10 @@ def build_run_config(
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
-    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=trajectory_baseline)
+    resolved_trajectory_baseline = (
+        default_trajectory_baseline_for_source(source_backend) if trajectory_baseline is None else trajectory_baseline
+    )
+    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=resolved_trajectory_baseline)
     dense_only_methods = {MethodId.MAST3R, MethodId.LINGBOT_MAP}
     resolved_emit_sparse_points = method not in dense_only_methods if emit_sparse_points is None else emit_sparse_points
     return RunConfig(
@@ -496,7 +522,7 @@ def build_run_config(
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
             align_trajectory=TrajectoryAlignmentStageConfig(
                 enabled=trajectory_alignment_enabled,
-                baseline_source=trajectory_baseline,
+                baseline_source=resolved_trajectory_baseline,
             ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
@@ -608,4 +634,5 @@ __all__ = [
     "StageBundle",
     "build_backend_spec",
     "build_run_config",
+    "default_trajectory_baseline_for_source",
 ]
