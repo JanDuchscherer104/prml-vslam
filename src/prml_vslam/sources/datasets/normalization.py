@@ -13,7 +13,9 @@ from prml_vslam.sources.config import (
     Record3DDatasetSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
+    default_normalized_profile_frame_selection,
     normalized_profile_for_source_config,
+    normalized_runtime_profile_for_source_config,
 )
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
 from prml_vslam.sources.datasets.contracts import (
@@ -118,7 +120,7 @@ def source_config_for_normalization(
 
 def default_frame_selection_for_dataset(dataset_id: DatasetId) -> FrameSelectionConfig:
     """Return normalize-time sampling defaults for newly persisted entries."""
-    return FrameSelectionConfig(target_fps=15.0 if dataset_id is DatasetId.ADVIO else 30.0)
+    return default_normalized_profile_frame_selection(dataset_id)
 
 
 def normalized_profile_for_dataset(
@@ -138,6 +140,25 @@ def normalized_profile_for_dataset(
         sequence_id=canonical_sequence_id,
         source_id=source_config.source_id,
         payload=source_config.model_dump(mode="json"),
+    )
+
+
+def normalized_runtime_profile_for_dataset(
+    *,
+    dataset_id: DatasetId,
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+    source_config: AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig,
+) -> NormalizedDatasetProfile:
+    """Return the stored normalized profile used by dataset-backed runtime replay."""
+    canonical_sequence_id = canonical_sequence_id_for_dataset(
+        dataset_id=dataset_id,
+        service=service,
+        sequence_id=source_config.sequence_id,
+    )
+    return normalized_runtime_profile_for_source_config(
+        dataset_id=dataset_id,
+        sequence_id=canonical_sequence_id,
+        source_config=source_config,
     )
 
 

@@ -14,12 +14,13 @@ from prml_vslam.sources.config import (
     Record3DDatasetSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceCloudSource
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
-    normalized_profile_for_dataset,
+    normalized_runtime_profile_for_dataset,
     normalized_store_for_service,
 )
 from prml_vslam.utils import PathConfig
@@ -90,17 +91,15 @@ def _source_reference_cloud_available(
         return False
     try:
         service = dataset_service(dataset_id, path_config)
-        profile = normalized_profile_for_dataset(
+        frame_selection = runtime_frame_selection_for_source_config(source_backend)
+        profile = normalized_runtime_profile_for_dataset(
             dataset_id=dataset_id,
             service=service,
             source_config=source_backend,
         )
         entry = normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
             profile,
-            frame_selection=FrameSelectionConfig(
-                frame_stride=source_backend.frame_stride,
-                target_fps=source_backend.target_fps,
-            ),
+            frame_selection=frame_selection,
         )
         benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
             entry.benchmark_inputs_path.read_text(encoding="utf-8")

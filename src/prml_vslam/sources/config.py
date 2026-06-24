@@ -58,17 +58,16 @@ class TumRgbdSourceConfig(FrameSelectionConfig, FactoryConfig[NormalizedDatasetR
         path_config = get_path_config() if path_config is None else path_config
         service = TumRgbdDatasetService(path_config)
         sequence_id = str(service.resolve_sequence_id(self.sequence_id))
-        profile = normalized_profile_for_source_config(
+        profile = normalized_runtime_profile_for_source_config(
             dataset_id=DatasetId.TUM_RGBD,
             sequence_id=sequence_id,
-            source_id=self.source_id,
-            payload=self.model_dump(mode="json"),
+            source_config=self,
         )
         return NormalizedDatasetRuntimeSource(
             label=sequence_id,
             store=normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(),
+            frame_selection=runtime_frame_selection_for_source_config(self),
             replay_mode=self.replay_mode,
         )
 
@@ -88,17 +87,16 @@ class AdvioSourceConfig(FrameSelectionConfig, FactoryConfig[NormalizedDatasetRun
         service = AdvioDatasetService(path_config)
         sequence_id = service.resolve_sequence_id(self.sequence_id)
         canonical_sequence_id = f"advio-{sequence_id:02d}"
-        profile = normalized_profile_for_source_config(
+        profile = normalized_runtime_profile_for_source_config(
             dataset_id=DatasetId.ADVIO,
             sequence_id=canonical_sequence_id,
-            source_id=self.source_id,
-            payload=self.model_dump(mode="json"),
+            source_config=self,
         )
         return NormalizedDatasetRuntimeSource(
             label=canonical_sequence_id,
             store=normalized_store_for_path_config(DatasetId.ADVIO, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(),
+            frame_selection=runtime_frame_selection_for_source_config(self),
             replay_mode=self.replay_mode,
         )
 
@@ -117,17 +115,16 @@ class Record3DDatasetSourceConfig(FrameSelectionConfig, FactoryConfig[Normalized
     def setup_target(self, path_config: PathConfig | None = None, **_kwargs: Any) -> NormalizedDatasetRuntimeSource:
         path_config = get_path_config() if path_config is None else path_config
         sequence_id = record3d_layout.normalize_sequence_id(self.sequence_id)
-        profile = normalized_profile_for_source_config(
+        profile = normalized_runtime_profile_for_source_config(
             dataset_id=DatasetId.RECORD3D,
             sequence_id=sequence_id,
-            source_id=self.source_id,
-            payload=self.model_dump(mode="json"),
+            source_config=self,
         )
         return NormalizedDatasetRuntimeSource(
             label=sequence_id,
             store=normalized_store_for_path_config(DatasetId.RECORD3D, path_config),
             profile=profile,
-            frame_selection=FrameSelectionConfig(),
+            frame_selection=runtime_frame_selection_for_source_config(self),
             replay_mode=self.replay_mode,
         )
 
@@ -182,4 +179,47 @@ def normalized_profile_for_source_config(
         sequence_id=sequence_id,
         source_id=source_id,
         payload=source_profile,
+    )
+
+
+DatasetBackedSourceConfig = AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig
+
+
+def default_normalized_profile_frame_selection(dataset_id: DatasetId) -> FrameSelectionConfig:
+    """Return the stored-entry cadence used by default normalized dataset builds."""
+    return FrameSelectionConfig(target_fps=15.0 if dataset_id is DatasetId.ADVIO else 30.0)
+
+
+def runtime_frame_selection_for_source_config(source_config: DatasetBackedSourceConfig) -> FrameSelectionConfig:
+    """Return read-time sampling requested by one dataset-backed runtime config."""
+    return FrameSelectionConfig(frame_stride=source_config.frame_stride, target_fps=source_config.target_fps)
+
+
+def normalized_runtime_profile_source_config(
+    dataset_id: DatasetId,
+    source_config: DatasetBackedSourceConfig,
+) -> DatasetBackedSourceConfig:
+    """Return the base normalized-entry identity config for runtime lookup."""
+    frame_selection = default_normalized_profile_frame_selection(dataset_id)
+    return source_config.model_copy(
+        update={
+            "frame_stride": frame_selection.frame_stride,
+            "target_fps": frame_selection.target_fps,
+        }
+    )
+
+
+def normalized_runtime_profile_for_source_config(
+    *,
+    dataset_id: DatasetId,
+    sequence_id: str,
+    source_config: DatasetBackedSourceConfig,
+) -> NormalizedDatasetProfile:
+    """Return the normalized profile for the stored entry replayed at runtime."""
+    profile_source_config = normalized_runtime_profile_source_config(dataset_id, source_config)
+    return normalized_profile_for_source_config(
+        dataset_id=dataset_id,
+        sequence_id=sequence_id,
+        source_id=profile_source_config.source_id,
+        payload=profile_source_config.model_dump(mode="json"),
     )

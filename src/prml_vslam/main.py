@@ -44,6 +44,7 @@ from prml_vslam.sources.config import (
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio import (
@@ -60,7 +61,7 @@ from prml_vslam.sources.datasets.normalization import (
     normalize_dataset_entries,
     normalize_dataset_entry,
     normalize_dataset_source_configs,
-    normalized_profile_for_dataset,
+    normalized_runtime_profile_for_dataset,
     normalized_store_for_service,
     parse_dataset_id,
 )
@@ -847,17 +848,15 @@ def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathCo
                 continue
             dataset_id = dataset_id_for_source_config(source_backend)
             service = dataset_service(dataset_id, path_config)
-            profile = normalized_profile_for_dataset(
+            frame_selection = runtime_frame_selection_for_source_config(source_backend)
+            profile = normalized_runtime_profile_for_dataset(
                 dataset_id=dataset_id,
                 service=service,
                 source_config=source_backend,
             )
             normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
                 profile,
-                frame_selection=FrameSelectionConfig(
-                    frame_stride=source_backend.frame_stride,
-                    target_fps=source_backend.target_fps,
-                ),
+                frame_selection=frame_selection,
             )
         except Exception as exc:
             failures.append(f"{item.run_id}: {exc}")
@@ -974,7 +973,7 @@ def write_demo_config(
         typer.Option(
             "--dataset-frame-stride",
             min=1,
-            help="Frame stride identifying the ADVIO normalized datastore profile.",
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
         ),
     ] = 1,
     dataset_target_fps: Annotated[
@@ -982,7 +981,7 @@ def write_demo_config(
         typer.Option(
             "--dataset-target-fps",
             min=0.01,
-            help="Target FPS identifying the ADVIO normalized datastore profile.",
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
         ),
     ] = None,
 ) -> None:
@@ -1061,7 +1060,7 @@ def pipeline_demo(
         typer.Option(
             "--dataset-frame-stride",
             min=1,
-            help="Frame stride identifying the ADVIO normalized datastore profile.",
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
         ),
     ] = 1,
     dataset_target_fps: Annotated[
@@ -1069,7 +1068,7 @@ def pipeline_demo(
         typer.Option(
             "--dataset-target-fps",
             min=0.01,
-            help="Target FPS identifying the ADVIO normalized datastore profile.",
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
         ),
     ] = None,
     poll_interval_seconds: Annotated[
