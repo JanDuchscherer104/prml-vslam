@@ -502,8 +502,8 @@ class PipelinePageState(BaseData):
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""
 
-    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD
-    """Selected ADVIO pose-frame mode injected into the pipeline request."""
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
+    """Effective normalized ADVIO replay pose-frame mode."""
 
     telemetry_visible: bool = True
     """Whether stage telemetry should be rendered in the run console."""

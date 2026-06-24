@@ -12,7 +12,7 @@ frame_stride = 1
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam]
 enabled = true

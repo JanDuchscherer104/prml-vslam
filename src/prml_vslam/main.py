@@ -49,7 +49,6 @@ from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSourc
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
-    AdvioPoseFrameMode,
     AdvioPoseSource,
 )
 from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
@@ -140,7 +139,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
             ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
             ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
-            ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
+            (
+                "--stages.source.backend.dataset_serving.pose_frame_mode",
+                "ADVIO normalized replay pose frame mode.",
+            ),
             ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
             ("--stages.source.backend.device_index", "Record3D USB device index."),
             ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
@@ -1054,14 +1056,6 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseSource.GROUND_TRUTH,
-    pose_frame_mode: Annotated[
-        AdvioPoseFrameMode,
-        typer.Option(
-            "--pose-frame-mode",
-            help="Frame semantics used when serving ADVIO replay poses.",
-            case_sensitive=False,
-        ),
-    ] = AdvioPoseFrameMode.PROVIDER_WORLD,
     dataset_frame_stride: Annotated[
         int,
         typer.Option(
@@ -1098,7 +1092,6 @@ def pipeline_demo(
         mode=PipelineMode.STREAMING,
         method=method,
         pose_source=pose_source,
-        pose_frame_mode=pose_frame_mode,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
