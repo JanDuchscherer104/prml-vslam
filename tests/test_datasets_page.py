@@ -13,7 +13,7 @@ import prml_vslam.app.dataset_page.query as dataset_query
 import prml_vslam.app.dataset_page.scene as dataset_scene
 import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.app.models import AdvioPageState, AppState, Record3DDatasetPoseSource
-from prml_vslam.interfaces import FrameTransform, Observation, ObservationProvenance
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
@@ -87,7 +87,44 @@ def test_advio_preview_frame_uses_live_image_renderer(monkeypatch) -> None:
 
     assert calls["markdown"] == "**RGB Frame**"
     assert np.array_equal(calls["image"], packet.rgb)
-    assert calls["kwargs"] == {"channels": "RGB", "clamp": True, "width": "stretch"}
+    assert calls["kwargs"] == {"channels": "RGB", "clamp": True, "width": "content"}
+
+
+def test_rgbd_preview_frame_normalizes_metric_depth_for_display(monkeypatch) -> None:
+    calls: list[tuple[np.ndarray, dict[str, object]]] = []
+    markdown: list[str] = []
+    monkeypatch.setattr(dataset_preview.st, "markdown", markdown.append)
+    monkeypatch.setattr(dataset_preview.st, "columns", lambda *_args, **_kwargs: [_NullContext(), _NullContext()])
+    monkeypatch.setattr(
+        dataset_preview,
+        "render_live_image",
+        lambda image, **kwargs: calls.append((np.asarray(image), kwargs)),
+    )
+    packet = Observation(
+        seq=0,
+        timestamp_ns=1,
+        arrival_timestamp_s=0.0,
+        rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_m=np.array([[0.5, 1.0], [2.0, 4.0]], dtype=np.float32),
+        intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
+        T_world_camera=FrameTransform.from_matrix(np.eye(4, dtype=np.float64), source_frame="camera_rdf"),
+        provenance=ObservationProvenance(source_id="record3d_dataset"),
+    )
+
+    dataset_preview.render_preview_frame(packet)
+
+    assert markdown == ["**RGB Frame**", "**Depth Frame**"]
+    assert len(calls) == 2
+    rgb_image, rgb_kwargs = calls[0]
+    depth_image, depth_kwargs = calls[1]
+    assert np.array_equal(rgb_image, packet.rgb)
+    assert rgb_kwargs == {"channels": "RGB", "clamp": True, "width": "content"}
+    assert depth_image.dtype == np.uint8
+    assert depth_image.shape == packet.depth_m.shape
+    assert not np.array_equal(depth_image, packet.depth_m)
+    assert int(depth_image.min()) == 0
+    assert int(depth_image.max()) == 255
+    assert depth_kwargs == {"clamp": True, "width": "content"}
 
 
 def test_advio_preview_pose_sources_use_provider_readiness_flags() -> None:

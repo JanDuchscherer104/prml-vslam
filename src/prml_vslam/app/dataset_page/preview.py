@@ -19,6 +19,7 @@ from prml_vslam.sources.datasets.normalized_query import (
 )
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdPoseSource
 from prml_vslam.utils import JsonObject
+from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from ..advio_controller import (
     AdvioPreviewFormData,
@@ -419,19 +420,21 @@ def preview_caption(snapshot: DatasetPreviewSnapshot) -> str | None:
 
 def render_preview_frame(packet: Observation) -> None:
     """Render RGB and optional depth frames for one preview observation."""
-    st.markdown("**RGB Frame**")
     if packet.rgb is None:
+        st.markdown("**RGB Frame**")
         st.info("RGB frame is not available for the current packet.")
         return
     if packet.depth_m is None:
-        render_live_image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+        st.markdown("**RGB Frame**")
+        render_live_image(packet.rgb, channels="RGB", clamp=True, width="content")
         return
     rgb_column, depth_column = st.columns(2, gap="large")
     with rgb_column:
-        render_live_image(packet.rgb, channels="RGB", clamp=True, width="stretch")
+        st.markdown("**RGB Frame**")
+        render_live_image(packet.rgb, channels="RGB", clamp=True, width="content")
     with depth_column:
         st.markdown("**Depth Frame**")
-        render_live_image(packet.depth_m, clamp=True, width="stretch")
+        render_live_image(normalize_grayscale_image(packet.depth_m), clamp=True, width="content")
 
 
 def render_preview_status_notice(snapshot: DatasetPreviewSnapshot) -> None:
