@@ -75,6 +75,7 @@ dependencies = [
     "torchvision==0.20.1",
     "lingbot-map",
     "flashinfer-python",
+    "torch-c-dlpack-ext==0.1.5",
   ]
 
   [project.scripts]
