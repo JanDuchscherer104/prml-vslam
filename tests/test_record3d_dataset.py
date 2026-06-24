@@ -127,7 +127,8 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
     archive_path = _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
-    source_config = Record3DDatasetSourceConfig(
+    source_config = source_config_for_normalization(
+        dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         reference_cloud=ReferenceCloudConfig(depth_stride_px=1, max_points=20, min_confidence=1),
     )
@@ -136,11 +137,14 @@ def _create_record3d_normalized_entry(tmp_path: Path) -> _Record3DNormalizedEntr
         dataset_id=DatasetId.RECORD3D,
         sequence_id="synthetic",
         source_id=source_config.source_id,
-        payload=source_config.model_copy(update={"target_fps": None}).model_dump(mode="json"),
+        payload=source_config.model_dump(mode="json"),
     )
     raw_source = service._build_normalization_materializer(
         sequence_id="synthetic",
-        frame_selection=FrameSelectionConfig(),
+        frame_selection=FrameSelectionConfig(
+            frame_stride=source_config.frame_stride,
+            target_fps=source_config.target_fps,
+        ),
         materialization=source_config.materialization,
         reference_cloud=source_config.reference_cloud,
     )
@@ -1076,7 +1080,8 @@ def test_record3d_normalized_store_reuses_full_frame_payload_for_sampled_runs(tm
         replay_mode=ReplayMode.REALTIME,
     )
 
-    manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+    with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
+        manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
     benchmark_inputs = normalized_source.prepare_benchmark_inputs(tmp_path / "run" / "benchmark")
     frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
@@ -1110,7 +1115,8 @@ def test_record3d_normalized_store_applies_runtime_target_fps_without_copying_pa
     )
     fixture.archive_path.rename(fixture.archive_path.with_suffix(".r3d.bak"))
 
-    manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+    with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
+        manifest = normalized_source.prepare_sequence_manifest(tmp_path / "run" / "input")
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
     frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
 

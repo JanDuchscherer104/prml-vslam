@@ -45,6 +45,7 @@ from prml_vslam.sources.datasets.contracts import (
     ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
     ADVIO_LOCAL_FIRST_POSE_TRAJECTORY_CONVENTION,
     DatasetId,
+    FrameSelectionConfig,
 )
 from prml_vslam.sources.datasets.normalization import normalize_dataset_entry
 from prml_vslam.sources.datasets.normalized_query import query_normalized_dataset
@@ -54,9 +55,9 @@ from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
 
 
-def _write_video(path: Path, *, num_frames: int = 3) -> None:
+def _write_video(path: Path, *, num_frames: int = 3, fps: float = 10.0) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (64, 48))
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (64, 48))
     for index in range(num_frames):
         frame = np.full((48, 64, 3), index * 50, dtype=np.uint8)
         writer.write(frame)
@@ -157,6 +158,8 @@ def _write_advio_sequence(
     sequence_id: int = 15,
     nested_layout: bool = False,
     official_archive_names: bool = False,
+    num_frames: int = 3,
+    fps: float = 10.0,
 ) -> Path:
     sequence_name = f"advio-{sequence_id:02d}"
     sequence_dir = (dataset_root / "data" / sequence_name) if nested_layout else (dataset_root / sequence_name)
@@ -164,9 +167,10 @@ def _write_advio_sequence(
     (sequence_dir / "pixel").mkdir(parents=True, exist_ok=True)
     (sequence_dir / "ground-truth").mkdir(parents=True, exist_ok=True)
 
-    _write_video(sequence_dir / "iphone" / "frames.mov")
+    timestamps_s = [index / fps for index in range(num_frames)]
+    _write_video(sequence_dir / "iphone" / "frames.mov", num_frames=num_frames, fps=fps)
     (sequence_dir / "iphone" / "frames.csv").write_text(
-        "0.0,0\n0.1,1\n0.2,2\n",
+        "".join(f"{timestamp_s:.6f},{index}\n" for index, timestamp_s in enumerate(timestamps_s)),
         encoding="utf-8",
     )
     sensor_names = (
@@ -189,10 +193,14 @@ def _write_advio_sequence(
     for name in sensor_names:
         (sequence_dir / "iphone" / name).write_text("0.0,0.0,0.0,0.0\n", encoding="utf-8")
     ground_truth_name = "pose.csv" if official_archive_names else "poses.csv"
-    _write_pose_csv(sequence_dir / "ground-truth" / ground_truth_name)
+    pose_rows = tuple(
+        (timestamp_s, 1.0 + 5.0 * timestamp_s, 2.0 + 5.0 * timestamp_s, 3.0 + 5.0 * timestamp_s)
+        for timestamp_s in timestamps_s
+    )
+    _write_pose_csv_rows(sequence_dir / "ground-truth" / ground_truth_name, rows=pose_rows)
     _write_fixpoints_csv(sequence_dir / "ground-truth" / "fixpoints.csv")
-    _write_pose_csv(sequence_dir / "pixel" / "arcore.csv")
-    _write_pose_csv(sequence_dir / "iphone" / "arkit.csv")
+    _write_pose_csv_rows(sequence_dir / "pixel" / "arcore.csv", rows=pose_rows)
+    _write_pose_csv_rows(sequence_dir / "iphone" / "arkit.csv", rows=pose_rows)
     _write_calibration(dataset_root / "calibration" / "iphone-03.yaml")
     return sequence_dir
 
@@ -582,7 +590,7 @@ def test_advio_dataset_service_builds_normalization_materializer(tmp_path: Path)
 
 
 def test_advio_source_config_requires_normalized_store_entry(tmp_path: Path) -> None:
-    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
     source = AdvioSourceConfig(sequence_id="advio-15").setup_target(path_config=PathConfig(root=tmp_path))
 
     with pytest.raises(FileNotFoundError, match="prml-vslam dataset normalize --dataset advio"):
@@ -593,11 +601,11 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
     monkeypatch.setattr(replay_video_module, "read_video_rotation_degrees", lambda path: 90)
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
-    source_config = AdvioSourceConfig(sequence_id="advio-15")
+    source_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=15.0)
 
     entry = normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
@@ -757,26 +765,80 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
     assert [row.provenance.source_frame_index for row in sampled_index.rows] == [0, 2]
 
 
-def test_advio_normalized_store_rejects_sampling_profile_mismatch(tmp_path: Path) -> None:
-    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
+def test_advio_runtime_frame_stride_reuses_stored_normalized_profile(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
     path_config = PathConfig(root=tmp_path)
     service = AdvioDatasetService(path_config)
-    source_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0)
-    normalize_dataset_entry(
+    stored_config = AdvioSourceConfig(sequence_id="advio-15", target_fps=15.0)
+    stored_entry = normalize_dataset_entry(
         dataset_id=DatasetId.ADVIO,
         path_config=path_config,
         service=service,
-        source_config=source_config,
+        source_config=stored_config,
     )
-    requested_profile = normalized_profile_for_source_config(
-        dataset_id=DatasetId.ADVIO,
-        sequence_id="advio-15",
-        source_id=source_config.source_id,
-        payload=source_config.model_copy(update={"target_fps": None}).model_dump(mode="json"),
-    )
+    runtime_source = AdvioSourceConfig(sequence_id="advio-15", frame_stride=3).setup_target(path_config=path_config)
 
-    with pytest.raises(FileNotFoundError):
-        normalized_store_for_path_config(DatasetId.ADVIO, path_config).load_entry_for_runtime(requested_profile)
+    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    assert runtime_source._frame_selection == FrameSelectionConfig(frame_stride=3)
+    with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
+        manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+
+    timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
+    assert frame_indices == {"source_frame_indices": [0, 3]}
+    assert timestamps["requested_frame_stride"] == 3
+    assert timestamps["requested_target_fps"] is None
+    assert timestamps["resolved_frame_stride"] == 3
+    assert timestamps["resolved_target_fps"] == pytest.approx(5.0)
+
+
+def test_advio_runtime_target_fps_reuses_stored_normalized_profile(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    stored_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=AdvioSourceConfig(sequence_id="advio-15", target_fps=15.0),
+    )
+    runtime_source = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0).setup_target(path_config=path_config)
+
+    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
+        manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+
+    timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
+    assert frame_indices == {"source_frame_indices": [0, 3]}
+    assert timestamps["requested_frame_stride"] == 1
+    assert timestamps["requested_target_fps"] == pytest.approx(5.0)
+    assert timestamps["resolved_frame_stride"] == 3
+    assert timestamps["resolved_target_fps"] == pytest.approx(5.0)
+
+
+def test_advio_runtime_target_fps_above_store_warns_and_uses_all_stored_frames(tmp_path: Path) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
+    path_config = PathConfig(root=tmp_path)
+    service = AdvioDatasetService(path_config)
+    stored_entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=service,
+        source_config=AdvioSourceConfig(sequence_id="advio-15", target_fps=15.0),
+    )
+    runtime_source = AdvioSourceConfig(sequence_id="advio-15", target_fps=30.0).setup_target(path_config=path_config)
+
+    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    with pytest.warns(RuntimeWarning, match="would require upsampling"):
+        manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
+
+    timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
+    frame_indices = json.loads(manifest.source_frame_indices_path.read_text(encoding="utf-8"))
+    assert frame_indices == {"source_frame_indices": [0, 1, 2, 3]}
+    assert timestamps["requested_target_fps"] == pytest.approx(30.0)
+    assert timestamps["resolved_frame_stride"] == 1
+    assert timestamps["resolved_target_fps"] == pytest.approx(15.0)
 
 
 def test_advio_profile_convention_rejects_missing_convention_entries(tmp_path: Path) -> None:

@@ -206,9 +206,9 @@ class SweepDataset(BaseConfig):
     Attributes:
         dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``.
         sequence_id: Dataset-specific sequence slug passed to the source backend.
-        frame_stride: Frame stride used by the persisted datastore profile.
+        frame_stride: Read-time stride for replaying stored normalized observations.
             ``1`` means every frame; ``2`` means every other frame, etc.
-        target_fps: Target FPS used by the persisted datastore profile.
+        target_fps: Read-time target FPS for replaying stored normalized observations.
         baseline_source: Reference trajectory used by trajectory evaluation.
         align_ground: Enable ground-alignment stage.
         align_trajectory: Enable trajectory Sim(3)-alignment stage.
@@ -227,10 +227,10 @@ class SweepDataset(BaseConfig):
     """Dataset-specific sequence slug."""
 
     frame_stride: int = Field(default=1, ge=1)
-    """Frame stride used by the persisted datastore profile."""
+    """Read-time stride for replaying stored normalized observations."""
 
     target_fps: float | None = Field(default=None, gt=0.0)
-    """Target FPS used by the persisted datastore profile."""
+    """Read-time target FPS for replaying stored normalized observations."""
 
     baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
     """Reference trajectory source used by the trajectory-evaluation stage."""

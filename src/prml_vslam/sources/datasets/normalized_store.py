@@ -395,6 +395,12 @@ class NormalizedDatasetStore:
                 row.provenance.source_frame_index if row.provenance.source_frame_index is not None else row.seq
                 for row in (observation_index.rows[index] for index in selected_indices)
             ]
+        _warn_runtime_sampling_if_downsampled(
+            entry=entry,
+            frame_selection=frame_selection,
+            sampling_payload=sampling_payload,
+            stored_timestamps_ns=timestamps_ns,
+        )
         timestamp_payload: JsonObject = {
             "timestamps_ns": [timestamps_ns[index] for index in selected_indices],
             **sampling_payload,
@@ -1024,6 +1030,34 @@ def _selected_indices_and_sampling_payload(
         requested_target_fps=frame_selection.target_fps,
         resolved_frame_stride=stride,
         resolved_target_fps=_mean_fps(len(selected_timestamps_ns), _duration_s_from_ns(selected_timestamps_ns)),
+    )
+
+
+def _warn_runtime_sampling_if_downsampled(
+    *,
+    entry: NormalizedDatasetEntry,
+    frame_selection: FrameSelectionConfig,
+    sampling_payload: JsonObject,
+    stored_timestamps_ns: list[int],
+) -> None:
+    if frame_selection.frame_stride == 1 and frame_selection.target_fps is None:
+        return
+    stored_fps = _mean_fps(len(stored_timestamps_ns), _duration_s_from_ns(stored_timestamps_ns))
+    if frame_selection.target_fps is not None and stored_fps > 0.0 and frame_selection.target_fps > stored_fps * 1.01:
+        return
+    if int(sampling_payload["resolved_frame_stride"]) == 1:
+        return
+    source_profile = entry.profile.source_profile
+    warnings.warn(
+        "Runtime frame selection downsampled normalized observations: "
+        f"stored_frame_stride={source_profile.frame_stride}, "
+        f"stored_target_fps={source_profile.target_fps}, "
+        f"requested_frame_stride={sampling_payload['requested_frame_stride']}, "
+        f"requested_target_fps={sampling_payload['requested_target_fps']}, "
+        f"resolved_frame_stride={sampling_payload['resolved_frame_stride']}, "
+        f"resolved_target_fps={sampling_payload['resolved_target_fps']:.6g}.",
+        RuntimeWarning,
+        stacklevel=3,
     )
 
 

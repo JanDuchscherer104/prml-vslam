@@ -42,15 +42,22 @@ from prml_vslam.sources.config import (
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
-from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId, FrameSelectionConfig
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudSource,
+    ReferenceSource,
+    SequenceManifest,
+)
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
-    normalized_profile_for_dataset,
+    normalized_runtime_profile_for_dataset,
     normalized_store_for_service,
 )
-from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry, load_timestamps_ns
+from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -341,6 +348,8 @@ def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
 
 
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    if isinstance(source_backend, AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig):
+        return _normalized_source_fps(source_backend, path_config=path_config)
     if source_backend.target_fps is not None:
         return float(source_backend.target_fps)
     native_fps = _source_fps(source_backend, path_config=path_config)
@@ -374,18 +383,18 @@ def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: 
             case _:
                 return None
         service = dataset_service(dataset_id, path_config)
-        profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
+        frame_selection = runtime_frame_selection_for_source_config(source)
+        profile = normalized_runtime_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
         entry = normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
             profile,
-            frame_selection=FrameSelectionConfig(
-                frame_stride=source_backend.frame_stride,
-                target_fps=source_backend.target_fps,
-            ),
+            frame_selection=frame_selection,
         )
         manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
-        if manifest.timestamps_path is None:
+        timestamps_ns = _normalized_entry_timestamps_ns(entry, manifest)
+        if not timestamps_ns:
             return None
-        return _fps_for_timestamps_ns(load_timestamps_ns(manifest.timestamps_path))
+        stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+        return _fps_for_timestamps_ns(timestamps_ns[::stride])
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None
 
@@ -404,6 +413,18 @@ def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | N
         return fps if fps > 0.0 else None
     finally:
         capture.release()
+
+
+def _normalized_entry_timestamps_ns(entry: NormalizedDatasetEntry, manifest: SequenceManifest) -> list[int]:
+    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    )
+    observation_sequence = benchmark_inputs.default_observation_sequence()
+    if observation_sequence is not None:
+        return [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
+    if manifest.timestamps_path is None:
+        return []
+    return load_timestamps_ns(manifest.timestamps_path)
 
 
 def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
