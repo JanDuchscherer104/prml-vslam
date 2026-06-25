@@ -215,7 +215,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     query = context.trajectory_evaluation_query
     page_state = context.state.metrics
 
-    with st.spinner("Loading dataset evaluation…"):
+    with st.spinner("Loading dataset evaluation..."):
         dataset_selection = query.load_dataset_evaluation(dataset)
 
     if not dataset_selection.metric_rows:
