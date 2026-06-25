@@ -22,6 +22,7 @@ from prml_vslam.sources.contracts import (
 from prml_vslam.sources.stage.artifacts import source_artifacts
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import RunArtifactPaths
+from prml_vslam.utils.portable_paths import rebase_model_paths
 from prml_vslam.utils.serialization import stable_hash
 
 
@@ -38,11 +39,19 @@ def _load_source_result(run_paths: RunArtifactPaths) -> StageResult:
         raise FileNotFoundError(f"Reuse benchmark inputs are missing: {run_paths.benchmark_inputs_path}")
     output = SourceStageOutput(
         sequence_manifest=_rebase_sequence_manifest(
-            SequenceManifest.model_validate_json(run_paths.sequence_manifest_path.read_text(encoding="utf-8")),
+            rebase_model_paths(
+                SequenceManifest.model_validate_json(run_paths.sequence_manifest_path.read_text(encoding="utf-8")),
+                root=run_paths.artifact_root,
+            ),
             artifact_root=run_paths.artifact_root,
         ),
         benchmark_inputs=_rebase_benchmark_inputs(
-            PreparedBenchmarkInputs.model_validate_json(run_paths.benchmark_inputs_path.read_text(encoding="utf-8")),
+            rebase_model_paths(
+                PreparedBenchmarkInputs.model_validate_json(
+                    run_paths.benchmark_inputs_path.read_text(encoding="utf-8")
+                ),
+                root=run_paths.artifact_root,
+            ),
             artifact_root=run_paths.artifact_root,
         ),
     )

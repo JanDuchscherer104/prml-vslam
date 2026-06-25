@@ -55,6 +55,7 @@ from prml_vslam.utils.geometry import (
     write_tum_trajectory,
     yaw_similarity_align,
 )
+from prml_vslam.utils.portable_paths import rebase_model_paths, write_portable_json
 from prml_vslam.utils.serialization import stable_hash, write_json
 from prml_vslam.utils.video_frames import extract_video_frames
 
@@ -153,7 +154,10 @@ class NormalizedDatasetStore:
         entry_path = self.entry_root(profile) / ENTRY_FILENAME
         if not entry_path.exists():
             raise FileNotFoundError(self.missing_entry_message(profile))
-        entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+        entry = rebase_model_paths(
+            NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+            root=entry_path.parent,
+        )
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
         return entry
@@ -273,8 +277,8 @@ class NormalizedDatasetStore:
         )
         sequence_manifest_path = root / SEQUENCE_MANIFEST_FILENAME
         benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
-        write_json(sequence_manifest_path, sequence_manifest)
-        write_json(benchmark_inputs_path, benchmark_inputs)
+        write_portable_json(sequence_manifest_path, sequence_manifest, root=root)
+        write_portable_json(benchmark_inputs_path, benchmark_inputs, root=root)
         stats_long_path, metadata_long_path = _write_entry_analysis_tables(
             root=root,
             profile=profile,
@@ -293,7 +297,7 @@ class NormalizedDatasetStore:
             stats_long_path=stats_long_path,
             metadata_long_path=metadata_long_path,
         )
-        write_json(root / ENTRY_FILENAME, entry)
+        write_portable_json(root / ENTRY_FILENAME, entry, root=root)
         return entry
 
     def create_entry_from_source(
@@ -340,11 +344,15 @@ class NormalizedDatasetStore:
         output_dir: Path,
     ) -> SequenceManifest:
         """Load the stored manifest and apply run-local frame selection by index."""
-        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        manifest = rebase_model_paths(
+            SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+            root=entry.root,
+        )
         if manifest.timestamps_path is None:
             return manifest
-        observation_sequence = PreparedBenchmarkInputs.model_validate_json(
-            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        observation_sequence = rebase_model_paths(
+            PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+            root=entry.root,
         ).default_observation_sequence()
         observation_index = (
             None if observation_sequence is None else load_observation_sequence_index(observation_sequence.index_path)
@@ -393,8 +401,9 @@ class NormalizedDatasetStore:
         output_dir: Path,
     ) -> PreparedBenchmarkInputs:
         """Load benchmark inputs and apply run-local observation selection."""
-        benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        benchmark_inputs = rebase_model_paths(
+            PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+            root=entry.root,
         )
         refs = [
             _select_observation_sequence(ref, frame_selection=frame_selection, output_dir=output_dir)
@@ -443,7 +452,10 @@ class NormalizedDatasetStore:
         usable_identities = {(entry.sequence_id, entry.source_id) for entry in self._scan_entries(strict=False)}
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = rebase_model_paths(
+                    NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+                    root=entry_path.parent,
+                )
                 profile = NormalizedDatasetProfile.model_validate(entry.profile)
                 if not _is_read_compatible_schema(entry, profile):
                     if (entry.sequence_id, entry.source_id) in usable_identities:
@@ -466,7 +478,10 @@ class NormalizedDatasetStore:
         entries: list[NormalizedDatasetEntry] = []
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = rebase_model_paths(
+                    NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+                    root=entry_path.parent,
+                )
                 profile = NormalizedDatasetProfile.model_validate(entry.profile)
                 if not _is_read_compatible_schema(entry, profile):
                     continue
@@ -524,10 +539,14 @@ class NormalizedDatasetStore:
             raise RuntimeError(f"Normalized entry metadata does not match requested profile: {mismatches}")
 
     def _validate_entry_payloads(self, entry: NormalizedDatasetEntry) -> None:
-        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        manifest = rebase_model_paths(
+            SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+            root=entry.root,
+        )
         _validate_manifest_paths(entry.root, manifest)
-        benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        benchmark_inputs = rebase_model_paths(
+            PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+            root=entry.root,
         )
         _validate_benchmark_input_paths(entry.root, benchmark_inputs)
         _validate_entry_analysis_tables(entry)
@@ -1237,7 +1256,10 @@ def _validate_read_frame_selection(
 ) -> None:
     if frame_selection is None:
         return
-    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     if manifest.timestamps_path is not None:
         _validate_requested_target_fps(load_timestamps_ns(manifest.timestamps_path), frame_selection)
 
@@ -1455,9 +1477,13 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
     sequence_manifest_path = root / SEQUENCE_MANIFEST_FILENAME
     benchmark_inputs_path = root / BENCHMARK_INPUTS_FILENAME
     entry_path = root / ENTRY_FILENAME
-    temp_sequence_manifest = SequenceManifest.model_validate_json(sequence_manifest_path.read_text(encoding="utf-8"))
-    temp_benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-        benchmark_inputs_path.read_text(encoding="utf-8")
+    temp_sequence_manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(sequence_manifest_path.read_text(encoding="utf-8")),
+        root=old_root,
+    )
+    temp_benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=old_root,
     )
     timestamp_metadata = (
         {}
@@ -1475,7 +1501,10 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
     entry = cast(
         NormalizedDatasetEntry,
         _rebase_model_paths(
-            NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+            rebase_model_paths(
+                NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+                root=old_root,
+            ),
             old_root=old_root,
             new_root=new_root,
         ),
@@ -1502,9 +1531,9 @@ def _rebase_entry_metadata_paths(root: Path, *, old_root: Path, new_root: Path) 
             "metadata_long_path": _rebase_path(metadata_long_path, old_root=root, new_root=new_root),
         }
     )
-    write_json(sequence_manifest_path, sequence_manifest)
-    write_json(benchmark_inputs_path, benchmark_inputs)
-    write_json(entry_path, entry)
+    write_portable_json(sequence_manifest_path, sequence_manifest, root=new_root)
+    write_portable_json(benchmark_inputs_path, benchmark_inputs, root=new_root)
+    write_portable_json(entry_path, entry, root=new_root)
 
 
 def _rebase_model_paths(model: BaseModel, *, old_root: Path, new_root: Path) -> BaseModel:
