@@ -1,22 +1,20 @@
 = Related Work
 
-The closest methodological analogue for this paper is not a single SLAM algorithm but a research
-framework that makes an active problem easier to study reproducibly. Nerfstudio is a useful model:
-it presents a modular framework for neural radiance field research with standardized data
-ingestion, model components, real-time visualization, and exports to video, mesh, and point-cloud
-representations @tancik2023nerfstudio. SLAMBench2 plays a similar role for SLAM by defining an
-extensible benchmark interface over algorithms, datasets, and metrics, enabling comparable and
-validatable experiments across systems with different accuracy, runtime, and resource trade-offs
-@bodin2018slambench2. This paper follows the same framing for uncalibrated phone VSLAM: the primary
-object of study is the measurement substrate that makes later method comparison defensible.
+The closest analogues are research substrates rather than individual SLAM algorithms. Nerfstudio
+standardizes data ingestion, model components, real-time visualization, and exports for neural
+radiance-field research @tancik2023nerfstudio. SLAMBench2 defines an extensible SLAM interface over
+algorithms, datasets, and metrics so that accuracy, runtime, and resource trade-offs can be
+validated across systems @bodin2018slambench2. This paper applies the same idea to uncalibrated
+phone VSLAM: the object of study is the measurement substrate that makes later comparison
+defensible.
 
 Trajectory evaluation is a second source of guidance because visual odometry and SLAM results are
 not meaningful without an explicit alignment convention. Zhang and Scaramuzza emphasize that the
 choice of transformation used for alignment depends on the sensing modality and the experimental
 question @zhang2018trajectory. This distinction is central for monocular methods, where scale is
 ambiguous, and for visual-inertial or phone-provider trajectories, where gravity may already be
-observable. The report therefore treats frame direction, timestamp association, alignment mode, and
-metric interpretation as part of the protocol rather than as implementation details.
+observable. Frame direction, timestamp association, alignment mode, and metric interpretation are
+therefore reported as protocol variables.
 
 The reference methods represent three modern design points for dense uncalibrated reconstruction.
 ViSTA-SLAM uses a symmetric two-view association frontend and a Sim(3) pose-graph backend with loop
@@ -28,12 +26,10 @@ for causal long-sequence inference @chen2026gct. The benchmark interface must th
 outputs from optimization-heavy pairwise systems and from feed-forward streaming systems without
 assuming that their internal maps have the same coordinate or uncertainty semantics.
 
-The selected datasets cover complementary roles. ADVIO provides smartphone visual-inertial
-sequences with ground-truth trajectories and mobile-provider pose estimates @cortes2018advio. TUM
-RGB-D provides synchronized color and registered depth images with motion-capture ground truth,
-which makes it suitable for controlled trajectory evaluation and depth-derived reference-cloud
-preparation @sturm2012benchmark. Record3D supplies the self-recorded iPhone RGB-D path and therefore
-connects public benchmarks to the custom smartphone-data requirement @record3d2026. Open3D provides
-the practical point-cloud processing and registration primitives used by the implementation
-@zhou2018open3d, while Umeyama alignment @umeyama1991least and ICP @besl1992method provide the
-geometric basis for the transform stages.
+The selected datasets have complementary reference semantics. ADVIO provides smartphone
+visual-inertial sequences with ground-truth trajectories and mobile-provider pose estimates
+@cortes2018advio. TUM RGB-D pairs synchronized color and registered depth with motion-capture ground
+truth @sturm2012benchmark. Record3D supplies the self-recorded iPhone RGB-D path @record3d2026.
+Open3D provides point-cloud processing and registration primitives @zhou2018open3d; Umeyama
+alignment @umeyama1991least and ICP @besl1992method provide the geometric basis for the transform
+stages.

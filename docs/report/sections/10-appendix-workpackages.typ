@@ -1,13 +1,118 @@
-#import "@preview/booktabs:0.0.4": toprule, midrule, bottomrule
+#import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
+#import "@preview/tdtr:0.5.5": *
+
+#let ragged(body) = {
+  set par(justify: false)
+  body
+}
+
+#let datastore_data_color = rgb("F5F5F5")
+#let datastore_group_color = rgb("E8F3FF")
+#let datastore_leaf_color = rgb("F4F6FB")
+#let datastore_array_color = rgb("EAF7EA")
+#let datastore_derived_color = rgb("FCE8E8")
+
+#let datastore_group = metadata("group")
+#let datastore_leaf = metadata("leaf")
+#let datastore_array = metadata("array")
+#let datastore_derived = metadata("derived")
+
+#let ds-code(name) = raw(name, lang: none)
+#let ds-code-strong(name) = text(weight: "bold")[#ds-code(name)]
+
+#let datastore-left-right-draw-edge = (from-node, to-node, edge-label) => {
+  let from-anchor = (name: from-node.name, anchor: "east")
+  let to-anchor = (name: to-node.name, anchor: "west")
+  let middle-anchor = (from-anchor, 50%, to-anchor)
+  if from-node.pos.x == to-node.pos.x {
+    (
+      vertices: (from-anchor, to-anchor),
+      marks: "-|>",
+      label: edge-label,
+    )
+  } else {
+    (
+      vertices: (
+        from-anchor,
+        ((), "-|", middle-anchor),
+        ((), "|-", to-anchor),
+        to-anchor,
+      ),
+      marks: "-|>",
+      label: edge-label,
+    )
+  }
+}
+
+#let datastore-tree-style(
+  compact: true,
+  text-size: 5.9pt,
+  node-width: 12.2em,
+  spacing: (5pt, 8pt),
+) = tidy-tree-graph.with(
+  compact: compact,
+  text-size: text-size,
+  node-width: node-width,
+  node-inset: 2pt,
+  spacing: spacing,
+  draw-edge: datastore-left-right-draw-edge,
+  draw-node: (
+    tidy-tree-draws.metadata-match-draw-node.with(
+      matches: (
+        group: (fill: datastore_group_color, stroke: 0.65pt + datastore_group_color.darken(28%)),
+        leaf: (fill: datastore_leaf_color, stroke: 0.5pt + datastore_leaf_color.darken(18%)),
+        array: (fill: datastore_array_color, stroke: 0.55pt + datastore_array_color.darken(24%)),
+        derived: (fill: datastore_derived_color, stroke: 0.65pt + datastore_derived_color.darken(28%)),
+      ),
+      default: (fill: datastore_data_color, stroke: 0.5pt + datastore_data_color.darken(18%)),
+    ),
+    tidy-tree-draws.horizontal-draw-node,
+  ),
+)
+
+#let vslam-datastore-tree() = {
+  let tree = datastore-tree-style()
+  tree[
+    - #ds-code-strong("vslam-datastore/") \ --  norm. \ data samples #datastore_group
+      - #ds-code-strong("advio/<seq>/<profile>/") #datastore_group
+        - meta-data, statistics \ & manifest  #datastore_leaf
+        - #ds-code-strong("observations/") \ --  RGB fames #datastore_group
+          - #ds-code("rgb/*.png") #datastore_array
+          - #ds-code("observations.json") \ --  per frame payload & metadata #datastore_leaf
+        - #ds-code-strong("trajectories/") \  #datastore_group
+          - #ds-code("ground_truth.tum") \ --  GT traj. #datastore_array
+          - #ds-code("arcore.tum, arkit.tum") \ --  baseline \ trajs. #datastore_array
+          - #ds-code("*_aligned_to_gt.tum") \ --  Sim(3) aligned trajs. #datastore_derived
+
+      - #ds-code-strong("tum_rgbd/<seq>/<profile>/") #datastore_group
+        - meta-data, statistics \ & manifest  #datastore_leaf
+        - #ds-code-strong("observations/") \ -- RGB-D frames #datastore_group
+          - #ds-code("rgb/*.png") \ #ds-code("depth/*.png") #datastore_array
+          - #ds-code("observations.json") \ --  per frame payload & metadata #datastore_leaf
+        - #ds-code-strong("benchmark/") \ \ --  GT data #datastore_group
+          - #ds-code("ground_truth.tum") \ --  GT traj. #datastore_array
+          - #ds-code("tum_rgbd.ply") \ --  GT cloud #datastore_array
+
+      - #ds-code-strong("record3d/<seq>/<profile>/") #datastore_group
+        - meta-data, statistics \ & manifest  #datastore_leaf
+        - #ds-code-strong("observations/") \ -- RGB-D frames #datastore_group
+          - #ds-code("rgb/*.png") \ #ds-code("depth/*.png") #datastore_array
+          - #ds-code("observations.json") \ --  per frame payload & metadata #datastore_leaf
+        - #ds-code-strong("benchmark/")  #datastore_group
+          - #ds-code("arkit.tum") \ --  ref. traj. #datastore_array
+          - #ds-code("record3d_lidar.ply") \ --  ref. cloud #datastore_array
+  ]
+}
+
+#pagebreak()
 
 = Appendix: Supplementary Architecture and Artifact Map
 
 == Pipeline Architecture Diagrams
 
-The following diagrams document implementation structure that is useful for reproducibility but too
-detailed for the main paper. The main text uses the scientific consequences of these contracts:
-deterministic planning, standardized stage handoff, and separation between live diagnostics and
-durable artifacts.
+The following diagrams document reproducibility-relevant implementation structure that is too
+detailed for the main paper: deterministic planning, standardized stage handoff, and separation
+between live diagnostics and durable artifacts.
 
 #figure(
   image("../../figures/mermaid/pipeline/03-run-config-stage-plan.png", width: 100%),
@@ -24,11 +129,55 @@ durable artifacts.
   caption: [Supplementary architecture: live diagnostic updates are separated from durable scientific artifacts.],
 ) <fig:appendix-runtime-updates-visualization>
 
+== Persisted Datastore Layouts
+
+The normalized datastore is materialized as a dataset, sequence, and profile hierarchy. The
+representative entries below show the persisted files that define the benchmark input contract for
+each dataset family; profile identifiers are shortened because they identify materialization
+profiles rather than scientific variables.
+
+#place(
+  top + center,
+  float: true,
+  scope: "parent",
+  [
+    #figure(
+      vslam-datastore-tree(),
+      caption: [Representative persisted datastore layouts for the three normalized dataset families.],
+    ) <fig:appendix-vslam-datastore-layouts>
+  ],
+)
+
+#figure(
+  table(
+    columns: (0.58fr, 2.42fr),
+    align: (left, left),
+    inset: (x: 0.24em, y: 0.21em),
+    column-gutter: 0.36em,
+    toprule(),
+    table.header([Dataset], [Persisted modality and frame contract]),
+    midrule(), [ADVIO],
+    ragged(
+      [RGB-only observations; `ground_truth.tum` reference; registered `arcore.tum` and `arkit.tum` as candidates and baseline references; aligned AR files as diagnostic references only. All registered trajectories target `advio_fixedpoint_common_start_local`; no reference cloud is persisted.],
+    ),
+    [TUM RGB-D],
+
+    ragged(
+      [RGB and registered depth observations; `ground_truth.tum` maps from `tum_rgbd_mocap_world` to `tum_rgbd_world` after first-pose-relative normalization. `tum_rgbd.ply` is a reference cloud in the same target frame.],
+    ),
+    [Record3D],
+
+    ragged(
+      [RGB and depth observations; `arkit.tum` and `record3d_lidar.ply` use `record3d_world` as native and target frame after the metadata `p_yz_flip` pose-frame conversion and first-pose-relative normalization.],
+    ),
+    bottomrule(),
+  ),
+  caption: [Supplementary datastore modality and frame contracts for representative normalized entries.],
+) <tab:appendix-vslam-datastore-contracts>
+
 == Artifact and Responsibility Map
 
-The artifact map summarizes the implemented framework surfaces in scientific terms. It is retained
-as supplementary context for readers who want to reproduce or extend the benchmark, not as an
-authorship or speaking-order record.
+The artifact map is supplementary context for reproducing or extending the benchmark.
 
 #figure(
   table(
@@ -38,26 +187,25 @@ authorship or speaking-order record.
     column-gutter: 0.38em,
     toprule(),
     table.header([Area], [Artifact or contract], [Scientific role]),
-    midrule(),
-    [Source data],
-    [Normalized sequence manifest, observation sequence, timestamps, intrinsics, and prepared references.],
-    [Defines what a method may consume and what may be used only for evaluation.],
+    midrule(), [Source data], [Manifest, observations, timestamps, intrinsics, and prepared references.],
+    [Separates method inputs from evaluation references.],
     [Method execution],
-    [Method configuration, normalized trajectory, dense point-cloud artifact, and native extras.],
-    [Makes method outputs comparable without erasing native diagnostics.],
+    [Configuration, trajectory, dense cloud, and native extras.],
+
+    [Preserves comparable outputs and native diagnostics.],
     [Trajectory alignment],
     [Alignment metadata, aligned trajectory, reference source, and association policy.],
+
     [Documents the transformation used before trajectory metrics are interpreted.],
     [Dense geometry],
-    [Reference cloud, Sim(3)-placed cloud, ICP-refined cloud, and cloud-alignment metadata.],
-    [Separates cloud placement from final dense-quality scoring.],
+    [Reference, Sim(3)-placed, and ICP-refined clouds plus placement metadata.],
+
+    [Separates cloud placement from dense-quality scoring.],
     [Visualization],
-    [Neutral visualization items and Rerun recordings.],
-    [Supports debugging while preserving manifests and metrics as the scientific record.],
-    [Reporting],
-    [Experiment matrix, metric tables, limitations, and method recommendations.],
-    [Turns artifact-backed runs into scientific claims after validation.],
-    bottomrule(),
+    [Neutral visualization items and recordings.],
+
+    [Debugs persisted artifacts.], [Reporting], [Experiment matrix, metric tables, limitations, and recommendations.],
+    [Turns validated runs into scientific claims.], bottomrule(),
   ),
   caption: [Supplementary artifact map for reproducing and extending the benchmark framework.],
 ) <tab:artifact-map>
