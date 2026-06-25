@@ -218,7 +218,7 @@ class SweepDataset(BaseConfig):
         evaluate_cloud: Enable dense-cloud evaluation stage.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     dataset_id: str
     """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``."""

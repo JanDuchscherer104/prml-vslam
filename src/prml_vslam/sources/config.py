@@ -195,20 +195,6 @@ def runtime_frame_selection_for_source_config(source_config: DatasetBackedSource
     return FrameSelectionConfig(frame_stride=source_config.frame_stride, target_fps=source_config.target_fps)
 
 
-def normalized_runtime_profile_source_config(
-    dataset_id: DatasetId,
-    source_config: DatasetBackedSourceConfig,
-) -> DatasetBackedSourceConfig:
-    """Return the base normalized-entry identity config for runtime lookup."""
-    frame_selection = default_normalized_profile_frame_selection(dataset_id)
-    return source_config.model_copy(
-        update={
-            "frame_stride": frame_selection.frame_stride,
-            "target_fps": frame_selection.target_fps,
-        }
-    )
-
-
 def normalized_runtime_profile_for_source_config(
     *,
     dataset_id: DatasetId,
@@ -216,10 +202,9 @@ def normalized_runtime_profile_for_source_config(
     source_config: DatasetBackedSourceConfig,
 ) -> NormalizedDatasetProfile:
     """Return the normalized profile for the stored entry replayed at runtime."""
-    profile_source_config = normalized_runtime_profile_source_config(dataset_id, source_config)
     return normalized_profile_for_source_config(
         dataset_id=dataset_id,
         sequence_id=sequence_id,
-        source_id=profile_source_config.source_id,
-        payload=profile_source_config.model_dump(mode="json"),
+        source_id=source_config.source_id,
+        payload=source_config.model_dump(mode="json"),
     )
