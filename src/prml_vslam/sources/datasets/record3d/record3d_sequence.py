@@ -242,9 +242,8 @@ class Record3DSequence(BaseData):
         depth_dir.mkdir(parents=True, exist_ok=True)
         rows: list[ObservationIndexEntry] = []
         for seq, frame in enumerate(selected_frames):
-            rgb = record3d_loading.resize_rgb_to_depth(
-                record3d_loading.decode_rgb_frame(sample.archive_path, frame), sample.metadata
-            )
+            rgb = record3d_loading.decode_rgb_frame(sample.archive_path, frame)
+
             depth_m = record3d_loading.decode_depth_frame_m(
                 sample.archive_path,
                 frame,
@@ -257,7 +256,7 @@ class Record3DSequence(BaseData):
                 dimension_multiple=self.config.rgb_dimension_multiple,
             )
             depth_m = resize_depth_to_rgb_preprocessing(depth_m, preprocessed)
-            intrinsics = scale_intrinsics_for_rgb_preprocessing(sample.depth_intrinsics, preprocessed)
+            intrinsics = scale_intrinsics_for_rgb_preprocessing(sample.rgb_intrinsics, preprocessed)
             rgb_path = rgb_dir / f"{seq:06d}.png"
             depth_path = depth_dir / f"{seq:06d}.png"
             write_preprocessed_rgb_png(rgb_path, preprocessed.rgb)
@@ -297,7 +296,7 @@ class Record3DSequence(BaseData):
             output_dir / "rgb.metadata.json",
             {
                 "raster_space": "display_downscaled",
-                "source_raster_space": "depth",
+                "source_raster_space": "archive_rgb",
                 "rgb_max_width_px": self.config.rgb_max_width_px,
                 "dimension_multiple": self.config.rgb_dimension_multiple,
             },
