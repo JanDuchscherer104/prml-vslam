@@ -363,10 +363,10 @@ def test_record3d_sequence_loads_rgbd_observations_and_reference_cloud(tmp_path:
     assert benchmark_inputs.reference_clouds[0].coordinate_status.value == "aligned"
     assert len(observations) == 3
     assert observations[0].rgb is not None
-    assert observations[0].rgb.shape == (4, 4, 3)
+    assert observations[0].rgb.shape == (8, 8, 3)
     assert observations[0].depth_m is not None
-    assert observations[0].depth_m.shape == (4, 4)
-    assert observations[0].intrinsics.width_px == 4
+    assert observations[0].depth_m.shape == (8, 8)
+    assert observations[0].intrinsics.width_px == 8
     np.testing.assert_allclose(observations[0].T_world_camera.as_matrix(), np.eye(4), atol=1e-9)
     assert observations[1].T_world_camera.tx == pytest.approx(1.0)
     trajectory = load_tum_trajectory(benchmark_inputs.reference_trajectories[0].path)
@@ -440,7 +440,7 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
         "dimension_multiple": 14,
         "raster_space": "display_downscaled",
         "rgb_max_width_px": 392,
-        "source_raster_space": "depth",
+        "source_raster_space": "archive_rgb",
     }
     assert not (entry.root / "observations" / "0").exists()
     assert not (entry.root / "benchmark" / "reference").exists()
@@ -478,18 +478,18 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert observations[0].intrinsics.height_px == observations[0].rgb.shape[0]
     assert observation_index["rows"][0]["rgb_path"] == "rgb/000000.png"
     assert observation_index["rows"][0]["provenance"]["raster_space"] == "display_downscaled"
-    assert observation_index["rows"][0]["provenance"]["original_width"] == 4
-    assert observation_index["rows"][0]["provenance"]["original_height"] == 4
+    assert observation_index["rows"][0]["provenance"]["original_width"] == 8
+    assert observation_index["rows"][0]["provenance"]["original_height"] == 8
     assert (stored_inputs.observation_sequences[0].payload_root / observation_index["rows"][0]["rgb_path"]).is_file()
     assert first_depth_path.suffix == ".png"
     assert observation_index["rows"][0]["depth_scale_to_m"] == pytest.approx(0.001)
     assert (load_depth_array(first_depth_path) * observation_index["rows"][0]["depth_scale_to_m"])[
-        1, 1
+        2, 2
     ] == pytest.approx(
         1.0,
         abs=0.0005,
     )
-    assert observations[0].depth_m[1, 1] == pytest.approx(1.0, abs=0.0005)
+    assert observations[0].depth_m[2, 2] == pytest.approx(1.0, abs=0.0005)
     assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
     assert ("reference_trajectory", "arkit/aligned", "ego_motion_class") not in stats
@@ -1490,6 +1490,7 @@ def test_record3d_real_sample_decodes_rgbd_and_materializes_reference_cloud(tmp_
         (
             dataset_root / archive_name
             for archive_name in (
+                "2026-06-03--18-17-10.r3d",
                 "2024-03-31--16-17-17.r3d",
                 "2026-06-03--18-26-32.r3d",
             )
@@ -1504,7 +1505,10 @@ def test_record3d_real_sample_decodes_rgbd_and_materializes_reference_cloud(tmp_
     )
 
     sample = sequence.load_offline_sample()
-    benchmark_inputs = sequence.to_benchmark_inputs(output_dir=tmp_path / "benchmark")
+    benchmark_inputs = sequence.to_benchmark_inputs(
+        output_dir=tmp_path / "benchmark",
+        frame_selection=FrameSelectionConfig(frame_stride=max(1, len(sample.frames) // 4)),
+    )
     observations = list(FileObservationSequenceLoader(benchmark_inputs.observation_sequences[0]).iter_observations())
     cloud_metadata = json.loads(benchmark_inputs.reference_clouds[0].metadata_path.read_text(encoding="utf-8"))
 
@@ -1512,6 +1516,10 @@ def test_record3d_real_sample_decodes_rgbd_and_materializes_reference_cloud(tmp_
     assert sample.metadata.dw > 0
     assert sample.metadata.dh > 0
     assert observations[0].rgb.shape[:2] == observations[0].depth_m.shape
+    if archive_path.name == "2026-06-03--18-17-10.r3d":
+        assert (sample.metadata.w, sample.metadata.h) == (1440, 1920)
+        assert (sample.metadata.dw, sample.metadata.dh) == (192, 256)
+        assert observations[0].rgb.shape[:2] == (518, 392)
     assert observations[0].rgb.shape[1] <= sequence.config.rgb_max_width_px
     assert observations[0].intrinsics.width_px == observations[0].rgb.shape[1]
     assert observations[0].intrinsics.height_px == observations[0].rgb.shape[0]

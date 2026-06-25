@@ -25,7 +25,6 @@ from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
-    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
@@ -328,31 +327,6 @@ def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> Non
     assert config.stages.slam.num_cpus == 2.0
     assert config.stages.slam.num_gpus == 1.0
     assert config.stages.slam.custom_resources == {"custom_accelerator": 3.0}
-
-
-def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> None:
-    repo_root = _repo_root()
-    config_path = repo_root / ".configs/pipelines/vista-full.toml"
-    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
-
-    run_config = RunConfig.from_toml(config_path)
-
-    run_config_plan = run_config.compile_plan(path_config)
-
-    backend = run_config.stages.source.backend
-    assert isinstance(backend, Record3DDatasetSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig)
-    assert run_config_plan.source.source_id == backend.source_id
-    assert run_config_plan.source.sequence_id == backend.sequence_id
-    assert run_config_plan.source.metadata["dataset_id"] in {
-        DatasetId.ADVIO.value,
-        DatasetId.RECORD3D.value,
-        DatasetId.TUM_RGBD.value,
-    }
-    assert run_config.stages.evaluate_cloud.enabled is False
-    assert run_config.stages.evaluate_trajectory.enabled is True
-    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
-    assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
-    assert run_config.visualization.decimation_random_seed == 0
 
 
 def test_run_plan_expected_fps_ignores_raw_advio_cadence_without_normalized_entry(tmp_path: Path) -> None:

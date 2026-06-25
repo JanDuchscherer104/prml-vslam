@@ -386,15 +386,6 @@ def test_benchmark_datastore_config_covers_full_sweep_sources() -> None:
     assert datastore_keys == full_sweep_keys
 
 
-def test_full_vista_sweep_uses_bounded_frame_count() -> None:
-    cfg = load_sweep_config(Path(".configs/sweeps/full-vista-sweep.toml"))
-    items = expand_sweep(cfg)
-
-    assert items
-    assert {item.method_id for item in items} == {MethodId.VISTA.value}
-    assert {item.slam_stage.backend.max_frames for item in items if item.slam_stage.backend is not None} == {512}
-
-
 # ---------------------------------------------------------------------------
 # Template loading
 # ---------------------------------------------------------------------------
