@@ -1017,6 +1017,13 @@ def test_advio_runtime_sampling_does_not_change_normalized_profile_identity() ->
     assert sampled_profile.source_profile["target_fps"] == 15.0
 
 
+def test_target_fps_below_native_uses_downsampling_stride() -> None:
+    timestamps_ns = [int(round((index / 30.0) * 1e9)) for index in range(31)]
+
+    assert FrameSelectionConfig(target_fps=24.0).stride_for_timestamps_ns(timestamps_ns) == 2
+    assert FrameSelectionConfig(target_fps=60.0).stride_for_timestamps_ns(timestamps_ns) == 1
+
+
 def test_record3d_source_config_constructs_sampled_live_adapter(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
 

@@ -38,6 +38,8 @@ from prml_vslam.sources.contracts import (
 from prml_vslam.sources.datasets.contracts import (
     ADVIO_FIXEDPOINT_COMMON_START_TRAJECTORY_CONVENTION,
     AdvioPoseFrameMode,
+    AdvioPoseSource,
+    AdvioServingConfig,
     DatasetId,
     FrameSelectionConfig,
 )
@@ -1521,6 +1523,7 @@ def _normalize_advio_benchmark_inputs(
     if sequence_manifest.advio is None or sequence_manifest.advio.fixpoints_csv_path is None:
         raise RuntimeError("ADVIO fixedpoint-common-start normalization requires manifest ADVIO fixpoints.")
     fixedpoints = load_advio_fixpoints(sequence_manifest.advio.fixpoints_csv_path)
+    selected_pose_source = _advio_reference_source_for_serving(sequence_manifest.dataset_serving)
     if ReferenceSource.GROUND_TRUTH not in source_refs:
         raise RuntimeError(
             "ADVIO fixedpoint-common-start normalization requires a source-native ground-truth trajectory."
@@ -1538,8 +1541,8 @@ def _normalize_advio_benchmark_inputs(
                 native_frame=native_frame,
             )
         except ValueError as exc:
-            if source is ReferenceSource.GROUND_TRUTH:
-                raise RuntimeError("Ground-truth ADVIO fixedpoint registration failed.") from exc
+            if source in {ReferenceSource.GROUND_TRUTH, selected_pose_source}:
+                raise RuntimeError(f"{source.value} ADVIO fixedpoint registration failed.") from exc
             warnings.warn(
                 f"Skipping ADVIO {source.value} trajectory because fixedpoint registration failed: {exc}",
                 RuntimeWarning,
@@ -1571,6 +1574,7 @@ def _normalize_advio_benchmark_inputs(
         normalized_ref = _normalize_observation_sequence_ref(ref, target_root=target_root)
         normalized_ref = _normalize_advio_observation_sequence_ref(
             normalized_ref,
+            pose_source=selected_pose_source,
             normalized_trajectories=normalized_trajectories,
             target_frame=ADVIO_FIXEDPOINT_COMMON_START_LOCAL_FRAME,
         )
@@ -1655,18 +1659,19 @@ def _write_advio_registered_references(
 def _normalize_advio_observation_sequence_ref(
     ref: ObservationSequenceRef,
     *,
+    pose_source: ReferenceSource,
     normalized_trajectories: dict[ReferenceSource, PoseTrajectory3D],
     target_frame: str,
 ) -> ObservationSequenceRef:
     from prml_vslam.sources.datasets.advio.advio_fixedpoints import advio_frame_transform_from_pose
 
-    ground_truth = normalized_trajectories.get(ReferenceSource.GROUND_TRUTH)
-    if ground_truth is None:
+    trajectory = normalized_trajectories.get(pose_source)
+    if trajectory is None:
         return ref
     index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
     rows = []
-    trajectory_timestamps = np.asarray(ground_truth.timestamps, dtype=np.float64)
-    poses = [np.asarray(pose, dtype=np.float64) for pose in ground_truth.poses_se3]
+    trajectory_timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
     for row in index.rows:
         timestamp_s = row.timestamp_ns / 1e9
         pose_index = int(np.argmin(np.abs(trajectory_timestamps - timestamp_s)))
@@ -1675,13 +1680,25 @@ def _normalize_advio_observation_sequence_ref(
             row.model_copy(
                 update={
                     "T_world_camera": T_world_camera,
-                    "provenance": row.provenance.model_copy(update={"world_frame": target_frame}),
+                    "provenance": row.provenance.model_copy(
+                        update={"pose_source": pose_source.value, "world_frame": target_frame}
+                    ),
                 }
             )
         )
     normalized_index = index.model_copy(update={"world_frame": target_frame, "rows": rows})
     write_json(ref.index_path, normalized_index)
     return ref.model_copy(update={"world_frame": target_frame})
+
+
+def _advio_reference_source_for_serving(serving: AdvioServingConfig | None) -> ReferenceSource:
+    if serving is None:
+        return ReferenceSource.GROUND_TRUTH
+    return {
+        AdvioPoseSource.GROUND_TRUTH: ReferenceSource.GROUND_TRUTH,
+        AdvioPoseSource.ARCORE: ReferenceSource.ARCORE,
+        AdvioPoseSource.ARKIT: ReferenceSource.ARKIT,
+    }[serving.pose_source]
 
 
 def _advio_aligned_diagnostic_references(
