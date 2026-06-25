@@ -104,6 +104,16 @@ class _BenchmarkSource(_ManifestOnlySource):
         )
 
 
+class _IntrinsicsSource(_ManifestOnlySource):
+    def __init__(self, *, intrinsics_path: Path) -> None:
+        super().__init__(rgb_dir=intrinsics_path.parent / "prepared-rgb")
+        self._intrinsics_path = intrinsics_path
+
+    def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+        del output_dir
+        return SequenceManifest(sequence_id="portable-seq", intrinsics_path=self._intrinsics_path)
+
+
 class _ReferenceGeometrySource(_ManifestOnlySource):
     def __init__(self, *, rgb_dir: Path, reference_path: Path, cloud_path: Path, metadata_path: Path) -> None:
         super().__init__(rgb_dir=rgb_dir)
@@ -577,6 +587,53 @@ def test_source_runtime_preserves_benchmark_inputs_and_artifacts(tmp_path: Path)
     reference = result.payload.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
     assert reference is not None
     assert reference_trajectory_artifact_key(reference) in result.outcome.artifacts
+
+
+def test_source_runtime_persists_run_owned_paths_as_relative_sidecar_values(tmp_path: Path) -> None:
+    intrinsics_path = tmp_path / "intrinsics.yaml"
+    intrinsics_path.write_text("width_px: 640\nheight_px: 480\n", encoding="utf-8")
+    runtime = SourceRuntime(source=_IntrinsicsSource(intrinsics_path=intrinsics_path))
+    artifact_root = tmp_path / "run"
+
+    runtime.run_offline(SourceStageInput(**_config_input(), artifact_root=artifact_root))
+
+    run_paths = RunArtifactPaths.build(artifact_root)
+    persisted = json.loads(run_paths.sequence_manifest_path.read_text(encoding="utf-8"))
+    assert persisted["intrinsics_path"] == "input/intrinsics.yaml"
+    assert persisted["rotation_metadata_path"] == "input/rotation_metadata.json"
+    assert not Path(persisted["intrinsics_path"]).is_absolute()
+    assert not Path(persisted["rotation_metadata_path"]).is_absolute()
+
+
+def test_normalized_store_loads_imported_relative_entry_sidecars(tmp_path: Path) -> None:
+    source_store = NormalizedDatasetStore(store_root=tmp_path / "source-store", dataset_id=DatasetId.RECORD3D)
+    target_store = NormalizedDatasetStore(store_root=tmp_path / "target-store", dataset_id=DatasetId.RECORD3D)
+    profile = NormalizedDatasetProfile(
+        dataset_id=DatasetId.RECORD3D,
+        sequence_id="portable-seq",
+        source_id="record3d",
+        source_profile={},
+    )
+    timestamps_path = tmp_path / "timestamps.json"
+    timestamps_path.write_text(json.dumps({"timestamps_ns": [1, 2, 3]}), encoding="utf-8")
+    entry = source_store.create_entry(
+        profile=profile,
+        sequence_manifest=SequenceManifest(sequence_id="portable-seq", timestamps_path=timestamps_path),
+        benchmark_inputs=PreparedBenchmarkInputs(),
+    )
+    target_root = target_store.entry_root(profile)
+    target_root.parent.mkdir(parents=True)
+    entry.root.rename(target_root)
+
+    imported = target_store.load_entry(profile)
+
+    assert imported.root == target_root.resolve()
+    assert imported.sequence_manifest_path == target_root.resolve() / "sequence_manifest.json"
+    persisted = json.loads((target_root / "entry.json").read_text(encoding="utf-8"))
+    assert persisted["root"] == "."
+    assert persisted["sequence_manifest_path"] == "sequence_manifest.json"
+    manifest = json.loads((target_root / "sequence_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["timestamps_path"] == "input/timestamps.json"
 
 
 def test_source_runtime_registers_reference_geometry_and_adapter_items(tmp_path: Path) -> None:

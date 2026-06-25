@@ -33,6 +33,7 @@ from prml_vslam.sources.datasets.normalized_store import (
     normalized_entry_analysis_summary,
 )
 from prml_vslam.utils import BaseData, PathConfig
+from prml_vslam.utils.portable_paths import rebase_model_paths
 
 
 class _SceneLookup(Protocol):
@@ -253,8 +254,9 @@ class NormalizedDatasetQuery(BaseData):
             benchmark_inputs_path = record.root / BENCHMARK_INPUTS_FILENAME
             if not benchmark_inputs_path.exists():
                 continue
-            benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-                benchmark_inputs_path.read_text(encoding="utf-8")
+            benchmark_inputs = rebase_model_paths(
+                PreparedBenchmarkInputs.model_validate_json(benchmark_inputs_path.read_text(encoding="utf-8")),
+                root=record.root,
             )
             for cloud_ref in benchmark_inputs.reference_clouds:
                 path = cloud_ref.path.resolve()
@@ -293,8 +295,9 @@ class NormalizedDatasetQuery(BaseData):
             benchmark_inputs_path = record.root / BENCHMARK_INPUTS_FILENAME
             if not benchmark_inputs_path.exists():
                 continue
-            benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-                benchmark_inputs_path.read_text(encoding="utf-8")
+            benchmark_inputs = rebase_model_paths(
+                PreparedBenchmarkInputs.model_validate_json(benchmark_inputs_path.read_text(encoding="utf-8")),
+                root=record.root,
             )
             for scope, trajectories in (
                 ("reference_trajectory", benchmark_inputs.reference_trajectories),

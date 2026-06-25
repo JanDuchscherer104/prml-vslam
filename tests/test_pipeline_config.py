@@ -30,6 +30,8 @@ from prml_vslam.sources.contracts import (
     ReferenceCloudCoordinateStatus,
     ReferenceCloudRef,
     ReferenceCloudSource,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
     SequenceManifest,
 )
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
@@ -598,6 +600,47 @@ def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path
     write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
     with pytest.raises(FileNotFoundError, match="benchmark inputs"):
         load_reused_stage_results(missing_paths.artifact_root)
+
+
+def test_load_reused_stage_results_rebases_stale_absolute_sidecar_paths(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "imported-run")
+    stale_root = Path("/old-machine/artifacts/imported-run")
+    write_json(
+        run_paths.sequence_manifest_path,
+        SequenceManifest(
+            sequence_id="seq",
+            intrinsics_path=stale_root / "input" / "intrinsics.yaml",
+            rotation_metadata_path=stale_root / "input" / "rotation_metadata.json",
+            timestamps_path=stale_root / "input" / "timestamps.json",
+        ),
+    )
+    write_json(
+        run_paths.benchmark_inputs_path,
+        PreparedBenchmarkInputs(
+            reference_trajectories=[
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.GROUND_TRUTH,
+                    path=stale_root / "benchmark" / "ground_truth.tum",
+                    metadata_path=stale_root / "benchmark" / "ground_truth.metadata.json",
+                    target_frame="world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ]
+        ),
+    )
+    run_paths.trajectory_path.parent.mkdir(parents=True)
+    run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+
+    results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
+
+    source_output = results[StageKey.SOURCE].payload
+    assert source_output.sequence_manifest.intrinsics_path == run_paths.input_intrinsics_path
+    assert source_output.sequence_manifest.rotation_metadata_path == run_paths.input_rotation_metadata_path
+    assert source_output.sequence_manifest.timestamps_path == run_paths.input_timestamps_path
+    reference = source_output.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
+    assert reference is not None
+    assert reference.path == run_paths.artifact_root / "benchmark" / "ground_truth.tum"
+    assert reference.metadata_path == run_paths.artifact_root / "benchmark" / "ground_truth.metadata.json"
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:
