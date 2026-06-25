@@ -711,6 +711,92 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
     assert packet.T_world_camera.tx == pytest.approx(0.0, abs=1e-9)
 
 
+def test_advio_normalized_entry_uses_selected_provider_for_packet_poses(tmp_path: Path) -> None:
+    sequence_dir = _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
+    _write_pose_csv_rows(
+        sequence_dir / "pixel" / "arcore.csv",
+        rows=(
+            (0.0, 1.0, 2.0, 3.0),
+            (1.0 / 15.0, 1.3, 2.2, 3.4),
+            (2.0 / 15.0, 1.9, 2.7, 4.4),
+            (0.2, 2.7, 3.3, 5.8),
+        ),
+    )
+    path_config = PathConfig(root=tmp_path)
+    source_config = AdvioSourceConfig(
+        sequence_id="advio-15",
+        target_fps=15.0,
+        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.ARCORE),
+    )
+
+    entry = normalize_dataset_entry(
+        dataset_id=DatasetId.ADVIO,
+        path_config=path_config,
+        service=AdvioDatasetService(path_config),
+        source_config=source_config,
+    )
+    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    observation_ref = benchmark_inputs["observation_sequences"][0]
+    observation_index = ObservationSequenceIndex.model_validate_json(
+        Path(observation_ref["index_path"]).read_text(encoding="utf-8")
+    )
+    registered_refs = {
+        trajectory["source"]: trajectory
+        for trajectory in benchmark_inputs["reference_trajectories"]
+        if trajectory["coordinate_status"] == "registered"
+    }
+    arcore_trajectory = load_tum_trajectory(Path(registered_refs["arcore"]["path"]))
+    ground_truth_trajectory = load_tum_trajectory(Path(registered_refs["ground_truth"]["path"]))
+    from prml_vslam.sources.datasets.advio.advio_fixedpoints import advio_frame_transform_from_pose
+
+    row = observation_index.rows[1]
+    assert row.T_world_camera is not None
+    expected_arcore = advio_frame_transform_from_pose(
+        np.asarray(arcore_trajectory.poses_se3[1], dtype=np.float64),
+        target_frame="advio_fixedpoint_common_start_local",
+    )
+    expected_ground_truth = advio_frame_transform_from_pose(
+        np.asarray(ground_truth_trajectory.poses_se3[1], dtype=np.float64),
+        target_frame="advio_fixedpoint_common_start_local",
+    )
+
+    assert row.provenance.pose_source == "arcore"
+    assert row.provenance.world_frame == "advio_fixedpoint_common_start_local"
+    assert np.allclose(row.T_world_camera.as_matrix(), expected_arcore.as_matrix(), atol=1e-9)
+    assert not np.allclose(row.T_world_camera.as_matrix(), expected_ground_truth.as_matrix(), atol=1e-6)
+
+
+def test_advio_normalized_entry_requires_selected_provider_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15, num_frames=4, fps=15.0)
+    path_config = PathConfig(root=tmp_path)
+    source_config = AdvioSourceConfig(
+        sequence_id="advio-15",
+        target_fps=15.0,
+        dataset_serving=AdvioServingConfig(pose_source=AdvioPoseSource.ARCORE),
+    )
+    from prml_vslam.sources.datasets.advio import advio_fixedpoints
+
+    original_estimate = advio_fixedpoints.estimate_advio_fixedpoint_registration
+
+    def fail_selected_provider(*args, **kwargs):
+        if kwargs["provider_source"] is ReferenceSource.ARCORE:
+            raise ValueError("synthetic arcore registration failure")
+        return original_estimate(*args, **kwargs)
+
+    monkeypatch.setattr(advio_fixedpoints, "estimate_advio_fixedpoint_registration", fail_selected_provider)
+
+    with pytest.raises(RuntimeError, match="arcore ADVIO fixedpoint registration failed"):
+        normalize_dataset_entry(
+            dataset_id=DatasetId.ADVIO,
+            path_config=path_config,
+            service=AdvioDatasetService(path_config),
+            source_config=source_config,
+        )
+
+
 def test_advio_normalized_entry_rejects_raw_sidecars_under_entry_root(tmp_path: Path) -> None:
     _write_advio_sequence(tmp_path / ".data" / "advio", sequence_id=15)
     path_config = PathConfig(root=tmp_path)
