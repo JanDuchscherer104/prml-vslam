@@ -2,30 +2,28 @@
 
 = Alignment and Evaluation Protocol
 
-Evaluation begins with frame semantics. The repository uses an RDF camera convention for normalized
-observations, and a camera pose maps camera-frame coordinates into the selected world frame. For a
-depth pixel with image coordinates $(u_j, v_j)$, depth $z_j$ in meters, and intrinsic matrix $K$,
-the camera-frame point is obtained by pinhole backprojection:
+Evaluation starts with frame labels. Normalized observations use an RDF camera convention, and a
+camera pose maps camera-frame coordinates into the selected world frame. For a depth pixel
+$(u_j, v_j)$, depth $z_j$ in meters, and intrinsic matrix $K$, pinhole backprojection gives
 
 $
   bold(q)_j = z_j bold(K)^(-1) mat(u_j; v_j; 1).
 $
 
-If a pose $bold(T)^"w"_"c"$ is available, the point is placed in the selected world frame by
-$bold(p)_j = bold(T)^"w"_"c" bold(q)_j$. The same convention is used when method-predicted depth is
-converted into a point cloud or when RGB-D reference data are converted into diagnostic geometry.
-The resulting cloud is meaningful only together with its frame label, depth units, intrinsics, and
-pose provenance.
+If $bold(T)^"w"_"c"$ is available, the world point is
+$bold(p)_j = bold(T)^"w"_"c" bold(q)_j$. The same equation is used for method-predicted depth and
+RGB-D reference depth. The cloud is interpretable only with its frame label, depth units,
+intrinsics, and pose provenance.
 
-This convention is intentionally close to the ViSTA-SLAM adapter boundary. ViSTA's upstream
-visualization logs pinhole cameras in RDF coordinates, matching Rerun's documented RDF camera
-convention, and exposes dense pointmaps as camera-local geometry under a camera pose; the benchmark
-keeps that separation instead of baking a viewer transform into the method output
+This matches the ViSTA-SLAM adapter boundary. ViSTA's upstream visualization logs pinhole cameras in
+RDF coordinates, matching Rerun's documented RDF camera convention, and exposes dense pointmaps as
+camera-local geometry under a camera pose; the benchmark keeps that separation instead of baking a
+viewer transform into the method output
 @zhang2026vistaslam @zhang2026vistaslamRepo @rerun2026. The same pinhole equation is used for
 source-prepared TUM RGB-D and Record3D reference clouds and for depth-backed method clouds.
 
 Reference clouds are sampled in two stages. First, only pixels on the configured depth stride are
-unprojected and non-finite or non-positive depths are rejected:
+unprojected, and non-finite or non-positive depths are rejected:
 
 $
   cal(Omega)_d =
@@ -52,13 +50,12 @@ $
   P_M = { bold(p)_i | i in cal(I) } .
 $
 
-This cap is part of persisted benchmark preprocessing because it controls reference-cloud size after
-all selected observations have contributed. Rerun point-cloud decimation is a separate visualization
-policy and does not define the metric artifact.
+This cap controls persisted reference-cloud size after all selected observations have contributed.
+Rerun decimation is only a visualization policy.
 
 Monocular trajectories are generally observable only up to a similarity transform. After timestamp
-association, the standard trajectory placement estimates a Sim(3) transform that maps estimated
-positions into the reference trajectory:
+association, standard trajectory placement estimates the Sim(3) map from estimated positions to the
+reference trajectory:
 
 $
   bold(S)^* =
@@ -73,10 +70,9 @@ $
 $
 
 This least-squares formulation follows Umeyama alignment @umeyama1991least. The alignment choice is
-not a cosmetic detail: changing from timestamp-only absolute pose error to Sim(3)-aligned absolute
-trajectory error changes the scientific question from metric-scale recovery to trajectory-shape
-agreement. The trajectory-evaluation literature therefore recommends reporting the alignment
-transformation type together with the error metric @zhang2018trajectory.
+not cosmetic: timestamp-only APE measures metric-scale recovery, whereas Sim(3)-aligned APE measures
+trajectory-shape agreement. Trajectory-evaluation practice therefore reports the transformation
+type with the error metric @zhang2018trajectory.
 
 A trajectory pair is admissible only after timestamp association, pose-relation agreement, and
 target-frame agreement have been established from metadata. Let $bold(T)_i$ and
@@ -116,8 +112,8 @@ same statistic as the APE table. These definitions match common visual-odometry 
 and the `evo` tool family used by many SLAM studies @zhang2018trajectory @grupp2017evo.
 
 For mobile-provider trajectories with an observable vertical axis, an unconstrained 3D rotation can
-be too permissive. The framework therefore distinguishes full Sim(3) alignment from a gravity-aware
-variant that estimates scale, yaw, and translation while preserving the known up direction:
+be too permissive. We therefore distinguish full Sim(3) alignment from a gravity-aware variant that
+estimates scale, yaw, and translation while preserving the known up direction:
 
 $
   bold(S)^* =
@@ -131,15 +127,14 @@ $
   bold(R)_"yaw" bold(u) = bold(u).
 $
 
-This constraint is especially relevant for near-planar phone trajectories, where arbitrary roll or
-pitch can visually improve a trajectory overlay while violating the source's gravity semantics.
-For ADVIO datastore candidates, the fixedpoint-common-start publication already places GT, ARCore,
-and ARKit in one benchmark target frame before evaluation; post-hoc GT-aligned provider trajectories
-are diagnostic references rather than candidate trajectories.
+This constraint matters for near-planar phone trajectories: arbitrary roll or pitch can improve an
+overlay while violating gravity semantics. For ADVIO candidates, fixedpoint-common-start
+publication already places GT, ARCore, and ARKit in one target frame; post-hoc GT-aligned provider
+trajectories are diagnostic references, not candidates.
 
 Point-cloud registration is a placement diagnostic after global trajectory alignment, not a
-replacement for trajectory evaluation. Given a Sim(3)-placed method cloud $P$ and a reference cloud
-$Q$, point-to-point ICP estimates a local rigid correction:
+trajectory metric substitute. Given a Sim(3)-placed method cloud $P$ and a reference cloud $Q$,
+point-to-point ICP estimates a local rigid correction:
 
 $
   bold(T)^* =
@@ -156,10 +151,9 @@ $
 $
 
 The threshold affects fitness, inlier root-mean-square error, and any later dense-geometry score, so
-it is part of the metric record @besl1992method @zhou2018open3d. The framework can persist Sim(3)
-trajectory alignment, aligned trajectories, Sim(3)-placed point clouds, and ICP placement metadata.
-Dense-cloud accuracy, completeness, Chamfer distance, or F-score should be reported only after the
-dense metric runtime is validated against the same frozen experiment matrix.
+it belongs in the metric record @besl1992method @zhou2018open3d. Dense-cloud accuracy,
+completeness, Chamfer distance, or F-score should be reported only after the dense metric runtime is
+validated against the same frozen experiment matrix.
 
 #figure(
   table(

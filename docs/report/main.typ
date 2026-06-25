@@ -26,17 +26,16 @@
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
-    We present a benchmark framework for off-device uncalibrated monocular visual simultaneous
-    localization and mapping (VSLAM) on smartphone video. The framework addresses a practical
-    reproducibility gap: recent learned dense SLAM methods can process monocular image streams with
-    weak or absent calibration assumptions, but their outputs are difficult to compare unless data
-    ingestion, coordinate frames, scale alignment, dense geometry, and provenance are made explicit.
-    The system normalizes ADVIO, TUM RGB-D, and Record3D sources into a common observation contract,
-    integrates ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map through method adapters, and persists the
-    artifacts needed to interpret trajectories and point clouds. The paper therefore contributes a
-    framework description rather than a leaderboard: it specifies source and method contracts,
-    transform semantics, similarity and gravity-aware alignment, local point-cloud registration, and
-    the validation gates required before quantitative results are reported.
+    We describe a reproducible benchmark substrate for off-device uncalibrated monocular visual
+    simultaneous localization and mapping (VSLAM) on smartphone video. Recent learned dense SLAM
+    systems can operate with weak calibration assumptions, but their outputs are comparable only
+    when ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
+    implementation materializes ADVIO, TUM RGB-D, and Record3D as normalized observation sequences;
+    adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, clouds, transform
+    metadata, and metric inputs. Rather than reporting a leaderboard, the paper specifies the
+    transform contract: RDF camera frames, ADVIO fixedpoint registration with common-start
+    localization, first-pose-relative RGB-D sources, Sim(3) or gravity-aware trajectory placement,
+    and ICP-based dense-geometry diagnostics.
   ],
   index-terms: (
     "VSLAM",
