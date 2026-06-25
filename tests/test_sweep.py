@@ -197,6 +197,17 @@ def test_sweep_dataset_rejects_ambiguous_sampling() -> None:
         )
 
 
+def test_sweep_dataset_rejects_stale_normalized_sampling_field() -> None:
+    with pytest.raises(ValidationError, match="normalized_target_fps"):
+        SweepDataset.model_validate(
+            {
+                "dataset_id": "tum_rgbd",
+                "sequence_id": "freiburg1_xyz",
+                "normalized_target_fps": 30.0,
+            }
+        )
+
+
 @pytest.mark.parametrize("config_type", [AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig])
 def test_dataset_source_configs_reject_ambiguous_sampling(
     config_type: type[AdvioSourceConfig] | type[Record3DDatasetSourceConfig] | type[TumRgbdSourceConfig],

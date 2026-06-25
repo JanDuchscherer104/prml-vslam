@@ -399,7 +399,7 @@ def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: 
         service = dataset_service(dataset_id, path_config)
         frame_selection = runtime_frame_selection_for_source_config(source)
         profile = normalized_runtime_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
-        entry = normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
+        entry = normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
             profile,
             frame_selection=frame_selection,
         )

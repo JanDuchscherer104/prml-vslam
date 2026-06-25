@@ -864,8 +864,10 @@ def test_advio_runtime_frame_stride_reuses_stored_normalized_profile(tmp_path: P
     )
     runtime_source = AdvioSourceConfig(sequence_id="advio-15", frame_stride=3).setup_target(path_config=path_config)
 
-    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    assert runtime_source._profile.profile_key != stored_entry.profile_key
     assert runtime_source._frame_selection == FrameSelectionConfig(frame_stride=3)
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert runtime_source._runtime_entry().profile_key == stored_entry.profile_key
     with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
         manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
 
@@ -890,7 +892,9 @@ def test_advio_runtime_target_fps_reuses_stored_normalized_profile(tmp_path: Pat
     )
     runtime_source = AdvioSourceConfig(sequence_id="advio-15", target_fps=5.0).setup_target(path_config=path_config)
 
-    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    assert runtime_source._profile.profile_key != stored_entry.profile_key
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert runtime_source._runtime_entry().profile_key == stored_entry.profile_key
     with pytest.warns(RuntimeWarning, match="downsampled normalized observations"):
         manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
 
@@ -915,7 +919,9 @@ def test_advio_runtime_target_fps_above_store_warns_and_uses_all_stored_frames(t
     )
     runtime_source = AdvioSourceConfig(sequence_id="advio-15", target_fps=30.0).setup_target(path_config=path_config)
 
-    assert runtime_source._profile.profile_key == stored_entry.profile_key
+    assert runtime_source._profile.profile_key != stored_entry.profile_key
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert runtime_source._runtime_entry().profile_key == stored_entry.profile_key
     with pytest.warns(RuntimeWarning, match="would require upsampling"):
         manifest = runtime_source.prepare_sequence_manifest(tmp_path / "run" / "input")
 

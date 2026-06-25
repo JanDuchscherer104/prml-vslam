@@ -6,7 +6,7 @@ from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManife
 from prml_vslam.sources.replay import ObservationStream, ReplayMode
 
 from .contracts import FrameSelectionConfig
-from .normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
+from .normalized_store import NormalizedDatasetEntry, NormalizedDatasetProfile, NormalizedDatasetStore
 
 
 class NormalizedDatasetRuntimeSource:
@@ -26,21 +26,30 @@ class NormalizedDatasetRuntimeSource:
         self._profile = profile
         self._frame_selection = frame_selection
         self._replay_mode = replay_mode
+        self._entry: NormalizedDatasetEntry | None = None
 
     @property
     def label(self) -> str:
         return self._label
 
+    def _runtime_entry(self) -> NormalizedDatasetEntry:
+        if self._entry is None:
+            self._entry = self._store.select_entry_for_runtime(
+                self._profile,
+                frame_selection=self._frame_selection,
+            )
+        return self._entry
+
     def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
-        entry = self._store.load_entry_for_runtime(self._profile, frame_selection=self._frame_selection)
+        entry = self._runtime_entry()
         return self._store.read_sequence_manifest(entry, frame_selection=self._frame_selection, output_dir=output_dir)
 
     def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
-        entry = self._store.load_entry_for_runtime(self._profile, frame_selection=self._frame_selection)
+        entry = self._runtime_entry()
         return self._store.read_benchmark_inputs(entry, frame_selection=self._frame_selection, output_dir=output_dir)
 
     def open_stream(self, *, loop: bool) -> ObservationStream:
-        entry = self._store.load_entry_for_runtime(self._profile, frame_selection=self._frame_selection)
+        entry = self._runtime_entry()
         return self._store.open_stream(
             entry,
             frame_selection=self._frame_selection,

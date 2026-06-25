@@ -97,9 +97,10 @@ def _source_reference_cloud_available(
             service=service,
             source_config=source_backend,
         )
-        entry = normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
+        entry = normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
             profile,
             frame_selection=frame_selection,
+            prefer_reference_cloud=True,
         )
         benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
             entry.benchmark_inputs_path.read_text(encoding="utf-8")

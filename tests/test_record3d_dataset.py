@@ -566,7 +566,7 @@ def test_normalized_store_ignores_superseded_stale_schema_entries(tmp_path: Path
     assert issues[0].profile_key == "legacy-profile"
 
 
-def test_normalized_store_rejects_stored_sampling_profile_mismatch(tmp_path: Path) -> None:
+def test_normalized_store_selects_entry_with_stored_sampling_profile_mismatch(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
@@ -604,6 +604,14 @@ def test_normalized_store_rejects_stored_sampling_profile_mismatch(tmp_path: Pat
         store.load_entry(requested_profile)
     with pytest.raises(FileNotFoundError):
         store.load_entry_for_runtime(requested_profile, frame_selection=FrameSelectionConfig(target_fps=5.0))
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert (
+            store.select_entry_for_runtime(
+                requested_profile,
+                frame_selection=FrameSelectionConfig(target_fps=5.0),
+            ).root
+            == stored_entry.root
+        )
     assert (
         store.load_entry_by_key_for_runtime(
             sequence_id="synthetic",
@@ -614,7 +622,7 @@ def test_normalized_store_rejects_stored_sampling_profile_mismatch(tmp_path: Pat
     )
 
 
-def test_normalized_store_rejects_requested_sampling_profile_mismatch(tmp_path: Path) -> None:
+def test_normalized_store_selects_entry_with_requested_sampling_profile_mismatch(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
@@ -652,6 +660,14 @@ def test_normalized_store_rejects_requested_sampling_profile_mismatch(tmp_path: 
         store.load_entry(requested_profile)
     with pytest.raises(FileNotFoundError):
         store.load_entry_for_runtime(requested_profile, frame_selection=FrameSelectionConfig())
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert (
+            store.select_entry_for_runtime(
+                requested_profile,
+                frame_selection=FrameSelectionConfig(),
+            ).root
+            == stored_entry.root
+        )
     assert (
         store.load_entry_by_key_for_runtime(
             sequence_id="synthetic",
@@ -672,10 +688,30 @@ def test_normalized_store_rejects_byte_affecting_profile_mismatch(tmp_path: Path
     )
 
     with pytest.raises(FileNotFoundError):
-        fixture.store.load_entry_for_runtime(requested_profile)
+        fixture.store.select_entry_for_runtime(requested_profile)
 
 
-def test_normalized_store_target_fps_requires_exact_normalized_profile(tmp_path: Path) -> None:
+def test_normalized_store_selects_entry_with_reference_cloud_profile_mismatch(tmp_path: Path) -> None:
+    fixture = _create_record3d_normalized_entry(tmp_path)
+    requested_profile = NormalizedDatasetProfile(
+        dataset_id=fixture.profile.dataset_id,
+        sequence_id=fixture.profile.sequence_id,
+        source_id=fixture.profile.source_id,
+        source_profile=fixture.profile.source_profile.as_dict()
+        | {"reference_cloud": ReferenceCloudConfig(min_confidence=1).model_dump(mode="json")},
+    )
+
+    with pytest.warns(RuntimeWarning, match="reference_cloud"):
+        entry = fixture.store.select_entry_for_runtime(
+            requested_profile,
+            frame_selection=FrameSelectionConfig(),
+            prefer_reference_cloud=True,
+        )
+
+    assert entry.root == fixture.entry.root
+
+
+def test_normalized_store_target_fps_selector_prefers_dense_compatible_entry(tmp_path: Path) -> None:
     _write_record3d_archive(tmp_path / ".data" / "record3d")
     path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
     service = Record3DDatasetService(path_config)
@@ -713,6 +749,8 @@ def test_normalized_store_target_fps_requires_exact_normalized_profile(tmp_path:
 
     with pytest.raises(FileNotFoundError):
         store.load_entry_for_runtime(requested_profile)
+    with pytest.warns(RuntimeWarning, match="run-local profile differences"):
+        assert store.select_entry_for_runtime(requested_profile).profile_key == stored_entries[5.0].profile_key
     assert (
         store.load_entry_by_key_for_runtime(
             sequence_id="synthetic",

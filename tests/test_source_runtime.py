@@ -949,15 +949,15 @@ def test_dataset_source_configs_construct_dataset_adapters(tmp_path: Path, monke
     assert tum_source._profile.dataset_id is DatasetId.TUM_RGBD
     assert tum_source._profile.sequence_id == "resolved-freiburg1_room"
     assert tum_source._profile.source_profile["frame_stride"] == 1
-    assert tum_source._profile.source_profile["target_fps"] == 30.0
+    assert tum_source._profile.source_profile["target_fps"] == 15.0
     assert advio_source._frame_selection == FrameSelectionConfig(frame_stride=3)
     assert advio_source._replay_mode is ReplayMode.FAST_AS_POSSIBLE
     assert advio_source._store.dataset_id is DatasetId.ADVIO
     assert advio_source._store.store_root == (tmp_path / ".data" / "vslam-datastore" / "advio").resolve()
     assert advio_source._profile.dataset_id is DatasetId.ADVIO
     assert advio_source._profile.sequence_id == "advio-20"
-    assert advio_source._profile.source_profile["frame_stride"] == 1
-    assert advio_source._profile.source_profile["target_fps"] == 15.0
+    assert advio_source._profile.source_profile["frame_stride"] == 3
+    assert advio_source._profile.source_profile["target_fps"] is None
 
 
 def test_advio_normalized_profile_includes_store_sampling_for_normalization() -> None:
@@ -993,7 +993,7 @@ def test_advio_normalized_profile_includes_store_sampling_for_normalization() ->
     assert "source_id" not in target_fps_profile.source_profile
 
 
-def test_advio_runtime_sampling_does_not_change_normalized_profile_identity() -> None:
+def test_advio_runtime_profile_carries_requested_sampling_for_selector() -> None:
     base_source = AdvioSourceConfig(sequence_id="advio-20")
     sampled_source = AdvioSourceConfig(
         sequence_id="advio-20",
@@ -1012,9 +1012,9 @@ def test_advio_runtime_sampling_does_not_change_normalized_profile_identity() ->
         source_config=sampled_source,
     )
 
-    assert sampled_profile.profile_key == base_profile.profile_key
-    assert sampled_profile.source_profile["frame_stride"] == 1
-    assert sampled_profile.source_profile["target_fps"] == 15.0
+    assert sampled_profile.profile_key != base_profile.profile_key
+    assert sampled_profile.source_profile["frame_stride"] == 3
+    assert sampled_profile.source_profile["target_fps"] is None
 
 
 def test_target_fps_below_native_uses_downsampling_stride() -> None:

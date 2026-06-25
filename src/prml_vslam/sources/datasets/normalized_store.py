@@ -85,6 +85,7 @@ _ADVIO_LOCAL_FIRST_POSE_FRAMES = {
     ReferenceSource.ARCORE: "advio_arcore_world_local_first_pose",
     ReferenceSource.ARKIT: "advio_arkit_world_local_first_pose",
 }
+_RUNTIME_SOFT_SOURCE_PROFILE_KEYS = frozenset({"frame_stride", "target_fps", "reference_cloud", "replay_mode"})
 
 
 class NormalizedSourceProfile(RootModel[dict[str, Any]]):
@@ -224,6 +225,25 @@ class NormalizedDatasetStore:
         _validate_read_frame_selection(entry, frame_selection)
         return entry
 
+    def select_entry_for_runtime(
+        self,
+        profile: NormalizedDatasetProfile,
+        *,
+        frame_selection: FrameSelectionConfig | None = None,
+        prefer_reference_cloud: bool = False,
+    ) -> NormalizedDatasetEntry:
+        """Select a current runtime entry, allowing only run-local soft fields to differ."""
+        candidates = [entry for entry in self.summary(strict=False) if _runtime_profiles_match(profile, entry.profile)]
+        if not candidates:
+            raise FileNotFoundError(self.missing_runtime_entry_message(profile))
+        entry = min(
+            candidates,
+            key=lambda candidate: _runtime_selection_sort_key(candidate, prefer_reference_cloud=prefer_reference_cloud),
+        )
+        _validate_read_frame_selection(entry, frame_selection)
+        _warn_runtime_profile_soft_mismatch(requested=profile, selected=entry)
+        return entry
+
     def load_entry_by_key_for_runtime(
         self,
         *,
@@ -261,6 +281,17 @@ class NormalizedDatasetStore:
             f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
             f"profile_key={profile.profile_key}. Run: prml-vslam dataset normalize "
             f"--dataset {profile.dataset_id.value} --sequence {profile.sequence_id}"
+        )
+
+    def missing_runtime_entry_message(self, profile: NormalizedDatasetProfile) -> str:
+        """Return an actionable compatible-runtime-entry diagnostic."""
+        return (
+            "Missing compatible normalized runtime entry "
+            f"dataset_id={profile.dataset_id.value} sequence_id={profile.sequence_id} "
+            f"source_id={profile.source_id} requested_profile_key={profile.profile_key}. "
+            "Build a normalized datastore entry for the same observation-affecting profile. "
+            f"Run: prml-vslam dataset normalize --dataset {profile.dataset_id.value} "
+            f"--sequence {profile.sequence_id}"
         )
 
     def create_entry(
@@ -1007,6 +1038,87 @@ def _duration_s_from_ns(timestamps_ns: list[int]) -> float:
     if len(timestamps_ns) < 2:
         return 0.0
     return float((timestamps_ns[-1] - timestamps_ns[0]) / 1e9)
+
+
+def _runtime_profiles_match(
+    requested: NormalizedDatasetProfile,
+    stored: NormalizedDatasetProfile,
+) -> bool:
+    return _runtime_identity_payload(requested) == _runtime_identity_payload(stored)
+
+
+def _runtime_identity_payload(profile: NormalizedDatasetProfile) -> JsonObject:
+    payload = cast(JsonObject, profile.model_dump(mode="json"))
+    source_profile = dict(profile.source_profile.as_dict())
+    for key in _RUNTIME_SOFT_SOURCE_PROFILE_KEYS:
+        source_profile.pop(key, None)
+    payload["source_profile"] = source_profile
+    return payload
+
+
+def _runtime_selection_sort_key(
+    entry: NormalizedDatasetEntry,
+    *,
+    prefer_reference_cloud: bool,
+) -> tuple[int, float, int, str]:
+    timestamps_ns = _entry_runtime_timestamps_ns(entry)
+    fps = _mean_fps(len(timestamps_ns), _duration_s_from_ns(timestamps_ns))
+    reference_cloud_rank = 0 if prefer_reference_cloud and _entry_has_existing_reference_cloud(entry) else 1
+    return (
+        reference_cloud_rank,
+        -fps,
+        -len(timestamps_ns),
+        entry.profile_key,
+    )
+
+
+def _entry_runtime_timestamps_ns(entry: NormalizedDatasetEntry) -> list[int]:
+    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    )
+    observation_sequence = benchmark_inputs.default_observation_sequence()
+    if observation_sequence is not None:
+        return [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
+    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    if manifest.timestamps_path is None:
+        return []
+    return load_timestamps_ns(manifest.timestamps_path)
+
+
+def _entry_has_existing_reference_cloud(entry: NormalizedDatasetEntry) -> bool:
+    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    )
+    return any(ref.path.exists() and ref.metadata_path.exists() for ref in benchmark_inputs.reference_clouds)
+
+
+def _warn_runtime_profile_soft_mismatch(
+    *,
+    requested: NormalizedDatasetProfile,
+    selected: NormalizedDatasetEntry,
+) -> None:
+    requested_profile = requested.source_profile.as_dict()
+    selected_profile = selected.profile.source_profile.as_dict()
+    mismatches = {
+        key: (
+            selected_profile.get(key),
+            requested_profile.get(key),
+        )
+        for key in sorted(_RUNTIME_SOFT_SOURCE_PROFILE_KEYS)
+        if selected_profile.get(key) != requested_profile.get(key)
+    }
+    if not mismatches:
+        return
+    details = ", ".join(
+        f"{key}: stored={stored!r}, requested={requested!r}" for key, (stored, requested) in mismatches.items()
+    )
+    warnings.warn(
+        "Selected compatible normalized runtime entry with run-local profile differences: "
+        f"selected_profile_key={selected.profile_key}; {details}. Runtime sampling and cloud stages use "
+        "the selected stored observations/artifacts.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 def _duration_s(timestamps_s: np.ndarray) -> float:

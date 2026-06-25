@@ -854,7 +854,7 @@ def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathCo
                 service=service,
                 source_config=source_backend,
             )
-            normalized_store_for_service(dataset_id, path_config).load_entry_for_runtime(
+            normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
                 profile,
                 frame_selection=frame_selection,
             )
@@ -863,7 +863,7 @@ def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathCo
     if failures:
         joined = "\n- ".join(failures)
         raise FileNotFoundError(
-            "Sweep normalized datastore preflight failed. Build the missing exact entries first with "
+            "Sweep normalized datastore preflight failed. Build compatible normalized runtime entries with "
             "`prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml`.\n"
             f"- {joined}"
         )
