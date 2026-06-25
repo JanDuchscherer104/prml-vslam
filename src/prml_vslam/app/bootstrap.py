@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
+from prml_vslam.eval import DenseCloudEvaluationService
 from prml_vslam.eval.query import TrajectoryEvaluationQueryService
 from prml_vslam.pipeline.contracts.runtime import RunState
 from prml_vslam.pipeline.run_service import RunService
@@ -37,6 +38,7 @@ class AppContext:
     tum_rgbd_service: TumRgbdDatasetService
     record3d_dataset_service: Record3DDatasetService
     trajectory_evaluation_query: TrajectoryEvaluationQueryService
+    cloud_evaluation_service: DenseCloudEvaluationService
     record3d_runtime: Record3DStreamRuntimeController
     advio_runtime: AdvioPreviewRuntimeController
     run_service: RunService
@@ -63,6 +65,7 @@ def build_context() -> AppContext:
         tum_rgbd_service=TumRgbdDatasetService(path_config),
         record3d_dataset_service=Record3DDatasetService(path_config),
         trajectory_evaluation_query=TrajectoryEvaluationQueryService(path_config),
+        cloud_evaluation_service=DenseCloudEvaluationService(),
         record3d_runtime=store.load_record3d_runtime(),
         advio_runtime=store.load_advio_runtime(),
         run_service=store.load_run_service(path_config=path_config),

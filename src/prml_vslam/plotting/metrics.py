@@ -11,10 +11,11 @@ import plotly.graph_objects as go
 from evo.core import metrics
 from plotly.subplots import make_subplots
 
+from prml_vslam.eval.contracts import CloudMetricId, DenseCloudEvaluationArtifact
 from prml_vslam.eval.dataset_aggregation import CoverageMatrix, HeatmapData, PerSequenceRow
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 
-from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
+from .theme import BLUE, DEFAULT_COLORS, GREEN, ORANGE, PURPLE, apply_standard_xy_layout
 from .trajectories import _add_xy_trajectory_trace, _apply_standard_trajectory_xy_layout
 
 _RMSE_METRIC_FACETS = [
@@ -333,3 +334,102 @@ def build_violin_by_method(rows: list[PerSequenceRow]) -> go.Figure:
         violingap=0.3,
     )
     return figure
+
+
+def build_cloud_distance_metrics_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build grouped bars for distance-valued point-cloud metrics."""
+    metric_specs = (
+        (CloudMetricId.ACCURACY, "Accuracy"),
+        (CloudMetricId.COMPLETENESS, "Completeness"),
+        (CloudMetricId.CHAMFER, "Chamfer"),
+    )
+    figure = go.Figure()
+    colors = (BLUE, ORANGE, GREEN)
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    for (metric_id, label), color in zip(metric_specs, colors, strict=True):
+        figure.add_bar(
+            x=estimate_labels,
+            y=[estimate.metrics.get(metric_id) for estimate in artifact.estimates],
+            name=label,
+            marker_color=color,
+            hovertemplate="%{x}<br>%{fullData.name}: %{y:.4f} m<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Point-Cloud Distance Metrics",
+        xaxis_title="Estimate",
+        yaxis_title="Distance (m)",
+    )
+    figure.update_layout(barmode="group")
+    figure.update_yaxes(rangemode="tozero", showgrid=True)
+    return figure
+
+
+def build_cloud_quality_metrics_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build bars for thresholded F1 and ICP fitness scores."""
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    figure = go.Figure()
+    figure.add_bar(
+        x=estimate_labels,
+        y=[estimate.metrics.get(CloudMetricId.F1) for estimate in artifact.estimates],
+        name=f"F1 @ {artifact.f1_threshold_m:.2f} m",
+        marker_color=PURPLE,
+        hovertemplate="%{x}<br>%{fullData.name}: %{y:.3f}<extra></extra>",
+    )
+    icp_fitness = [estimate.metrics.get(CloudMetricId.ICP_FITNESS) for estimate in artifact.estimates]
+    if any(value is not None for value in icp_fitness):
+        figure.add_bar(
+            x=estimate_labels,
+            y=icp_fitness,
+            name="ICP fitness",
+            marker_color=GREEN,
+            hovertemplate="%{x}<br>%{fullData.name}: %{y:.3f}<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Point-Cloud Quality Scores",
+        xaxis_title="Estimate",
+        yaxis_title="Score",
+    )
+    figure.update_layout(barmode="group")
+    figure.update_yaxes(range=[0.0, 1.0], showgrid=True)
+    return figure
+
+
+def build_cloud_point_count_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build a compact point-count comparison for evaluated clouds."""
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    figure = go.Figure(
+        go.Bar(
+            x=estimate_labels,
+            y=[estimate.estimate_point_count for estimate in artifact.estimates],
+            name="Estimate points",
+            marker_color=BLUE,
+            hovertemplate="%{x}<br>Estimate points: %{y:,}<extra></extra>",
+        )
+    )
+    if artifact.estimates:
+        figure.add_scatter(
+            x=estimate_labels,
+            y=[artifact.estimates[0].reference_point_count] * len(estimate_labels),
+            mode="lines+markers",
+            name="Reference points",
+            line={"color": ORANGE, "width": 2.0, "dash": "dot"},
+            hovertemplate="Reference points: %{y:,}<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Evaluated Point Counts",
+        xaxis_title="Estimate",
+        yaxis_title="Points",
+    )
+    figure.update_yaxes(rangemode="tozero", showgrid=True)
+    return figure
+
+
+def _estimate_label(value: str) -> str:
+    return {
+        "sim3": "Sim3",
+        "sim3_icp": "Sim3 + ICP",
+        "reconstruction": "Reconstruction",
+    }.get(value, value.replace("_", " ").title())

@@ -1,8 +1,9 @@
-"""Post-run trajectory evaluation discovery and aggregation helpers.
+"""Read-only query helpers for persisted evaluation artifacts.
 
-This module is the read-only counterpart to the metric computation service. It
-discovers runs, loads persisted trajectory evaluation manifests, and prepares
-rows for app review without invoking evo or mutating run artifacts.
+The service layer owns metric computation. This module discovers runs, loads
+persisted trajectory evaluation manifests, and turns trajectory and dense-cloud
+evaluation artifacts into long-form rows that app, reporting, and notebooks can
+aggregate without knowing each JSON schema.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 from pydantic import Field
 
+from prml_vslam.eval.contracts import CloudMetricId, DenseCloudEvaluationArtifact
 from prml_vslam.eval.dataset_aggregation import metric_frame_to_rows
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
@@ -116,6 +118,55 @@ class RunTrajectoryEvaluation(BaseData):
 
     skipped_metric_count: int = 0
     """Number of non-primary metrics that were skipped during evaluation of this run."""
+
+
+class EvaluationMetricRow(BaseData):
+    """One long-form metric row from a persisted non-trajectory evaluation artifact."""
+
+    evaluation_kind: str
+    """High-level evaluation family, such as ``point_cloud``."""
+
+    metric_id: str
+    """Canonical metric identifier."""
+
+    value: float
+    """Scalar metric value."""
+
+    unit: str = ""
+    """Metric unit, when applicable."""
+
+    source_artifact_path: Path
+    """Metrics JSON artifact that produced this row."""
+
+    reference_artifact_path: Path | None = None
+    """Reference artifact used by the metric."""
+
+    estimate_artifact_path: Path | None = None
+    """Estimate artifact used by the metric."""
+
+    estimate_kind: str | None = None
+    """Point-cloud estimate role when the metric is cloud-specific."""
+
+    threshold_m: float | None = None
+    """Distance threshold in meters for thresholded metrics such as F1."""
+
+    context: dict[str, str | int | float] = Field(default_factory=dict)
+    """Optional caller-supplied identifiers such as run, sequence, or method."""
+
+    def table_row(self) -> dict[str, str | int | float | None]:
+        """Return a Streamlit/dataframe-friendly row."""
+        return {
+            **self.context,
+            "Evaluation": self.evaluation_kind,
+            "Estimate": self.estimate_kind,
+            "Metric": self.metric_id,
+            "Value": self.value,
+            "Unit": self.unit,
+            "Threshold (m)": self.threshold_m,
+            "Reference": self.reference_artifact_path.as_posix() if self.reference_artifact_path else None,
+            "Estimate Artifact": self.estimate_artifact_path.as_posix() if self.estimate_artifact_path else None,
+            "Metrics Artifact": self.source_artifact_path.as_posix(),
+        }
 
 
 class TrajectoryEvaluationQueryService:
@@ -297,6 +348,59 @@ class TrajectoryEvaluationQueryService:
             return np.asarray(payload["values"], dtype=np.float64)
 
 
+def dense_cloud_metric_rows(
+    artifact: DenseCloudEvaluationArtifact,
+    *,
+    context: dict[str, str | int | float] | None = None,
+) -> list[EvaluationMetricRow]:
+    """Return long-form rows for one dense-cloud evaluation artifact."""
+    rows: list[EvaluationMetricRow] = []
+    row_context = context or {}
+    for estimate in artifact.estimates:
+        for metric_id, value in estimate.metrics.items():
+            rows.append(
+                EvaluationMetricRow(
+                    evaluation_kind="point_cloud",
+                    metric_id=metric_id.value,
+                    value=value,
+                    unit=_cloud_metric_unit(metric_id),
+                    source_artifact_path=artifact.path,
+                    reference_artifact_path=artifact.reference_cloud_path,
+                    estimate_artifact_path=estimate.estimate_cloud_path,
+                    estimate_kind=estimate.estimate_kind.value,
+                    threshold_m=artifact.f1_threshold_m if metric_id is CloudMetricId.F1 else None,
+                    context=row_context,
+                )
+            )
+        rows.extend(
+            [
+                EvaluationMetricRow(
+                    evaluation_kind="point_cloud",
+                    metric_id="reference_point_count",
+                    value=float(estimate.reference_point_count),
+                    unit="count",
+                    source_artifact_path=artifact.path,
+                    reference_artifact_path=artifact.reference_cloud_path,
+                    estimate_artifact_path=estimate.estimate_cloud_path,
+                    estimate_kind=estimate.estimate_kind.value,
+                    context=row_context,
+                ),
+                EvaluationMetricRow(
+                    evaluation_kind="point_cloud",
+                    metric_id="estimate_point_count",
+                    value=float(estimate.estimate_point_count),
+                    unit="count",
+                    source_artifact_path=artifact.path,
+                    reference_artifact_path=artifact.reference_cloud_path,
+                    estimate_artifact_path=estimate.estimate_cloud_path,
+                    estimate_kind=estimate.estimate_kind.value,
+                    context=row_context,
+                ),
+            ]
+        )
+    return rows
+
+
 def _matches_dataset(sequence_manifest: SequenceManifest | None, dataset: DatasetId) -> bool:
     """Return True when the manifest's dataset_id matches or is absent."""
     return sequence_manifest is not None and (
@@ -305,14 +409,7 @@ def _matches_dataset(sequence_manifest: SequenceManifest | None, dataset: Datase
 
 
 def _resolve_error_series_path(raw: str | None, csv_path: Path) -> Path | None:
-    """Resolve an error-series path stored in a metrics CSV row.
-
-    Handles three cases:
-    - Empty / missing: returns None.
-    - Relative path (new portable format): resolved relative to the CSV's directory.
-    - Absolute path from another machine: remapped to the local ``error_series/`` sibling
-      directory when the original absolute path does not exist.
-    """
+    """Resolve an error-series path stored in a metrics CSV row."""
     if not raw:
         return None
     p = Path(raw)
@@ -320,7 +417,6 @@ def _resolve_error_series_path(raw: str | None, csv_path: Path) -> Path | None:
         return (csv_path.parent / p).resolve()
     if p.exists():
         return p
-    # Legacy absolute path written on a different machine — remap to local error_series dir.
     return (csv_path.parent / "error_series" / p.name).resolve()
 
 
@@ -350,10 +446,20 @@ def _matches_selection(
     return dataset is None or sequence_manifest.dataset_id is None or sequence_manifest.dataset_id == dataset
 
 
+def _cloud_metric_unit(metric_id: CloudMetricId) -> str:
+    if metric_id in {CloudMetricId.ACCURACY, CloudMetricId.COMPLETENESS, CloudMetricId.CHAMFER, CloudMetricId.ICP_RMSE}:
+        return "m"
+    if metric_id in {CloudMetricId.F1, CloudMetricId.ICP_FITNESS}:
+        return "ratio"
+    return ""
+
+
 __all__ = [
     "DatasetEvaluationSelection",
     "DatasetRunCoverage",
+    "EvaluationMetricRow",
     "EvaluationSelection",
     "RunTrajectoryEvaluation",
     "TrajectoryEvaluationQueryService",
+    "dense_cloud_metric_rows",
 ]
