@@ -8,7 +8,7 @@ from threading import Event
 import numpy as np
 
 from prml_vslam.app.models import PreviewStreamState
-from prml_vslam.app.services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
+from prml_vslam.app.services import DatasetPreviewRuntimeController, Record3DStreamRuntimeController
 from prml_vslam.interfaces import CAMERA_RDF_FRAME, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.sources.datasets.advio import AdvioPoseSource
 from prml_vslam.sources.record3d.record3d import Record3DDevice, Record3DTransportId
@@ -77,7 +77,7 @@ def test_advio_preview_runtime_controller_processes_one_packet() -> None:
         packet=_packet(seq=1, timestamp_ns=1_000_000_000, arrival_timestamp_s=None),
         timeout_error="Preview stream closed.",
     )
-    controller = AdvioPreviewRuntimeController(frame_timeout_seconds=5.0)
+    controller = DatasetPreviewRuntimeController(frame_timeout_seconds=5.0)
 
     controller.start(
         sequence_id=7,

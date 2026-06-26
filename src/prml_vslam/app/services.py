@@ -20,7 +20,7 @@ from prml_vslam.sources.record3d.wifi_session import Record3DWiFiPreviewStreamCo
 from prml_vslam.sources.replay import ObservationStream
 
 from .models import (
-    AdvioPreviewSnapshot,
+    DatasetPreviewSnapshot,
     PreviewSessionSnapshot,
     PreviewStreamState,
     Record3DStreamSnapshot,
@@ -102,7 +102,7 @@ def _run_packet_stream_worker(
         )
 
 
-class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
+class DatasetPreviewRuntimeController(PacketSessionRuntime[DatasetPreviewSnapshot]):
     def __init__(
         self,
         *,
@@ -114,8 +114,8 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         self.fps_window_size = fps_window_size
         self.trajectory_window_size = trajectory_window_size
         super().__init__(
-            empty_snapshot=AdvioPreviewSnapshot,
-            stop_timeout_message="Timed out stopping the ADVIO preview worker thread.",
+            empty_snapshot=DatasetPreviewSnapshot,
+            stop_timeout_message="Timed out stopping the dataset preview worker thread.",
         )
 
     def start(
@@ -127,7 +127,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
         stream: ObservationStream,
     ) -> None:
         self.launch(
-            connecting_snapshot=AdvioPreviewSnapshot(
+            connecting_snapshot=DatasetPreviewSnapshot(
                 state=PreviewStreamState.CONNECTING,
                 sequence_id=sequence_id,
                 sequence_label=sequence_label,
@@ -154,7 +154,9 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
     ) -> None:
         first_packet_timestamp_ns: int | None = None
 
-        def _connect_snapshot(snapshot: AdvioPreviewSnapshot, active_stream: ObservationStream) -> AdvioPreviewSnapshot:
+        def _connect_snapshot(
+            snapshot: DatasetPreviewSnapshot, active_stream: ObservationStream
+        ) -> DatasetPreviewSnapshot:
             active_stream.connect()
             return snapshot.model_copy(
                 update={
@@ -178,10 +180,10 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
             )
 
         def _streaming_snapshot(
-            snapshot: AdvioPreviewSnapshot,
+            snapshot: DatasetPreviewSnapshot,
             observation: _PacketObservation,
             metrics: PacketSessionMetrics,
-        ) -> AdvioPreviewSnapshot:
+        ) -> DatasetPreviewSnapshot:
             return snapshot.model_copy(
                 update={
                     "state": PreviewStreamState.STREAMING,
@@ -194,7 +196,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
                 }
             )
 
-        def _failure_snapshot(snapshot: AdvioPreviewSnapshot, error_message: str) -> AdvioPreviewSnapshot:
+        def _failure_snapshot(snapshot: DatasetPreviewSnapshot, error_message: str) -> DatasetPreviewSnapshot:
             return snapshot.model_copy(
                 update={
                     "state": PreviewStreamState.FAILED,
@@ -215,7 +217,7 @@ class AdvioPreviewRuntimeController(PacketSessionRuntime[AdvioPreviewSnapshot]):
             read_observation=_read_observation,
             streaming_snapshot=_streaming_snapshot,
             failure_snapshot=_failure_snapshot,
-            empty_snapshot=AdvioPreviewSnapshot,
+            empty_snapshot=DatasetPreviewSnapshot,
         )
 
 
@@ -379,6 +381,6 @@ class Record3DStreamRuntimeController(PacketSessionRuntime[Record3DStreamSnapsho
 
 
 __all__ = [
-    "AdvioPreviewRuntimeController",
+    "DatasetPreviewRuntimeController",
     "Record3DStreamRuntimeController",
 ]

@@ -87,6 +87,34 @@ def trajectory_relative_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTraje
     )
 
 
+def poses_relative_to_first_pose(poses_world_camera: Sequence[FrameTransform]) -> list[FrameTransform]:
+    """Express frame-labelled camera poses relative to their first pose."""
+    if not poses_world_camera:
+        raise ValueError("First-pose normalization requires at least one camera pose.")
+    T_first_world = np.linalg.inv(poses_world_camera[0].as_matrix())
+    return [
+        pose_world_camera.__class__.from_matrix(
+            T_first_world @ pose_world_camera.as_matrix(),
+            target_frame=pose_world_camera.target_frame,
+            source_frame=pose_world_camera.source_frame,
+        )
+        for pose_world_camera in poses_world_camera
+    ]
+
+
+def trajectory_positions_at_timestamps(
+    trajectory: PoseTrajectory3D,
+    timestamps_s: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Linearly interpolate trajectory positions at requested timestamps in seconds."""
+    trajectory_timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
+    positions = np.asarray(trajectory.positions_xyz, dtype=np.float64)
+    return np.stack(
+        [np.interp(timestamps_s, trajectory_timestamps, positions[:, axis]) for axis in range(3)],
+        axis=1,
+    )
+
+
 def _read_canonical_tum_trajectory(path: Path) -> PoseTrajectory3D:
     rows_by_timestamp: dict[float, list[float]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():

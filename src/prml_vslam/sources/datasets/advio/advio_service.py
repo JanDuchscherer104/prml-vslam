@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from prml_vslam.sources.datasets.contracts import AdvioServingConfig, FrameSelectionConfig
-from prml_vslam.sources.replay import ReplayMode
 
-from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
-from ..sources import DatasetSequenceSource, DatasetServiceBase, open_dataset_sequence_stream
+from ..sources import DatasetSequenceSource, DatasetServiceBase
 from .advio_download import AdvioDownloadManager
 from .advio_layout import load_advio_catalog
 from .advio_loading import load_advio_frame_timestamps_ns
@@ -60,33 +58,18 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
             ),
         )
 
-    def _build_raw_streaming_source(
+    def _build_normalization_materializer(
         self,
         *,
         sequence_id: int,
         frame_selection: FrameSelectionConfig | None = None,
         dataset_serving: AdvioServingConfig,
-        replay_mode: ReplayMode = ReplayMode.REALTIME,
         normalize_video_orientation: bool = True,
         rgb_max_width_px: int = 392,
         rgb_dimension_multiple: int = 14,
-        normalized_store: NormalizedDatasetStore | None = None,
-        normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
-        """Build the raw ADVIO streaming source used only for normalized-store ingestion."""
+        """Build the raw ADVIO materializer used only for normalized-store ingestion."""
         selection = frame_selection or FrameSelectionConfig()
-
-        def stream(_value: int, loop: bool, mode: ReplayMode, stream_selection: FrameSelectionConfig):
-            advio_sequence = self._sequence(sequence_id)
-            return open_dataset_sequence_stream(
-                sequence=advio_sequence,
-                timestamps_ns=load_advio_frame_timestamps_ns(advio_sequence.paths.frame_timestamps_path).tolist(),
-                frame_selection=stream_selection,
-                loop=loop,
-                replay_mode=mode,
-                dataset_serving=dataset_serving,
-                normalize_video_orientation=normalize_video_orientation,
-            )
 
         return DatasetSequenceSource(
             sequence_id=sequence_id,
@@ -104,30 +87,4 @@ class AdvioDatasetService(DatasetServiceBase, AdvioDownloadManager):
                 rgb_max_width_px=rgb_max_width_px,
                 rgb_dimension_multiple=rgb_dimension_multiple,
             ),
-            stream=stream,
-            replay_mode=replay_mode,
-            normalized_store=normalized_store,
-            normalized_profile=normalized_profile,
-        )
-
-    def _open_raw_preview_stream(
-        self,
-        *,
-        sequence_id: int,
-        frame_selection: FrameSelectionConfig | None = None,
-        dataset_serving: AdvioServingConfig,
-        loop: bool = True,
-        replay_mode: ReplayMode = ReplayMode.REALTIME,
-        normalize_video_orientation: bool = True,
-    ):
-        """Open the raw ADVIO preview stream for ingestion-only tests."""
-        sequence = self._sequence(sequence_id)
-        return open_dataset_sequence_stream(
-            sequence=sequence,
-            timestamps_ns=load_advio_frame_timestamps_ns(sequence.paths.frame_timestamps_path).tolist(),
-            frame_selection=frame_selection or FrameSelectionConfig(),
-            loop=loop,
-            replay_mode=replay_mode,
-            dataset_serving=dataset_serving,
-            normalize_video_orientation=normalize_video_orientation,
         )

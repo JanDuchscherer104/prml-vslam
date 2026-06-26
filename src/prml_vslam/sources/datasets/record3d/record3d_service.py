@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from prml_vslam.sources.datasets.sources import DatasetSequenceSource, DatasetServiceBase
-from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.utils import Console, PathConfig
 
 from ..contracts import FrameSelectionConfig, LocalSceneStatus, ReferenceCloudConfig, SequenceKey
@@ -69,31 +67,25 @@ class Record3DDatasetService(DatasetServiceBase, Record3DDownloadManager):
             )
         return statuses
 
-    def _build_raw_streaming_source(
+    def _build_normalization_materializer(
         self,
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
-        replay_mode: ReplayMode = ReplayMode.REALTIME,
         materialization: Record3DMaterializationConfig | None = None,
         reference_cloud: ReferenceCloudConfig | None = None,
         rgb_max_width_px: int = 392,
         rgb_dimension_multiple: int = 14,
-        normalized_store: NormalizedDatasetStore | None = None,
-        normalized_profile: NormalizedDatasetProfile | None = None,
     ) -> DatasetSequenceSource:
-        return self._build_streaming_source(
+        return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
-            replay_mode=replay_mode,
             sequence_kwargs={
                 "materialization": materialization or Record3DMaterializationConfig(),
                 "reference_cloud": reference_cloud or ReferenceCloudConfig(min_confidence=1),
                 "rgb_max_width_px": rgb_max_width_px,
                 "rgb_dimension_multiple": rgb_dimension_multiple,
             },
-            normalized_store=normalized_store,
-            normalized_profile=normalized_profile,
         )
 
     def _preview_timestamps_ns(self, sequence: Record3DSequence) -> list[int]:

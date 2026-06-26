@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig, TumRgbdSourceConfig
 from prml_vslam.sources.datasets.contracts import FrameSelectionConfig, ReferenceCloudConfig
 from prml_vslam.utils import BaseConfig
 
 
-class AdvioNormalizedDatasetBuildSource(FrameSelectionConfig):
+class NormalizedCadenceConfig(FrameSelectionConfig):
+    """Normalize-time frame selection that contributes to datastore identity."""
+
+    @model_validator(mode="after")
+    def validate_single_normalized_sampling_mode(self) -> Self:
+        if self.target_fps is not None and self.frame_stride != 1:
+            raise ValueError("Configure either `frame_stride` or `target_fps`, not both.")
+        return self
+
+
+class AdvioNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped ADVIO normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")
@@ -35,7 +45,7 @@ class AdvioNormalizedDatasetBuildSource(FrameSelectionConfig):
         ]
 
 
-class TumRgbdNormalizedDatasetBuildSource(FrameSelectionConfig):
+class TumRgbdNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped TUM RGB-D normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")
@@ -61,7 +71,7 @@ class TumRgbdNormalizedDatasetBuildSource(FrameSelectionConfig):
         ]
 
 
-class Record3DNormalizedDatasetBuildSource(FrameSelectionConfig):
+class Record3DNormalizedDatasetBuildSource(NormalizedCadenceConfig):
     """Grouped Record3D normalized-store build settings."""
 
     model_config = ConfigDict(extra="forbid")

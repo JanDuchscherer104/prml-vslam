@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
@@ -96,7 +97,7 @@ class FrameSelectionConfig(BaseConfig):
             return self.frame_stride
         duration_s = max((int(timestamps_ns[-1]) - int(timestamps_ns[0])) / 1e9, 0.0)
         native_fps = 0.0 if duration_s <= 0.0 else (len(timestamps_ns) - 1) / duration_s
-        return max(1, int(round(native_fps / self.target_fps))) if native_fps > 0.0 else 1
+        return max(1, int(math.ceil(native_fps / self.target_fps))) if native_fps > 0.0 else 1
 
     def stride_for_timestamps_s(self, timestamps_s: Sequence[float]) -> int:
         return self.stride_for_timestamps_ns([int(round(value * 1e9)) for value in timestamps_s])
