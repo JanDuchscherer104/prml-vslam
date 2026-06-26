@@ -7,7 +7,6 @@ and optional ViSTA-SLAM, MASt3R-SLAM, or LingBot-Map GPU execution.
 
 - `git` with submodule support
 - [mamba](https://docs.mamba.io/projects/mamba/en/latest/user-guide/install/index.html) or `conda`
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [typst](https://typst.app/open-source/#download) for report and slide builds
 
 ## Base Setup
@@ -21,32 +20,48 @@ uv run pre-commit install
 make ci
 ```
 
-Optional parallel test runs are available with `pytest-xdist`:
+## GPU Method Setup
+
+The ViSTA, MASt3R, and LingBot GPU integrations use conflicting optional
+Python dependency graphs, but they can share one mamba environment for native
+toolchain dependencies. Use mamba for `cmake`, compiler wrappers, OpenCV CMake
+files, CUDA headers, and `nvcc`; let uv manage the active Python method graph
+in the project `.venv`.
 
 ```bash
-uv run pytest -n auto
-make test PYTEST_ARGS="-n auto"
+mamba env create -f environment.yml
+mamba activate prml-vslam
 ```
 
-### Install Mamba on Unix
-
-If you are on Unix and already have `conda` or Miniforge installed, you can add
-`mamba` with conda-forge:
+Quick sanity check before installing or running ViSTA surfaces:
 
 ```bash
-conda install -n base -c conda-forge mamba
+mamba activate prml-vslam
+echo "$CONDA_PREFIX"
+which python
+which uv
+which cmake
+which nvcc
 ```
 
-If you do not have `conda` installed, the easiest way to get both `conda` and
-`mamba` is to install [Miniforge](https://github.com/conda-forge/miniforge):
+`$CONDA_PREFIX`, `python`, `uv`, `cmake`, and `nvcc` should point at the
+`prml-vslam` mamba env before you use any GPU method extra commands.
+
+**Important:**
+
+- When using anything under the one of the vSLAM extras, i.e., `vista`, `mast3r`, or `lingbot`, the mamba env
+`prml-vslam` must be activated first. Otherwise, the extra will not be installed correctly.
+- uv mutates the same `.venv` to match the selected method. This is expected:
+for example, switching from `mast3r` to `lingbot` removes MASt3R-only packages
+and installs LingBot-only packages.
+- If a native package fails after switching mamba environments, remove generated
+native build caches before retrying. CMake caches absolute compiler and OpenCV
+paths:
 
 ```bash
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-bash Miniforge3-$(uname)-$(uname -m).sh
+rm -rf external/vista-slam/DBoW3Py/build
+rm -rf external/vista-slam/DBoW3Py/*.egg-info
 ```
-
-For the ViSTA environment setup that uses `environment.yml`, see the ViSTA/CUDA
-section below.
 
 ## ViSTA/CUDA Setup
 
@@ -59,43 +74,14 @@ ordinary Python wheels do not provide:
 - `cuda-nvcc` and `cuda-cudart-dev`, which provide the CUDA compiler and runtime
   headers used by cuROPE
 
-Important:
-
-- When using anything under the `vista` extra, work inside the `prml-vslam`
-  mamba environment.
-- This applies to `uv sync --extra vista`, ViSTA smoke runs, and the Streamlit
-  workbench when launched with `--extra vista`.
-- If the active shell is not inside the `prml-vslam` mamba env, expect native
-  build or runtime failures such as missing `cmake`, missing OpenCV CMake
-  config, or missing CUDA toolchain components.
-
-Primary fresh-environment flow:
+Create and activate the shared mamba environment from `environment.yml` if you have not already done so, then sync the
+ViSTA extra into the project `.venv`:
 
 ```bash
-mamba env create -f environment.yml
+# mamba env create -f environment.yml
 mamba activate prml-vslam
-
-unset VIRTUAL_ENV
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-
 uv sync --extra dev --extra vista --extra streaming
 ```
-
-Do not use `uv sync --all-extras`: the optional `vista` and `mast3r` extras are
-intentionally marked as conflicting because they install separate CUDA SLAM
-stacks with different native dependency assumptions.
-
-Quick sanity check before installing or running ViSTA surfaces:
-
-```bash
-mamba activate prml-vslam
-echo "$CONDA_PREFIX"
-which python
-which cmake
-```
-
-`$CONDA_PREFIX` and `python` should point at the `prml-vslam` mamba env before
-you use any `vista` extra commands.
 
 Build the optional CUDA RoPE2D extension after activating the mamba environment; do not install it manually from the submodule:
 
@@ -121,43 +107,32 @@ curl -L "https://huggingface.co/zhangganlin/vista_slam/resolve/main/ORBvoc.txt?d
 
 ### Validation
 
-Before running ViSTA, verify the native and Python dependencies:
-
-```bash
-find "$CONDA_PREFIX" -name OpenCVConfig.cmake -o -name opencv-config.cmake
-which nvcc
-
-uv run --extra vista python - <<'PY'
-import torch
-import DBoW3Py as dbow
-
-print("cuda_available:", torch.cuda.is_available())
-print("DBoW3Py Vocabulary:", dbow.Vocabulary)
-PY
-```
-
-Run the standard local checks:
-
-```bash
-uv lock --check
-make ci
-```
-
-Optionally run the ViSTA smoke pipeline:
+Optionally run the local CI checks and the ViSTA smoke pipeline:
 
 ```bash
 uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
 ```
 
-## MASt3R/CUDA Setup
+### Resolving DBoW3Py Compilation Error
 
-Activate the same `prml-vslam` conda environment used above (provides
-`cuda-nvcc=12.4`, `gcc_linux-64`, and `libopencv=4.12.0`):
+If a native package fails after switching mamba environments, remove generated
+native build caches before retrying. CMake caches absolute compiler and OpenCV
+paths:
 
 ```bash
+rm -rf external/vista-slam/DBoW3Py/build
+rm -rf external/vista-slam/DBoW3Py/*.egg-info
+```
+
+Then retry the `uv sync` command with the `vista` extra.
+
+## MASt3R/CUDA Setup
+
+Create and activate the shared mamba environment from `environment.yml` if you have not already done so:
+
+```bash
+# mamba env create -f environment.yml
 mamba activate prml-vslam
-unset LD_LIBRARY_PATH
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 ```
 
 Install MASt3R-SLAM and its two nested Python packages through the optional
@@ -165,12 +140,6 @@ Install MASt3R-SLAM and its two nested Python packages through the optional
 
 ```bash
 uv sync --extra dev --extra streaming --extra mast3r
-```
-
-Optionally enable faster MP4 decoding:
-
-```bash
-uv pip install torchcodec==0.1
 ```
 
 ### MASt3R Pretrained Files
@@ -188,6 +157,16 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
   -P external/mast3r-slam/checkpoints/
 ```
 
+### Validation
+
+Run the MASt3R smoke pipeline:
+
+```bash
+uv run --extra mast3r prml-vslam run-config .configs/pipelines/advio-15-offline-mast3r-smoke.toml
+```
+
+**Note**: This requires the _normalized_ vslam-datastore entry of `advio-15` to be present. See [Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore) for details.
+
 ## LingBot/CUDA Setup
 
 LingBot-Map is installed through the optional `lingbot` extra from an
@@ -195,17 +174,24 @@ operator-managed upstream checkout. Clone the checkout, install the extra, and
 download the checkpoint at the configured default:
 
 ```bash
+# mamba env create -f environment.yml
 mamba activate prml-vslam
-unset VIRTUAL_ENV
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
-git submodule update --init --recursive external/lingbot-map
-uv sync --extra lingbot
+# If you have not already updated the submodules:
+# git submodule update --init --recursive external/lingbot-map
+uv sync --extra dev --extra streaming --extra lingbot
 mkdir -p external/lingbot-map/checkpoints
 curl -L https://huggingface.co/robbyant/lingbot-map/resolve/main/lingbot-map.pt \
   -o external/lingbot-map/checkpoints/lingbot-map.pt
 ```
+
+Run the LingBot smoke pipeline:
+
+```bash
+uv run --extra lingbot prml-vslam run-config .configs/pipelines/lingbot-smoke.toml
+```
+
+**Note**: This requires the _normalized_ vslam-datastore entry of `freiburg3_large_cabinet` to be present. See [Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore) for details.
 
 ## Dataset Downloads and VSLAM Datastore
 
@@ -213,12 +199,21 @@ Dataset-backed pipeline configs and sweeps read from the normalized VSLAM
 datastore under `.data/vslam-datastore/<dataset>/`. Build it from complete local
 raw dataset caches under `.data/advio/`, `.data/tum_rgbd/`, and `.data/record3d/`.
 
+Download select sequences, repeat `--sequence`. ADVIO uses numeric sequence ids,
+TUM RGB-D uses scene slugs, and Record3D uses zero-based catalog indices:
+
+```bash
+uv run prml-vslam advio download --sequence 15
+uv run prml-vslam tum-rgbd download --sequence freiburg3_large_cabinet
+uv run prml-vslam record3d download --sequence 0
+```
+
 Download all benchmark scenes:
 
 ```bash
-uv run prml-vslam advio download
-uv run prml-vslam tum-rgbd download
-uv run prml-vslam record3d download
+uv run prml-vslam advio download # 2.7GB
+uv run prml-vslam tum-rgbd download # 11GB
+uv run prml-vslam record3d download # 21GB
 ```
 
 The Record3D samples will be persisted to
@@ -235,45 +230,13 @@ The Record3D samples will be persisted to
 └── 2026-06-03--18-35-44.r3d # sequence 7
 ```
 
-To limit a download, repeat `--sequence`. ADVIO uses numeric sequence ids,
-TUM RGB-D uses scene slugs, and Record3D uses zero-based catalog indices:
-
-```bash
-uv run prml-vslam advio download --sequence 15
-uv run prml-vslam tum-rgbd download --sequence freiburg3_large_cabinet
-uv run prml-vslam record3d download --sequence 0
-```
-
-Inspect raw cache and normalized coverage:
-
-```bash
-uv run prml-vslam advio summary
-uv run prml-vslam tum-rgbd summary
-uv run prml-vslam record3d summary
-```
-
 Build the full normalized benchmark datastore used by the full sweep files:
 
 ```bash
 uv run prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml
 ```
 
-The checked-in datastore config covers 50 benchmark sequences: 23 ADVIO, 19
-TUM RGB-D, and 8 Record3D scenes. It owns the normalize-time frame cadence,
-RGB resizing, and reference-cloud settings for each dataset group.
-
-Verify the built entries before running sweeps or dataset-backed pipelines:
-
-```bash
-uv run prml-vslam dataset summary --dataset advio
-uv run prml-vslam dataset summary --dataset tum_rgbd
-uv run prml-vslam dataset summary --dataset record3d
-```
-
-Use `--overwrite` on the dataset download commands only when refreshing cached
-archives intentionally. The default `--reuse` mode keeps already-downloaded
-archives and extracted scenes.
-
+**Note**: You can simply comment out any sequences or dataset sections in the TOML to skip them.
 Single sequences can be normalized directly via cli:
 
 ```bash
@@ -282,6 +245,10 @@ uv run prml-vslam dataset normalize \
   --sequence 2026-06-03--18-17-10 \ # stem of the original .r3d filename or directoy name for TUM or ADVIO
   --target-fps 15
 ```
+
+The checked-in datastore config covers 50 benchmark sequences: 23 ADVIO, 19
+TUM RGB-D, and 8 Record3D scenes. It owns the normalize-time frame cadence,
+RGB resizing, and reference-cloud settings for each dataset group.
 
 ## Dataset × Method Sweep
 
@@ -374,7 +341,7 @@ app via its recursive artifact scan.
 
 ```bash
 mamba activate prml-vslam
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+uv sync --extra dev --extra streaming --extra vista
 
 # 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)
 uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-sweep.toml
@@ -386,11 +353,10 @@ uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/full-vista-swee
 
 ### MASt3R sweeps
 
-Requires a separate install (conflicts with `vista` and `lingbot`):
+Switch the project `.venv` to MASt3R before running MASt3R sweeps:
 
 ```bash
 mamba activate prml-vslam
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --extra dev --extra streaming --extra mast3r
 
 # 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)
@@ -403,13 +369,12 @@ uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/full-mast3r-sw
 
 ### LingBot sweeps
 
-Requires a separate install (conflicts with `vista` and `mast3r`).  LingBot is
+Switch the project `.venv` to LingBot before running LingBot sweeps. LingBot is
 trained within ~320 direct-mode views; the sweep files use higher frame strides
 (TUM ×5, ADVIO ×10) to stay within that range.
 
 ```bash
 mamba activate prml-vslam
-export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
 uv sync --extra dev --extra streaming --extra lingbot
 
 # 5-sequence example (2 TUM + 2 ADVIO + 1 Record3D)

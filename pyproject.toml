@@ -109,23 +109,39 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
-conflicts               = [[{ extra = "mast3r" }, { extra = "vista" }]]
+build-constraint-dependencies = ["torch==2.5.1"]
+conflicts = [
+  [
+    { extra = "mast3r" },
+    { extra = "vista" },
+  ],
+  [
+    { extra = "lingbot" },
+    { extra = "mast3r" },
+  ],
+  [
+    { extra = "lingbot" },
+    { extra = "vista" },
+  ],
+]
 constraint-dependencies = ["click==8.3.1", "starlette==1.0.0"]
+no-build-isolation-package = ["lietorch", "mast3r-slam"]
 
   [tool.uv.extra-build-dependencies]
+  DBoW3Py     = ["numpy"]
   MAST3R-SLAM = ["torch==2.5.1"]
   curope      = ["torch==2.5.1"]
   xformers    = ["torch==2.5.1"]
 
   [tool.uv.sources]
-  DBoW3Py     = { path = "external/vista-slam/DBoW3Py", editable = false }
+  DBoW3Py     = { path = "external/vista-slam/DBoW3Py", editable = true, extra = "vista" }
   lingbot-map = { path = "external/lingbot-map", editable = true, extra = "lingbot" }
-  MAST3R-SLAM = { path = "external/mast3r-slam", editable = true }
-  MAST3R      = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
-  in3d        = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
-  asmk        = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true }
-  curope      = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
-  imgui       = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true }
+  MAST3R-SLAM = { path = "external/mast3r-slam", editable = true, extra = "mast3r" }
+  MAST3R      = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true, extra = "mast3r" }
+  in3d        = { path = "external/mast3r-slam/thirdparty/in3d", editable = true, extra = "mast3r" }
+  asmk        = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true, extra = "mast3r" }
+  curope      = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, extra = "mast3r", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+  imgui       = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true, extra = "mast3r" }
 
   # These metadata overrides replace upstream dynamic local file-URI dependencies
   # with portable path-source names so uv can lock the optional MASt3R graph.
