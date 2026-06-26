@@ -59,47 +59,120 @@
   ]
 ]
 
-#slide(title: [JD Evidence Cluster])[
+#slide(title: [Motivation: Uncalibrated Monocular VSLAM])[
+  - Domain Introduction & Goals
+  - _LUKAS_
+]
+
+// TODO: maybe one slide per method?
+#slide(title: [Method Comparison])[
+  - conceptual comparison of the three candidate methods (ViSTA, MASt3R, LingBot)
+  - What are their main distinctive features?
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    [
+      *MASt3R*:\
+      _Chirstopher_
+      - traditional SLAM backend
+      -
+    ],
+    [
+      *ViSTA*:\
+      - no priviledged reference frame,
+      - traditional SLAM backend
+      _Lukas_
+    ],
+    [
+      *LingBot*:\
+      - end-to-end learning-based SLAM,
+      - Geometric Context Transformer
+      _Jan_
+    ],
+  )
+]
+
+#section-slide(title: [Methodology], subtitle: [Intresting Implementation Details])
+
+#slide(title: [JD])[
   #grid(
     columns: (1fr, 1fr),
     gutter: 0.75cm,
     [
       *Seed material, not final ownership*
 
+      - Standardized stage boundaries.
       - Pipeline framework and artifact contracts.
       - Source normalization for ADVIO, TUM RGB-D, Record3D.
-      - ViSTA frame and transform debugging.
-      - Sim(3), gravity-aware alignment, ICP diagnostics.
-      - Rerun live/export logging and validation surfaces.
-      - LingBot integration.
+      - Sim(3), gravity-aware alignment, ICP.
     ],
     [
       #quote-block[
-        The final deck remains a five-person presentation. These slides collect the JD-first evidence that future agents can refine and rebalance.
+        #lorem(5)
       ]
     ],
   )
 ]
 
-#section-slide(title: [System And Data Pipeline])
+// #slide(title: [Pipeline Framework])[
+//   #grid(
+//     columns: (1.05fr, 0.95fr),
+//     [
+//       - `RunConfig` compiles into a deterministic `RunPlan`.
+//       - Runtime order: `source -> slam -> gravity.align -> evaluate.trajectory -> reconstruction -> evaluate.cloud -> summary`.
+//       - `StageResult` is the typed terminal handoff.
+//       - `StageRuntimeUpdate` carries live telemetry and neutral visualization items.
+//       #good-note[Run artifacts, manifests, and summaries are the reproducibility contract.]
+//     ],
+//     [
+//       #figure(
+//         image("../../figures/mermaid/pipeline/03-run-config-stage-plan.png", height: 75%),
+//         caption: [`RunConfig` to stage plan.],
+//       )
+//     ],
+//   )
+// ]
 
-#slide(title: [Pipeline Framework])[
-  #grid(
-    columns: (1.05fr, 0.95fr),
-    [
-      - `RunConfig` compiles into a deterministic `RunPlan`.
-      - Runtime order: `source -> slam -> gravity.align -> evaluate.trajectory -> reconstruction -> evaluate.cloud -> summary`.
-      - `StageResult` is the typed terminal handoff.
-      - `StageRuntimeUpdate` carries live telemetry and neutral visualization items.
-      #good-note[Run artifacts, manifests, and summaries are the reproducibility contract.]
-    ],
-    [
-      #figure(
-        image("../../figures/mermaid/pipeline/03-run-config-stage-plan.png", height: 75%),
-        caption: [`RunConfig` to stage plan.],
-      )
-    ],
-  )
+#slide(title: [Trajectory Evaluation])[
+  - Problem: not same frame, not same scale, not same orientation.
+  - Sim(3)
+  - APE metric?
+]
+
+#slide(title: [Point Cloud Evaluation])[
+  - ICP: Iterative Closest Point
+  - Metrics used.
+  -
+]
+
+#slide(title: [Image Metrics])[
+  - Metrics used.
+  - Brief performance comparison.
+]
+
+#slide(title: [Real-time Performances])[
+
+  - FPS + latency?
+  - own measurments and paper reported numbers.
+  - nvidia-smi and perf stats.
+]
+
+
+#slide(title: [Future Work])[
+  // Flo
+  - Strong FPS dependence of ViSTA and MASt3R (limitation for streaming when FPS is low).
+  - Real-time capability on consumer grade GPUs with loss of performance.
+  -
+]
+
+#slide(title: [Retrospective: What went right, what went wrong?])[
+  // Valentin
+  -
+]
+
+#slide(title: [Retrospective: What went right, want went wrong?
+])[
+  - Mapping from work packages to owner
+  -
 ]
 
 #slide(title: [References])[
