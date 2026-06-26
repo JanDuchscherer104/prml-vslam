@@ -20,7 +20,7 @@ from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
 from .models import AppPageId, AppState
-from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
+from .services import DatasetPreviewRuntimeController, Record3DStreamRuntimeController
 from .state import SessionStateStore
 
 if TYPE_CHECKING:
@@ -40,7 +40,7 @@ class AppContext:
     trajectory_evaluation_query: TrajectoryEvaluationQueryService
     cloud_evaluation_service: DenseCloudEvaluationService
     record3d_runtime: Record3DStreamRuntimeController
-    advio_runtime: AdvioPreviewRuntimeController
+    dataset_preview_runtime: DatasetPreviewRuntimeController
     run_service: RunService
     store: SessionStateStore
     state: AppState
@@ -67,7 +67,7 @@ def build_context() -> AppContext:
         trajectory_evaluation_query=TrajectoryEvaluationQueryService(path_config),
         cloud_evaluation_service=DenseCloudEvaluationService(),
         record3d_runtime=store.load_record3d_runtime(),
-        advio_runtime=store.load_advio_runtime(),
+        dataset_preview_runtime=store.load_dataset_preview_runtime(),
         run_service=store.load_run_service(path_config=path_config),
         store=store,
         state=store.load(),
@@ -126,9 +126,9 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
     state_changed = False
     for active_page_id, runtime, page_state, field_name in (
         (AppPageId.RECORD3D, context.record3d_runtime, context.state.record3d, "is_running"),
-        (AppPageId.DATASETS, context.advio_runtime, context.state.advio, "preview_is_running"),
-        (AppPageId.DATASETS, context.advio_runtime, context.state.tum_rgbd, "preview_is_running"),
-        (AppPageId.DATASETS, context.advio_runtime, context.state.record3d_dataset, "preview_is_running"),
+        (AppPageId.DATASETS, context.dataset_preview_runtime, context.state.advio, "preview_is_running"),
+        (AppPageId.DATASETS, context.dataset_preview_runtime, context.state.tum_rgbd, "preview_is_running"),
+        (AppPageId.DATASETS, context.dataset_preview_runtime, context.state.record3d_dataset, "preview_is_running"),
     ):
         if page_id is active_page_id or not getattr(page_state, field_name):
             continue

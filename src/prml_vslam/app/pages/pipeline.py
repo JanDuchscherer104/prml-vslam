@@ -56,7 +56,7 @@ def render(context: AppContext) -> None:
             "live previews, trajectory output, and artifacts."
         ),
     )
-    advio_records = query_normalized_dataset(DatasetId.ADVIO, context.path_config).default_records
+    advio_records = query_normalized_dataset(DatasetId.ADVIO, context.path_config).records
     snapshot = context.run_service.snapshot()
     is_active = snapshot.state in _ACTIVE_SESSION_STATES
     with st.container():

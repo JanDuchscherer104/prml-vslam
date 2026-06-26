@@ -396,7 +396,6 @@ def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: 
             },
         ),
         pose_source="ground_truth",
-        normalize_video_orientation=True,
         connect_live_viewer=False,
         export_viewer_rrd=False,
     )
@@ -407,9 +406,8 @@ def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: 
     assert isinstance(run_config, RunConfig)
     assert run_config.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source="ground_truth",
-        pose_frame_mode="provider_world",
+        pose_frame_mode="fixedpoint_common_start_local",
     )
-    assert run_config.stages.source.backend.normalize_video_orientation is True
     assert run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
 
 
@@ -537,11 +535,11 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
         output_dir=context.path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
+            target_fps=15.0,
             dataset_serving={
                 "pose_source": "ground_truth",
                 "pose_frame_mode": "provider_world",
             },
-            normalize_video_orientation=True,
         ),
         method=MethodId.VISTA,
         backend_overrides={
@@ -567,15 +565,16 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert backend_spec.kind == "vista"
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
     assert context.state.pipeline.pose_source.value == "ground_truth"
-    assert context.state.pipeline.pose_frame_mode.value == "provider_world"
-    assert context.state.pipeline.normalize_video_orientation is True
+    assert context.state.pipeline.pose_frame_mode.value == "fixedpoint_common_start_local"
+    assert context.state.pipeline.dataset_target_fps == 15.0
+    assert context.state.pipeline.dataset_frame_stride == 1
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
     rebuilt_run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
     assert isinstance(rebuilt_run_config, RunConfig)
     assert rebuilt_run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
-    assert rebuilt_run_config.stages.source.backend.normalize_video_orientation is True
+    assert rebuilt_run_config.stages.source.backend.target_fps == 15.0
 
 
 def test_cloud_evaluation_stage_is_supported_by_request_preview(tmp_path: Path) -> None:
@@ -586,7 +585,7 @@ def test_cloud_evaluation_stage_is_supported_by_request_preview(tmp_path: Path) 
         output_dir=path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
-            dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+            dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "fixedpoint_common_start_local"},
         ),
         method=MethodId.VISTA,
         evaluate_cloud=True,

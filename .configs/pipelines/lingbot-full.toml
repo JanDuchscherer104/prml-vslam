@@ -3,7 +3,7 @@
 # This config is the full-scene TUM cabinet LingBot quality profile using
 # LingBot's manifest-native path preprocessing.
 
-experiment_name          = "lingbot-freiburg3-large-cabinet"
+experiment_name          = "lingbot-r3d-17-10"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -12,8 +12,8 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
+    source_id    = "record3d_dataset"
+    sequence_id  = "2026-06-03--18-17-10"
     replay_mode  = "fast_as_possible"
     frame_stride = 3
 
@@ -45,7 +45,7 @@ sampling_interval_ms    = 1000
     device = "cuda"
 
     # Windowed inference bounds GPU residency for long scenes.
-    mode = "windowed"
+    mode = "streaming"
 
     # 392 is the best full-run trajectory profile found so far on the local
     # 12 GB RTX 3080 Ti FlashInfer path.
@@ -117,7 +117,7 @@ sampling_interval_ms    = 1000
     max_depth_m = 100.0
 
 [stages.align_ground]
-enabled = true
+enabled = false
 
     [stages.align_ground.ground]
     strategy       = "ransac_point_cloud"

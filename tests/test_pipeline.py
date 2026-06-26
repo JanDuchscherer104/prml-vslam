@@ -42,13 +42,7 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
-from prml_vslam.pipeline.contracts.events import (
-    RunStopped,
-    StageCompleted,
-    StageFailed,
-    StageOutcome,
-    StageStatus,
-)
+from prml_vslam.pipeline.contracts.events import RunStopped, StageCompleted, StageFailed, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
@@ -291,7 +285,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -320,7 +314,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -415,32 +409,6 @@ def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_pat
     assert run_config.stages.evaluate_cloud.enabled is False
     assert run_config.visualization.connect_live_viewer is True
     assert run_config.visualization.export_viewer_rrd is True
-
-
-def test_stage_registry_allows_cloud_evaluation_stage(tmp_path: Path) -> None:
-    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
-    run_config = _run_config(
-        experiment_name="placeholder",
-        mode=PipelineMode.OFFLINE,
-        output_dir=path_config.artifacts_dir,
-        source_backend=AdvioSourceConfig(
-            sequence_id="advio-01",
-            dataset_serving={
-                "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
-            },
-        ),
-        method=MethodId.VISTA,
-        reference_enabled=False,
-        trajectory_eval_enabled=False,
-        evaluate_cloud=True,
-    )
-
-    plan = run_config.compile_plan(path_config=path_config)
-
-    cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
-    assert cloud_stage.available is True
-    assert cloud_stage.availability_reason is None
 
 
 def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
@@ -2428,7 +2396,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,
