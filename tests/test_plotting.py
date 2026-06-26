@@ -29,7 +29,9 @@ from prml_vslam.plotting.artifact_diagnostics import (
 )
 from prml_vslam.plotting.datasets import build_reference_cloud_scene_figure, build_trajectory_metric_figure
 from prml_vslam.plotting.metrics import (
+    build_cloud_accuracy_completeness_xy_figure,
     build_cloud_distance_metrics_figure,
+    build_cloud_icp_impact_figure,
     build_cloud_point_count_figure,
     build_cloud_quality_metrics_figure,
     build_trajectory_figure,
@@ -158,10 +160,16 @@ def test_cloud_metric_figures_expose_distance_quality_and_count_traces(tmp_path)
     distance = build_cloud_distance_metrics_figure(artifact)
     quality = build_cloud_quality_metrics_figure(artifact)
     counts = build_cloud_point_count_figure(artifact)
+    impact = build_cloud_icp_impact_figure(artifact)
+    xy = build_cloud_accuracy_completeness_xy_figure(artifact)
 
     assert [trace.name for trace in distance.data] == ["Accuracy", "Completeness", "Chamfer"]
     assert [trace.name for trace in quality.data] == ["F1 @ 0.05 m", "ICP fitness"]
     assert [trace.name for trace in counts.data] == ["Estimate points", "Reference points"]
+    assert list(impact.data[0].x) == ["Accuracy", "Completeness", "Chamfer", "F1"]
+    assert list(impact.data[0].y) == pytest.approx([0.05, 0.05, 0.1, 0.4])
+    assert [trace.name for trace in xy.data] == ["Sim3", "Sim3 + ICP"]
+    assert xy.layout.annotations[0].text == "ICP"
     assert distance.layout.barmode == "group"
     assert quality.layout.yaxis.range == (0.0, 1.0)
 

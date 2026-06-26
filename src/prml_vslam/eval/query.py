@@ -120,6 +120,22 @@ class RunTrajectoryEvaluation(BaseData):
     """Number of non-primary metrics that were skipped during evaluation of this run."""
 
 
+class RunCloudEvaluation(BaseData):
+    """Loaded dense-cloud evaluation state for one discovered run."""
+
+    run: DiscoveredRun
+    """Run this loaded state describes."""
+
+    artifact: DenseCloudEvaluationArtifact | None = None
+    """Loaded dense-cloud metrics artifact, when present."""
+
+    metric_rows: list[EvaluationMetricRow] = Field(default_factory=list)
+    """Long-form point-cloud metric rows for app tables and reports."""
+
+    load_error: str | None = None
+    """Non-fatal loading error shown by review surfaces."""
+
+
 class EvaluationMetricRow(BaseData):
     """One long-form metric row from a persisted non-trajectory evaluation artifact."""
 
@@ -315,6 +331,32 @@ class TrajectoryEvaluationQueryService:
             skipped_metric_count=len(manifest.skipped_metrics),
         )
 
+    def load_run_cloud_evaluation(self, run: DiscoveredRun) -> RunCloudEvaluation:
+        """Load one run's persisted dense-cloud evaluation artifact when present."""
+        artifact_path = self.cloud_metrics_path(run.artifact_root)
+        if not artifact_path.exists():
+            return RunCloudEvaluation(run=run)
+        try:
+            artifact = DenseCloudEvaluationArtifact.model_validate_json(artifact_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return RunCloudEvaluation(run=run, load_error=str(exc))
+        sequence_manifest = _load_run_sequence_manifest(run.artifact_root)
+        context: dict[str, str | int | float] = {
+            "Run": stable_run_id(run.artifact_root, self.path_config),
+            "Label": run.label,
+        }
+        if run.method is not None:
+            context["Method"] = run.method
+        if sequence_manifest is not None:
+            context["Sequence"] = sequence_manifest.sequence_id
+            if sequence_manifest.dataset_id is not None:
+                context["Dataset"] = sequence_manifest.dataset_id.value
+        return RunCloudEvaluation(
+            run=run,
+            artifact=artifact,
+            metric_rows=dense_cloud_metric_rows(artifact, context=context),
+        )
+
     def load_metric_rows(self, path: Path) -> list[TrajectoryMetricResultRow]:
         """Load the long-form metrics CSV emitted by the trajectory evaluator."""
         if not path.exists():
@@ -340,6 +382,11 @@ class TrajectoryEvaluationQueryService:
     def metrics_long_path(run_root: Path) -> Path:
         """Return the canonical long-form trajectory metric table path for a run."""
         return (run_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
+
+    @staticmethod
+    def cloud_metrics_path(run_root: Path) -> Path:
+        """Return the canonical dense-cloud metrics artifact path for a run."""
+        return (run_root / "evaluation" / "cloud_metrics.json").resolve()
 
     @staticmethod
     def load_error_series_values(path: Path) -> np.ndarray:
@@ -459,6 +506,7 @@ __all__ = [
     "DatasetRunCoverage",
     "EvaluationMetricRow",
     "EvaluationSelection",
+    "RunCloudEvaluation",
     "RunTrajectoryEvaluation",
     "TrajectoryEvaluationQueryService",
     "dense_cloud_metric_rows",

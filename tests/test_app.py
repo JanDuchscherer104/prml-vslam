@@ -36,6 +36,12 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
+from prml_vslam.eval.contracts import (
+    CloudEstimateKind,
+    CloudMetricId,
+    DenseCloudEstimateEvaluation,
+    DenseCloudEvaluationArtifact,
+)
 from prml_vslam.eval.query import TrajectoryEvaluationQueryService
 from prml_vslam.eval.trajectory_contracts import DiscoveredRun, TrajectoryEvaluationManifest
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -1062,6 +1068,56 @@ def test_trajectory_evaluation_query_loads_pipeline_manifest(tmp_path: Path) -> 
     assert loaded.metric_rows[0].statistic == "rmse"
     assert loaded.metric_rows[0].value == 0.05
     assert loaded.metric_rows[0].pose_relation is metrics.PoseRelation.translation_part
+
+
+def test_trajectory_evaluation_query_loads_cloud_metrics_artifact(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    cloud_metrics_path = artifact_root / "evaluation" / "cloud_metrics.json"
+    cloud_metrics_path.parent.mkdir(parents=True)
+    cloud_metrics_path.write_text(
+        DenseCloudEvaluationArtifact(
+            path=cloud_metrics_path,
+            title="Dense Cloud Evaluation (Open3D)",
+            reference_cloud_path=artifact_root / "reference" / "reference_cloud.ply",
+            f1_threshold_m=0.05,
+            estimates=[
+                DenseCloudEstimateEvaluation(
+                    estimate_kind=CloudEstimateKind.SIM3_ICP,
+                    estimate_cloud_path=artifact_root / "align" / "cloud_icp.ply",
+                    reference_point_count=100,
+                    estimate_point_count=80,
+                    metrics={
+                        CloudMetricId.ACCURACY: 0.02,
+                        CloudMetricId.COMPLETENESS: 0.03,
+                        CloudMetricId.CHAMFER: 0.05,
+                        CloudMetricId.F1: 0.75,
+                        CloudMetricId.ICP_RMSE: 0.01,
+                        CloudMetricId.ICP_FITNESS: 0.9,
+                    },
+                )
+            ],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_cloud_evaluation(runs[0])
+
+    assert loaded.artifact is not None
+    assert loaded.load_error is None
+    rows = {row.metric_id: row for row in loaded.metric_rows}
+    assert rows[CloudMetricId.ACCURACY.value].unit == "m"
+    assert rows[CloudMetricId.F1.value].threshold_m == 0.05
+    assert rows[CloudMetricId.ICP_FITNESS.value].unit == "ratio"
+    assert rows["reference_point_count"].value == 100.0
+    assert rows["estimate_point_count"].value == 80.0
+    assert rows[CloudMetricId.CHAMFER.value].context["Sequence"] == "freiburg3_large_cabinet"
+    assert rows[CloudMetricId.CHAMFER.value].context["Method"] == MethodId.VISTA.value
 
 
 def test_trajectory_evaluation_query_discovers_runs_by_sequence_manifest(tmp_path: Path) -> None:
