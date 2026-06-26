@@ -1,8 +1,8 @@
 # Normalized VSLAM datastore build config.
 #
 # Usage:
-# prml-vslam-worktree-env run prml-vslam dataset normalize \
-#   --config .configs/datasets/benchmark-vslam-datastore.toml
+#   prml-vslam-worktree-env run prml-vslam dataset normalize \
+#     --config .configs/datasets/benchmark-vslam-datastore.toml
 
 [[sources]]
 source_id = "record3d_dataset"
@@ -30,14 +30,23 @@ rgb_dimension_multiple = 14
 source_id = "tum_rgbd"
 sequence_ids = [
   "freiburg1_360",
+  "freiburg1_desk",
   "freiburg1_desk2",
+  "freiburg1_floor",
   "freiburg1_plant",
+  "freiburg1_room",
   "freiburg1_rpy",
+  "freiburg1_teddy",
   "freiburg1_xyz",
+  "freiburg2_360_hemisphere",
   "freiburg2_360_kidnap",
+  "freiburg2_desk",
   "freiburg2_large_with_loop",
+  "freiburg2_rpy",
   "freiburg2_xyz",
+  "freiburg3_cabinet",
   "freiburg3_large_cabinet",
+  "freiburg3_long_office_household",
   "freiburg3_teddy",
 ]
 target_fps = 30.0
@@ -50,62 +59,32 @@ rgb_dimension_multiple = 14
   random_seed     = 17
 
 [[sources]]
-source_id = "tum_rgbd"
-sequence_ids = [
-  "freiburg1_desk",
-  "freiburg1_floor",
-  "freiburg1_room",
-  "freiburg1_teddy",
-  "freiburg2_360_hemisphere",
-  "freiburg2_desk",
-  "freiburg2_rpy",
-  "freiburg3_cabinet",
-  "freiburg3_long_office_household",
-]
-target_fps = 15.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-  [sources.reference_cloud]
-  depth_stride_px = 3
-  max_points      = 500_000
-  random_seed     = 17
-
-[[sources]]
 source_id = "advio"
 sequence_ids = [
   "advio-01",
+  "advio-02",
   "advio-03",
+  "advio-04",
   "advio-05",
+  "advio-06",
   "advio-07",
+  "advio-08",
   "advio-09",
+  "advio-10",
   "advio-11",
+  "advio-12",
   "advio-13",
+  "advio-14",
   "advio-15",
+  "advio-16",
   "advio-17",
+  "advio-18",
   "advio-19",
+  "advio-20",
   "advio-21",
+  "advio-22",
   "advio-23",
 ]
-target_fps = 10.0
-rgb_max_width_px = 392
-rgb_dimension_multiple = 14
-
-[[sources]]
-source_id = "advio"
-sequence_ids = [
-  "advio-02",
-  "advio-04",
-  "advio-06",
-  "advio-08",
-  "advio-10",
-  "advio-12",
-  "advio-14",
-  "advio-16",
-  "advio-18",
-  "advio-20",
-  "advio-22",
-]
-target_fps = 15.0
+target_fps = 30.0
 rgb_max_width_px = 392
 rgb_dimension_multiple = 14
