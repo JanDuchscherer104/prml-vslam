@@ -20,7 +20,11 @@ from prml_vslam.interfaces import FrameTransform
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.datasets.contracts import AdvioPoseSource
 from prml_vslam.utils import BaseData
-from prml_vslam.utils.geometry import apply_similarity_to_trajectory, yaw_similarity_align
+from prml_vslam.utils.geometry import (
+    apply_similarity_to_trajectory,
+    trajectory_positions_at_timestamps,
+    yaw_similarity_align,
+)
 
 from .advio_frames import basis_for_pose_source, rdf_basis_matrix
 from .advio_loading import _read_numeric_csv
@@ -116,7 +120,7 @@ def estimate_advio_fixedpoint_registration(
             f"ADVIO {provider_source.value} needs at least {MIN_ADVIO_FIXEDPOINT_MATCHES} fixedpoint matches, "
             f"got {len(matched_timestamps)}."
         )
-    matched_trajectory = _interpolate_positions(trajectory_rdf, matched_timestamps)
+    matched_trajectory = trajectory_positions_at_timestamps(trajectory_rdf, matched_timestamps)
     full_rotation, full_translation = _estimate_rigid_no_scale(
         target_xyz=matched_fixpoints,
         source_xyz=matched_trajectory,
@@ -230,15 +234,6 @@ def advio_common_start_local_trajectories(
     }
 
 
-def _interpolate_positions(trajectory: PoseTrajectory3D, timestamps_s: NDArray[np.float64]) -> NDArray[np.float64]:
-    trajectory_timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
-    positions = np.asarray(trajectory.positions_xyz, dtype=np.float64)
-    return np.stack(
-        [np.interp(timestamps_s, trajectory_timestamps, positions[:, axis]) for axis in range(3)],
-        axis=1,
-    )
-
-
 def _estimate_rigid_no_scale(
     *,
     target_xyz: NDArray[np.float64],
@@ -271,7 +266,7 @@ def _pose_at_timestamp(trajectory: PoseTrajectory3D, timestamp_s: float) -> NDAr
     timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
     pose_index = int(np.clip(np.searchsorted(timestamps, timestamp_s), 0, len(timestamps) - 1))
     pose = np.asarray(trajectory.poses_se3[pose_index], dtype=np.float64).copy()
-    pose[:3, 3] = _interpolate_positions(trajectory, np.asarray([timestamp_s], dtype=np.float64))[0]
+    pose[:3, 3] = trajectory_positions_at_timestamps(trajectory, np.asarray([timestamp_s], dtype=np.float64))[0]
     return pose
 
 

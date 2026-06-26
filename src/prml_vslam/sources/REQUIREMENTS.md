@@ -50,8 +50,8 @@ This document is the concise source of truth for `prml_vslam.sources`.
 - dataset replay uses timestamp-aware stride selection
 - raw video uses frame extraction policy
 - live Record3D treats sampling as best-effort observation filtering before the SLAM hot path
-- Prepared benchmark inputs include the requested trajectory baseline (ground truth)
-  and source-owned reference clouds when a dataset provides enough RGB-D/depth
+- Prepared benchmark inputs include the requested trajectory baseline and
+  source-owned reference clouds when a dataset provides enough RGB-D/depth
   geometry to materialize one without method-specific reconstruction.
 - TUM RGB-D benchmark prep emits a bounded aligned reference cloud from
   registered metric depth and ground-truth RGB-camera poses when depth is

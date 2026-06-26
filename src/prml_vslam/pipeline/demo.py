@@ -65,8 +65,6 @@ def build_advio_demo_run_config(
     mode: PipelineMode,
     method: MethodId,
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
-    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD,
-    normalize_video_orientation: bool = True,
     dataset_frame_stride: int = 1,
     dataset_target_fps: float | None = None,
 ) -> RunConfig:
@@ -81,9 +79,8 @@ def build_advio_demo_run_config(
             target_fps=dataset_target_fps,
             dataset_serving=AdvioServingConfig(
                 pose_source=pose_source,
-                pose_frame_mode=pose_frame_mode,
+                pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
             ),
-            normalize_video_orientation=normalize_video_orientation,
         ),
         method=method,
         connect_live_viewer=True,

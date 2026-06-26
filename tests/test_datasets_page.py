@@ -13,7 +13,7 @@ import prml_vslam.app.dataset_page.query as dataset_query
 import prml_vslam.app.dataset_page.scene as dataset_scene
 import prml_vslam.app.pages.datasets as advio_page
 from prml_vslam.app.models import AdvioPageState, AppState, Record3DDatasetPoseSource
-from prml_vslam.interfaces import FrameTransform, Observation, ObservationProvenance
+from prml_vslam.interfaces import CameraIntrinsics, FrameTransform, Observation, ObservationProvenance
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
@@ -87,7 +87,44 @@ def test_advio_preview_frame_uses_live_image_renderer(monkeypatch) -> None:
 
     assert calls["markdown"] == "**RGB Frame**"
     assert np.array_equal(calls["image"], packet.rgb)
-    assert calls["kwargs"] == {"channels": "RGB", "clamp": True, "width": "stretch"}
+    assert calls["kwargs"] == {"channels": "RGB", "clamp": True, "width": "content"}
+
+
+def test_rgbd_preview_frame_normalizes_metric_depth_for_display(monkeypatch) -> None:
+    calls: list[tuple[np.ndarray, dict[str, object]]] = []
+    markdown: list[str] = []
+    monkeypatch.setattr(dataset_preview.st, "markdown", markdown.append)
+    monkeypatch.setattr(dataset_preview.st, "columns", lambda *_args, **_kwargs: [_NullContext(), _NullContext()])
+    monkeypatch.setattr(
+        dataset_preview,
+        "render_live_image",
+        lambda image, **kwargs: calls.append((np.asarray(image), kwargs)),
+    )
+    packet = Observation(
+        seq=0,
+        timestamp_ns=1,
+        arrival_timestamp_s=0.0,
+        rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_m=np.array([[0.5, 1.0], [2.0, 4.0]], dtype=np.float32),
+        intrinsics=CameraIntrinsics(fx=1.0, fy=1.0, cx=0.5, cy=0.5, width_px=2, height_px=2),
+        T_world_camera=FrameTransform.from_matrix(np.eye(4, dtype=np.float64), source_frame="camera_rdf"),
+        provenance=ObservationProvenance(source_id="record3d_dataset"),
+    )
+
+    dataset_preview.render_preview_frame(packet)
+
+    assert markdown == ["**RGB Frame**", "**Depth Frame**"]
+    assert len(calls) == 2
+    rgb_image, rgb_kwargs = calls[0]
+    depth_image, depth_kwargs = calls[1]
+    assert np.array_equal(rgb_image, packet.rgb)
+    assert rgb_kwargs == {"channels": "RGB", "clamp": True, "width": "content"}
+    assert depth_image.dtype == np.uint8
+    assert depth_image.shape == packet.depth_m.shape
+    assert not np.array_equal(depth_image, packet.depth_m)
+    assert int(depth_image.min()) == 0
+    assert int(depth_image.max()) == 255
+    assert depth_kwargs == {"clamp": True, "width": "content"}
 
 
 def test_advio_preview_pose_sources_use_provider_readiness_flags() -> None:
@@ -1049,7 +1086,7 @@ def test_normalized_analysis_filters_use_dataset_scoped_widget_keys(monkeypatch)
     assert len(keys) == len(set(keys))
 
 
-def test_record3d_loop_preview_uses_normalized_default_records(monkeypatch) -> None:
+def test_record3d_loop_preview_uses_current_normalized_records(monkeypatch) -> None:
     captured: dict[str, list[NormalizedSequenceRecord]] = {}
     context = SimpleNamespace(
         state=SimpleNamespace(record3d_dataset=SimpleNamespace(preview_include_depth=True)),
@@ -1099,7 +1136,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
         store=SimpleNamespace(save=lambda _state: None),
         record3d_dataset_service=service,
         path_config=SimpleNamespace(resolve_output_dir=lambda path, create=False: Path(".artifacts") / path),
-        advio_runtime=SimpleNamespace(
+        dataset_preview_runtime=SimpleNamespace(
             start=lambda **kwargs: started.update(kwargs),
             stop=lambda: None,
         ),
@@ -1109,6 +1146,7 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
     error = dataset_preview.handle_record3d_dataset_preview_action(
         context=context,
         sequence_id="2026-06-03--18-26-32",
+        profile_key="exact-profile",
         pose_source=Record3DDatasetPoseSource.ARKIT,
         include_depth=False,
         start_requested=True,
@@ -1123,11 +1161,9 @@ def test_record3d_preview_action_uses_dataset_service_and_clears_other_previews(
         "stream",
         {
             "dataset_id": dataset_preview.DatasetId.RECORD3D,
-            "service": service,
-            "source_config": dataset_preview.source_config_for_normalization(
-                dataset_id=dataset_preview.DatasetId.RECORD3D,
-                sequence_id="2026-06-03--18-26-32",
-            ),
+            "sequence_id": "2026-06-03--18-26-32",
+            "profile_key": "exact-profile",
+            "frame_selection": dataset_preview.FrameSelectionConfig(),
             "include_depth": False,
             "path_config": context.path_config,
             "output_dir": Path(".artifacts") / "dataset-preview" / "record3d" / "2026-06-03--18-26-32",

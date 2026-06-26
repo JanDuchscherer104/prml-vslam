@@ -85,6 +85,6 @@ sequence_ids = [
   "advio-22",
   "advio-23",
 ]
-target_fps = 15.0
+target_fps = 30.0
 rgb_max_width_px = 392
 rgb_dimension_multiple = 14

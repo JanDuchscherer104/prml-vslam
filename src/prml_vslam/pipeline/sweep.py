@@ -15,7 +15,7 @@ Schema overview::
     dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio" | "record3d_dataset"
     sequence_id         = "freiburg1_xyz"
     frame_stride        = 1
-    normalized_target_fps = 30.0
+    target_fps          = 30.0
     baseline_source     = "ground_truth"
     align_ground        = false
     align_trajectory    = true
@@ -49,7 +49,7 @@ from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationStageConfig,
 )
 from prml_vslam.methods.stage.config import SlamStageConfig
-from prml_vslam.pipeline.config import RunConfig, StageBundle
+from prml_vslam.pipeline.config import RunConfig, StageBundle, default_trajectory_baseline_for_source
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
@@ -151,22 +151,19 @@ def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfi
             return TumRgbdSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
-                normalized_frame_stride=dataset.normalized_frame_stride,
-                normalized_target_fps=dataset.normalized_target_fps,
+                target_fps=dataset.target_fps,
             )
         case "advio":
             return AdvioSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
-                normalized_frame_stride=dataset.normalized_frame_stride,
-                normalized_target_fps=dataset.normalized_target_fps,
+                target_fps=dataset.target_fps,
             )
         case "record3d_dataset":
             return Record3DDatasetSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
-                normalized_frame_stride=dataset.normalized_frame_stride,
-                normalized_target_fps=dataset.normalized_target_fps,
+                target_fps=dataset.target_fps,
             )
         case _:
             raise ValueError(
@@ -209,10 +206,9 @@ class SweepDataset(BaseConfig):
     Attributes:
         dataset_id: Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``.
         sequence_id: Dataset-specific sequence slug passed to the source backend.
-        frame_stride: Frame sub-sampling stride forwarded to the source backend.
+        frame_stride: Read-time stride for replaying stored normalized observations.
             ``1`` means every frame; ``2`` means every other frame, etc.
-        normalized_frame_stride: Normalize-time frame stride used by the persisted datastore profile.
-        normalized_target_fps: Normalize-time target FPS used by the persisted datastore profile.
+        target_fps: Read-time target FPS for replaying stored normalized observations.
         baseline_source: Reference trajectory used by trajectory evaluation.
         align_ground: Enable ground-alignment stage.
         align_trajectory: Enable trajectory Sim(3)-alignment stage.
@@ -222,7 +218,7 @@ class SweepDataset(BaseConfig):
         evaluate_cloud: Enable dense-cloud evaluation stage.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     dataset_id: str
     """Source backend discriminator.  Supported: ``tum_rgbd``, ``advio``, ``record3d_dataset``."""
@@ -231,15 +227,12 @@ class SweepDataset(BaseConfig):
     """Dataset-specific sequence slug."""
 
     frame_stride: int = Field(default=1, ge=1)
-    """Frame sub-sampling stride forwarded to the source backend."""
+    """Read-time stride for replaying stored normalized observations."""
 
-    normalized_frame_stride: int | None = Field(default=None, ge=1)
-    """Normalize-time frame stride used by the persisted datastore profile."""
+    target_fps: float | None = Field(default=None, gt=0.0)
+    """Read-time target FPS for replaying stored normalized observations."""
 
-    normalized_target_fps: float | None = Field(default=None, gt=0.0)
-    """Normalize-time target FPS used by the persisted datastore profile."""
-
-    baseline_source: ReferenceSource = ReferenceSource.GROUND_TRUTH
+    baseline_source: ReferenceSource | None = None
     """Reference trajectory source used by the trajectory-evaluation stage."""
 
     align_ground: bool = False
@@ -268,10 +261,10 @@ class SweepDataset(BaseConfig):
         return self
 
     @model_validator(mode="after")
-    def validate_single_normalized_sampling_mode(self) -> Self:
+    def validate_single_sampling_mode(self) -> Self:
         """Keep stored-profile sampling unambiguous."""
-        if self.normalized_target_fps is not None and self.normalized_frame_stride not in (None, 1):
-            raise ValueError("Configure either `normalized_frame_stride` or `normalized_target_fps`, not both.")
+        if self.target_fps is not None and self.frame_stride != 1:
+            raise ValueError("Configure either `frame_stride` or `target_fps`, not both.")
         return self
 
 
@@ -511,7 +504,10 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
     """
     ds = item.dataset
     source_backend = _build_source_backend_for_sweep(ds)
-    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=ds.baseline_source)
+    baseline_source = (
+        default_trajectory_baseline_for_source(source_backend) if ds.baseline_source is None else ds.baseline_source
+    )
+    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=baseline_source)
 
     return RunConfig(
         experiment_name=item.run_id,
@@ -523,7 +519,7 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
             align_ground=GroundAlignmentStageConfig(enabled=ds.align_ground),
             align_trajectory=TrajectoryAlignmentStageConfig(
                 enabled=ds.align_trajectory,
-                baseline_source=ds.baseline_source,
+                baseline_source=baseline_source,
             ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=ds.evaluate_trajectory,
