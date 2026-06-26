@@ -180,9 +180,9 @@ The most important dataset-owned DTOs and outputs are:
 Dataset-backed sources share one canonical `NormalizedDatasetStore` under
 `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. The store persists
 source-selected replay payloads once, plus source-owned long-form Core/Motion
-statistics and metadata tables. Runtime sampling options such as
-`frame_stride` and `target_fps` remain read-time policy and do not create
-stride-specific stored payloads.
+statistics and metadata tables. Normalize-time `frame_stride` and `target_fps`
+are byte-affecting profile fields and therefore select distinct stored
+payloads.
 
 Batch build TOML groups shared normalize-time settings by dataset and expands
 `sequence_ids` into concrete per-sequence source configs before ingestion. The
@@ -190,16 +190,11 @@ checked-in benchmark datastore config therefore declares each dataset's common
 RGB, frame-selection, and reference-cloud policy once instead of repeating it
 for every scene.
 
-Runtime readers first request the exact profile key. If that profile is missing,
-they may reuse the only current-schema entry for the same dataset, sequence, and
-source id with a warning. Multiple compatible profiles remain ambiguous and
-must be resolved by rebuilding or selecting the exact profile.
-
-When a run wants to read a lower cadence than the persisted entry, source
-configs keep that read-time policy in `frame_stride` / `target_fps` and carry
-the store-build cadence in `normalized_frame_stride` / `normalized_target_fps`.
-This keeps benchmark sweeps on exact datastore profiles without making runtime
-subsampling a rebuild trigger.
+Runtime readers request the exact profile key. If that current-schema profile is
+missing, the run fails and the entry must be rebuilt or selected explicitly.
+When a caller wants to replay fewer frames from an existing entry, it passes a
+separate runtime `FrameSelectionConfig` to the normalized-store reader instead
+of changing source-config identity.
 
 Each new entry writes two queryable CSV tables:
 
@@ -234,8 +229,10 @@ are diagnostic reference trajectories only and are never benchmark candidates.
 Normalized ADVIO manifests keep calibration/intrinsics but set raw pose refs and
 fixpoints to `None`; raw ADVIO pose/fixpoint CSV sidecars are invalid under a
 normalized datastore entry. The ADVIO normalized profile convention is
-`fixedpoint_common_start_local_rdf_v1`, and older or missing conventions are
-treated as rebuild-required instead of compatible defaults.
+`fixedpoint_common_start_local_rdf_v1`. Legacy local-first-pose conventions,
+legacy `registered` coordinate status, and missing conventions are all
+rebuild-required; runtime replay only opens current-schema entries that declare
+the current convention.
 
 New entries use canonical roots only: source inputs under `<entry>/input/`,
 reference/candidate trajectories under `<entry>/benchmark/trajectories/`, clouds
@@ -292,20 +289,24 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_profile_for_dataset,
     normalized_store_for_service,
 )
+from prml_vslam.sources.datasets.normalized_source import NormalizedDatasetRuntimeSource
 from prml_vslam.sources.datasets.advio import AdvioDatasetService
 from prml_vslam.utils import PathConfig
 
 path_config = PathConfig()
 service = AdvioDatasetService(path_config)
 source_config = AdvioSourceConfig(sequence_id="advio-15")
-source = service.build_normalized_source(
-    sequence_id=service.resolve_sequence_id(source_config.sequence_id),
-    normalized_store=normalized_store_for_service(DatasetId.ADVIO, path_config),
-    normalized_profile=normalized_profile_for_dataset(
+sequence_id = service.resolve_sequence_id(source_config.sequence_id)
+source = NormalizedDatasetRuntimeSource(
+    label=service.scene(sequence_id).display_name,
+    store=normalized_store_for_service(DatasetId.ADVIO, path_config),
+    profile=normalized_profile_for_dataset(
         dataset_id=DatasetId.ADVIO,
         service=service,
         source_config=source_config,
     ),
+    frame_selection=source_config,
+    replay_mode=source_config.replay_mode,
 )
 stream = source.open_stream(loop=False)
 

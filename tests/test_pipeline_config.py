@@ -8,6 +8,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from prml_vslam.interfaces import (
+    ObservationIndexEntry,
+    ObservationProvenance,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
+)
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import (
     STAGE_SECTION_ORDER,
@@ -19,10 +25,10 @@ from prml_vslam.pipeline.reuse import load_reused_stage_results
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
-    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    normalized_runtime_profile_for_source_config,
 )
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
@@ -36,7 +42,7 @@ from prml_vslam.sources.contracts import (
 )
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
-from prml_vslam.sources.datasets.normalization import normalized_profile_for_dataset
+from prml_vslam.sources.datasets.normalization import normalized_runtime_profile_for_dataset
 from prml_vslam.sources.datasets.normalized_store import normalized_store_for_path_config
 from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.replay import ReplayMode
@@ -249,7 +255,7 @@ def test_tum_rgbd_cloud_alignment_uses_exact_normalized_reference_cloud_entry(tm
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=tmp_path / ".data")
     source_backend = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
     service = TumRgbdDatasetService(path_config)
-    profile = normalized_profile_for_dataset(
+    profile = normalized_runtime_profile_for_dataset(
         dataset_id=DatasetId.TUM_RGBD,
         service=service,
         source_config=source_backend,
@@ -325,31 +331,6 @@ def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> Non
     assert config.stages.slam.custom_resources == {"custom_accelerator": 3.0}
 
 
-def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> None:
-    repo_root = _repo_root()
-    config_path = repo_root / ".configs/pipelines/vista-full.toml"
-    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
-
-    run_config = RunConfig.from_toml(config_path)
-
-    run_config_plan = run_config.compile_plan(path_config)
-
-    backend = run_config.stages.source.backend
-    assert isinstance(backend, Record3DDatasetSourceConfig | TumRgbdSourceConfig | AdvioSourceConfig)
-    assert run_config_plan.source.source_id == backend.source_id
-    assert run_config_plan.source.sequence_id == backend.sequence_id
-    assert run_config_plan.source.metadata["dataset_id"] in {
-        DatasetId.ADVIO.value,
-        DatasetId.RECORD3D.value,
-        DatasetId.TUM_RGBD.value,
-    }
-    assert run_config.stages.evaluate_cloud.enabled is False
-    assert run_config.stages.evaluate_trajectory.enabled is True
-    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
-    assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
-    assert run_config.visualization.decimation_random_seed == 0
-
-
 def test_run_plan_expected_fps_ignores_raw_advio_cadence_without_normalized_entry(tmp_path: Path) -> None:
     native_fps = 60.04133960359873
     frames_path = tmp_path / ".data" / "advio" / "advio-20" / "iphone" / "frames.csv"
@@ -374,6 +355,79 @@ def test_run_plan_expected_fps_ignores_raw_advio_cadence_without_normalized_entr
 
     assert plan.source.expected_fps is None
     assert plan.model_dump(mode="json")["source"]["expected_fps"] is None
+
+
+def test_run_plan_expected_fps_uses_normalized_observation_index_for_runtime_sampling(tmp_path: Path) -> None:
+    class _ObservationIndexSource:
+        label = "advio-15"
+
+        def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+            timestamps_path = output_dir / "manifest_timestamps.json"
+            write_json(timestamps_path, {"timestamps_ns": [0, 200_000_000, 400_000_000, 600_000_000]})
+            return SequenceManifest(
+                sequence_id="advio-15",
+                dataset_id=DatasetId.ADVIO,
+                timestamps_path=timestamps_path,
+            )
+
+        def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+            payload_root = output_dir / "observations"
+            payload_root.mkdir(parents=True)
+            rgb_dir = payload_root / "rgb"
+            rgb_dir.mkdir()
+            for seq in range(4):
+                (rgb_dir / f"{seq:06d}.png").write_bytes(b"placeholder")
+            index_path = payload_root / "observations.json"
+            index_path.write_text(
+                ObservationSequenceIndex(
+                    source_id="advio",
+                    sequence_id="advio-15",
+                    observation_count=4,
+                    rows=[
+                        ObservationIndexEntry(
+                            seq=seq,
+                            timestamp_ns=timestamp_ns,
+                            rgb_path=Path(f"rgb/{seq:06d}.png"),
+                            provenance=ObservationProvenance(source_id="advio", source_frame_index=seq),
+                        )
+                        for seq, timestamp_ns in enumerate([0, 66_666_667, 133_333_333, 200_000_000])
+                    ],
+                ).model_dump_json(),
+                encoding="utf-8",
+            )
+            return PreparedBenchmarkInputs(
+                observation_sequences=[
+                    ObservationSequenceRef(
+                        source_id="advio",
+                        sequence_id="advio-15",
+                        index_path=index_path,
+                        payload_root=payload_root,
+                        observation_count=4,
+                    )
+                ]
+            )
+
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=tmp_path / ".data")
+    source_backend = AdvioSourceConfig(sequence_id="advio-15", frame_stride=3)
+    profile = normalized_runtime_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_config=source_backend,
+    )
+    normalized_store_for_path_config(DatasetId.ADVIO, path_config).create_entry_from_source(
+        profile=profile,
+        source=_ObservationIndexSource(),
+    )
+    run_config = build_run_config(
+        experiment_name="advio-sampled-fps",
+        output_dir=path_config.artifacts_dir,
+        source_backend=source_backend,
+        method=MethodId.VISTA,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.source.expected_fps == pytest.approx(5.0)
 
 
 def test_run_plan_expected_fps_uses_target_fps_without_native_metadata(tmp_path: Path) -> None:
@@ -430,7 +484,7 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "advio-20",
                 "dataset_serving": {
                     "pose_source": "ground_truth",
-                    "pose_frame_mode": "provider_world",
+                    "pose_frame_mode": "fixedpoint_common_start_local",
                 },
             }
         }
@@ -456,7 +510,6 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     assert isinstance(advio.backend, AdvioSourceConfig)
     assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
     assert advio.backend.replay_mode is ReplayMode.REALTIME
-    assert advio.backend.normalize_video_orientation is True
     assert isinstance(record3d.backend, Record3DSourceConfig)
     assert record3d.backend.transport is Record3DTransportId.USB
 
@@ -749,6 +802,7 @@ def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
         "torchvision==0.20.1",
         "lingbot-map",
         "flashinfer-python",
+        "torch-c-dlpack-ext==0.1.5",
     }
     assert pyproject["tool"]["uv"]["sources"]["lingbot-map"] == {
         "path": "external/lingbot-map",
