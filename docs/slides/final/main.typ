@@ -163,15 +163,15 @@
         cloud for holes it never covered.
     ],
     [
-      *Metrics* — over filled pixels $Omega$ ($I$ real, $hat(I)$ render):
+      *Metrics* — over the $N$ filled pixels $Omega$ ($I$ real, $hat(I)$ render):
 
       $ "L1" = 1/N sum_(p in Omega) abs(I_p - hat(I)_p) $
       #text(size: 13pt)[→ mean per-pixel error.]
 
       $ "PSNR" = 10 log_10 (L^2 \/ "MSE") $
-      #text(size: 13pt)[→ log-scaled error, higher = closer.]
+      #text(size: 13pt)[→ higher = closer. MSE = mean sq. error, $L$ = max value (255).]
 
-      - SSIM: local *structure*, 7 x 7 window @wang2004ssim.
+      - SSIM: local *structure*, 7×7 window @wang2004ssim.
       - Coverage: fraction of pixels the cloud fills.
 
       #note[
