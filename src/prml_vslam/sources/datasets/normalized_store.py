@@ -262,7 +262,10 @@ class NormalizedDatasetStore:
                 f"Missing normalized dataset entry dataset_id={self.dataset_id.value} "
                 f"sequence_id={sequence_id} profile_key={profile_key}."
             )
-        entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+        entry = rebase_model_paths(
+            NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+            root=entry_path.parent,
+        )
         profile = NormalizedDatasetProfile.model_validate(entry.profile)
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
@@ -516,7 +519,10 @@ class NormalizedDatasetStore:
         issues: list[NormalizedDatasetStoreIssue] = []
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = rebase_model_paths(
+                    NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+                    root=entry_path.parent,
+                )
                 profile = entry.profile
                 if not _is_current_schema(entry, profile):
                     issues.append(
@@ -538,7 +544,10 @@ class NormalizedDatasetStore:
         entries: list[NormalizedDatasetEntry] = []
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = rebase_model_paths(
+                    NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8")),
+                    root=entry_path.parent,
+                )
                 profile = entry.profile
                 if not _is_current_schema(entry, profile):
                     continue
@@ -1086,21 +1095,26 @@ def _runtime_selection_sort_key(
 
 
 def _entry_runtime_timestamps_ns(entry: NormalizedDatasetEntry) -> list[int]:
-    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
     )
     observation_sequence = benchmark_inputs.default_observation_sequence()
     if observation_sequence is not None:
         return [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
-    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     if manifest.timestamps_path is None:
         return []
     return load_timestamps_ns(manifest.timestamps_path)
 
 
 def _entry_has_existing_reference_cloud(entry: NormalizedDatasetEntry) -> bool:
-    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
     )
     return any(ref.path.exists() and ref.metadata_path.exists() for ref in benchmark_inputs.reference_clouds)
 
