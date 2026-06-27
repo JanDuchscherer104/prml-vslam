@@ -1,4 +1,7 @@
 #import "charged_ieee_local.typ": ieee
+#import "@preview/booktabs:0.0.4": *
+
+#show: booktabs-default-table-style
 
 #let hm_author(name, email: none) = if email == none {
   (name: name)
@@ -15,25 +18,33 @@
 #show: ieee.with(
   title: [Uncalibrated Monocular VSLAM for Smartphone Video Benchmarking],
   authors: (
-    hm_author("Florian Beck"),
-    hm_author("Valentin Bumeder"),
+    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
     hm_author("Lukas Röß"),
     hm_author("Christopher Kirschner"),
-    hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
+    hm_author("Valentin Bumeder"),
+    hm_author("Florian Beck"),
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
-    This report documents the project scaffold, evaluation protocol, and benchmark plan for
-    uncalibrated monocular VSLAM on smartphone video. The focus is on comparing modern methods,
-    handling unknown intrinsics, and evaluating both trajectory quality and dense reconstruction
-    quality against public and custom datasets.
+    We describe a reproducible benchmark substrate for off-device uncalibrated monocular visual
+    simultaneous localization and mapping (VSLAM) on smartphone video. Recent learned dense SLAM
+    systems can operate with weak calibration assumptions, but their outputs are comparable only
+    when ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
+    implementation materializes ADVIO, TUM RGB-D, and Record3D as normalized observation sequences;
+    adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, clouds, transform
+    metadata, and metric inputs. Rather than reporting a leaderboard, the paper specifies the
+    transform contract: RDF camera frames, ADVIO fixedpoint registration with common-start
+    localization, first-pose-relative RGB-D sources, Sim(3) or gravity-aware trajectory placement,
+    and ICP-based dense-geometry diagnostics.
   ],
   index-terms: (
     "VSLAM",
     "monocular SLAM",
+    "visual odometry",
+    "benchmarking",
+    "similarity alignment",
+    "dataset normalization",
     "dense reconstruction",
-    "trajectory evaluation",
-    "ADVIO",
   ),
   bibliography: bibliography("../references.bib"),
   figure-supplement: [Fig.],
@@ -49,3 +60,4 @@
 #include "sections/07-experiments.typ"
 #include "sections/08-discussion.typ"
 #include "sections/09-conclusion.typ"
+#include "sections/10-appendix-workpackages.typ"

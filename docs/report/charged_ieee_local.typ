@@ -16,7 +16,7 @@
   // A list of index terms to display after the abstract.
   index-terms: (),
   // The article's paper size. Also affects the margins.
-  paper-size: "us-letter",
+  paper-size: "a4",
   // The result of a call to the `bibliography` function or `none`.
   bibliography: none,
   // How figures are referred to from within the text.
@@ -249,7 +249,7 @@
     set par(spacing: 0.45em, leading: 0.45em)
     set text(9pt, weight: 700, spacing: 150%)
 
-    [_Abstract_---#h(weak: true, 0pt)#abstract]
+    [#h(weak: true, 0pt)#abstract]
 
     if index-terms != () {
       parbreak()
