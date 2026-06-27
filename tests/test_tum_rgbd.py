@@ -28,6 +28,7 @@ from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply, load_point_cloud_ply_with_colors, load_tum_trajectory
+from prml_vslam.utils.portable_paths import rebase_model_paths
 
 
 def _write_tum_rgbd_sequence(
@@ -482,9 +483,15 @@ def test_tum_rgbd_normalized_store_uses_direct_observations_layout(tmp_path: Pat
     )
 
     entry = store.create_entry_from_source(profile=profile, source=raw_source)
-    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    ).model_dump(mode="json")
     observation_ref = benchmark_inputs["observation_sequences"][0]
-    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     observations = list(FileObservationSequenceLoader(stored_inputs.observation_sequences[0]).iter_observations())
     stream = store.open_stream(
         entry,

@@ -821,7 +821,10 @@ def test_normalized_store_preserves_manifest_timestamps_for_video_sources(
     )
 
     entry = store.create_entry_from_source(profile=profile, source=VideoSource())
-    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
 
     assert timestamps == {
@@ -1012,7 +1015,10 @@ def test_normalized_store_does_not_rewrite_opaque_json_strings(tmp_path: Path, m
             ]
         ),
     )
-    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     stored_index = json.loads(stored_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
 
     assert stored_inputs.observation_sequences[0].index_path.is_relative_to(entry.root)

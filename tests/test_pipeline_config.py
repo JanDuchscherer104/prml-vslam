@@ -48,6 +48,7 @@ from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils.portable_paths import rebase_model_paths
 from prml_vslam.utils.serialization import write_json
 
 
@@ -298,7 +299,10 @@ def test_tum_rgbd_cloud_alignment_uses_exact_normalized_reference_cloud_entry(tm
 
     assert stage.available is True
 
-    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     stored_inputs.reference_clouds[0].metadata_path.unlink()
     unavailable_plan = config.compile_plan(path_config)
     unavailable_stage = next(stage for stage in unavailable_plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)

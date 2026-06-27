@@ -60,6 +60,7 @@ from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry,
 from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
+from prml_vslam.utils.portable_paths import rebase_model_paths
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 BackendSpec: TypeAlias = BackendConfig
@@ -403,7 +404,10 @@ def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: 
             profile,
             frame_selection=frame_selection,
         )
-        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        manifest = rebase_model_paths(
+            SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+            root=entry.root,
+        )
         timestamps_ns = _normalized_entry_timestamps_ns(entry, manifest)
         if not timestamps_ns:
             return None
@@ -430,8 +434,9 @@ def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | N
 
 
 def _normalized_entry_timestamps_ns(entry: NormalizedDatasetEntry, manifest: SequenceManifest) -> list[int]:
-    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
     )
     observation_sequence = benchmark_inputs.default_observation_sequence()
     if observation_sequence is not None:

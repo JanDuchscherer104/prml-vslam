@@ -1,0 +1,58 @@
+# Normalized VSLAM datastore build config for the 18-scene ViSTA/MASt3R sweep.
+#
+# Usage:
+#   uv run prml-vslam dataset normalize \
+#     --config .configs/datasets/benchmark-18-vslam-datastore.toml
+
+[[sources]]
+source_id = "record3d_dataset"
+sequence_ids = [
+  "2026-06-03--18-17-10",
+  "2026-06-03--18-20-22",
+  "2026-06-03--18-24-27",
+  "2026-06-03--18-26-32",
+  "2026-06-03--18-27-25",
+  "2026-06-03--18-29-08",
+]
+target_fps = 30.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14
+
+  [sources.reference_cloud]
+  depth_stride_px = 3
+  max_points      = 500_000
+  random_seed     = 17
+  min_confidence  = 1
+
+[[sources]]
+source_id = "tum_rgbd"
+sequence_ids = [
+  "freiburg1_360",
+  "freiburg1_desk",
+  "freiburg1_desk2",
+  "freiburg1_floor",
+  "freiburg1_plant",
+  "freiburg1_room",
+]
+target_fps = 30.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14
+
+  [sources.reference_cloud]
+  depth_stride_px = 3
+  max_points      = 500_000
+  random_seed     = 17
+
+[[sources]]
+source_id = "advio"
+sequence_ids = [
+  "advio-01",
+  "advio-02",
+  "advio-03",
+  "advio-04",
+  "advio-05",
+  "advio-06",
+]
+target_fps = 30.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14

@@ -244,6 +244,7 @@ docs/slides/**/*.svgz
 .artifacts/**/rgb/
 .artifacts/**/frames/
 .artifacts/**/*.ply
+.artifacts/**/*.npy
 .artifacts/**/*.rrd
 .artifacts/**/point_cloud_confidences.npz
 .data/
