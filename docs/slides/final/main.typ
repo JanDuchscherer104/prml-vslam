@@ -72,9 +72,10 @@
     columns: (1fr, 1fr, 1fr),
     [
       *MASt3R*:\
-      _Chirstopher_
-      - traditional SLAM backend
-      -
+      _Christopher_
+      - *Foundation Model Prior:* Leverages a heavy, pre-trained model for robust 3D geometry.
+      - *Generic Camera:* Supports time-varying intrinsics (e.g., dynamic zooming).
+      - Focus: Max. robustness & deep geometry.
     ],
     [
       *ViSTA*:\
@@ -144,9 +145,104 @@
   -
 ]
 
-#slide(title: [Image Metrics])[
-  - Metrics used.
-  - Brief performance comparison.
+// ===========================================================================
+// Christopher Kirschner — ~4 min: MASt3R-SLAM, render-based image metrics,
+// results. Content mirrors the German reference drafts in
+// report/sections/drafts/ck-*-de.typ.
+// ===========================================================================
+#slide(title: [MASt3R-SLAM])[
+  #grid(
+    columns: (1.05fr, 0.95fr),
+    gutter: 0.8cm,
+    [
+      Dense monocular SLAM method *MASt3R* @murai2025mast3rslam.
+
+      *Key Features:*
+      - *Foundation Model Prior:* Uses a heavy, pre-trained network for robust 3D geometry "in-the-wild".
+      - *Direct 3D Matching:* Matches points in 3D ray-space instead of relying on traditional 2D features.
+      - *Generic Ray Modeling:* Handles changing camera parameters mid-video (e.g., dynamic zooming).
+    ],
+    [
+      #good-note[
+        *Standardized Pipeline Integration*
+        Wrapped to use the exact same I/O format as the other methods — differences stem entirely from the architecture.
+      ]
+      #v(0.4cm)
+      Output artifacts:
+      - camera path (TUM format)
+      - dense colored point cloud
+
+      → Direct input for our evaluation metrics.
+    ],
+  )
+]
+
+
+#slide(title: [Render-based Image Metrics])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *Idea:* Evaluate *in image space*.
+
+      - Render the dense cloud from the *estimated poses* (Open3D
+        projection @zhou2018open3d).
+      - Compare each render to the nearest input frame, *pixel-wise*.
+      - Score only *filled* pixels (mask $Omega$) — don't punish the
+        cloud for holes it never covered.
+    ],
+    [
+      *Metrics* (over $Omega$)
+      $ "PSNR" = 10 log_10 (L^2 \/ "MSE"), quad "SSIM", quad "L1" $
+      plus *Coverage* — the fraction of pixels the cloud fills.
+
+      #note[
+        Evaluate metrics *together with coverage*. Absolute scores are less meaningful
+        due to arbitrary monocular scale and trajectory dependencies. They are best
+        used for *relative comparison* between methods on the same sequence.
+      ]
+    ],
+  )
+]
+
+#slide(title: [Results — ADVIO advio-15])[
+  #grid(
+    columns: (1.15fr, 0.85fr),
+    gutter: 0.7cm,
+    [
+      #figure(
+        table(
+          columns: 7,
+          align: (left, center, center, center, center, center, center),
+          table.header(
+            [Method], [Pairs], [Cov.], [PSNR], [SSIM], [L1], [RMSE (m)],
+          ),
+          [ViSTA-SLAM], [357], [0.79], [10.8], [0.10], [0.19], [0.91],
+          [MASt3R-SLAM], [--], [--], [--], [--], [--], [--],
+        ),
+        caption: [
+          Render-based image-quality and trajectory results on ADVIO
+          advio-15 @cortes2018advio. PSNR/SSIM/L1 averaged over filled
+          pixels; RMSE is the Sim(3)-aligned trajectory error.
+        ],
+      )
+
+      - Absolute values are *low by design*: half-dense cloud + imperfect
+        path → not photo quality.
+      - Useful for *relative* comparison; coverage shows how much of the
+        scene was reconstructed.
+      - MASt3R-SLAM row pending a clean, comparable re-run.
+    ],
+    [
+      #figure(
+        image("../../figures/render_eval/vista_advio15_sbs_a.png", width: 100%),
+        caption: [
+          Input frame (left) vs. dense cloud rendered from the same pose
+          (right) — semi-dense, holes where the cloud is thin.
+        ],
+      )
+    ],
+  )
 ]
 
 #slide(title: [Real-time Performances])[
