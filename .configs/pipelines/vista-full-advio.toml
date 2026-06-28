@@ -5,9 +5,9 @@
 # visualization settings.
 # mamba activate prml-vslam
 # uv run --extra vista prml-vslam run-config .configs/pipelines/vista-full.toml
-# uv run rerun .artifacts/vista-tum-cabinet-full/vista/visualization/viewer_recording.rrd --serve-web
+# uv run rerun .artifacts/vista-advio-advio-01/vista/visualization/viewer_recording.rrd --serve-web
 
-experiment_name          = "vista-tum-freiburg3_large_cabinet"
+experiment_name          = "vista-advio-advio-01"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -16,8 +16,8 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
+    source_id    = "advio"
+    sequence_id  = "advio-01"
     frame_stride = 1
     replay_mode  = "fast_as_possible"
 
@@ -129,7 +129,7 @@ enabled = true
     min_confidence = 0.6
 
 [stages.align_cloud]
-enabled = true
+enabled = false
 # Tight ICP correspondence gate for cluttered SLAM clouds; larger values can
 # pull the aligned cloud toward wrong nearby surfaces.
 max_correspondence_distance_m = 0.02

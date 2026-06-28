@@ -7,7 +7,7 @@
 # uv run --extra vista prml-vslam run-config .configs/pipelines/vista-full.toml
 # uv run rerun .artifacts/vista-tum-cabinet-full/vista/visualization/viewer_recording.rrd --serve-web
 
-experiment_name          = "vista-tum-freiburg3_large_cabinet"
+experiment_name          = "vista-r3d-2026-06-03--18-29-08"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -16,8 +16,8 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
+    source_id    = "record3d_dataset"
+    sequence_id  = "2026-06-03--18-29-08"
     frame_stride = 1
     replay_mode  = "fast_as_possible"
 

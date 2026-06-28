@@ -4,11 +4,11 @@
 # backend overrides, stage-local evaluation/reconstruction policy, and
 # visualization settings.
 # mamba activate prml-vslam
-# uv run --extra mast3r prml-vslam run-config .configs/pipelines/mast3r-full.toml
+# uv run --extra mast3r prml-vslam run-config .configs/pipelines/mast3r-full-r3d.toml
 # uv run rerun .artifacts/mast3r-tum-cabinet-full/mast3r/visualization/viewer_recording.rrd --serve-web
 
 
-experiment_name          = "mast3r-tum-freiburg3_large_cabinet"
+experiment_name          = "mast3r-r3d-2026-06-03--18-29-08"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -17,8 +17,8 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id    = "tum_rgbd"
-    sequence_id  = "freiburg3_large_cabinet"
+    source_id    = "record3d_dataset"
+    sequence_id  = "2026-06-03--18-29-08"
     frame_stride = 1
     replay_mode  = "fast_as_possible"
 

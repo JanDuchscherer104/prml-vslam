@@ -24,5 +24,4 @@ sampling_interval_ms    = 1000
 
     [stages.slam.backend]
     method_id   = "mast3r"
-    max_frames  = 50
     random_seed = 43
