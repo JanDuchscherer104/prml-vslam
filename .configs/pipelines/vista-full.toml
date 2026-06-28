@@ -7,7 +7,7 @@
 # uv run --extra vista prml-vslam run-config .configs/pipelines/vista-full.toml
 # uv run rerun .artifacts/vista-tum-cabinet-full/vista/visualization/viewer_recording.rrd --serve-web
 
-experiment_name          = "vista-advio-20"
+experiment_name          = "vista-tum-cabinet-full"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -64,17 +64,17 @@ sampling_interval_ms    = 1000
     # Comparable to MASt3R's internal `FrameTracker` keyframe decision. MASt3R
     # does not expose a stride/flow selector in this repo; keep source sampling
     # shared when comparing effective input cadence.
-    keyframe_detection = "stride"
+    keyframe_detection = "flow_stride"
 
     # Comparable to shared source `frame_stride` plus MASt3R's internal accepted
     # keyframe density. MASt3R has no backend-local stride knob; use the shared
     # source sampling policy for strict input-cadence control.
-    stride = 3
+    stride = 25
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
     # and test true backpressure.
-    flow_thres = 20
+    flow_thres = 20.0
 
     # Number of temporal-neighbor edges per keyframe in the pose graph.
     neighbor_edge_num = 3
