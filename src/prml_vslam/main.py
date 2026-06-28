@@ -936,6 +936,209 @@ def eval_trajectory(
     )
 
 
+@app.command("eval-image")
+def eval_image(
+    reference: Annotated[
+        Path,
+        typer.Argument(help="Ground-truth image file, or a directory of frames named to match the generated set."),
+    ],
+    generated: Annotated[
+        Path,
+        typer.Argument(help="Generated image file, or a directory of frames to compare against the reference."),
+    ],
+    data_range: Annotated[
+        float | None,
+        typer.Option("--data-range", help="Source value range (default: 255 for uint8 inputs)."),
+    ] = None,
+    mask: Annotated[
+        Path | None,
+        typer.Option("--mask", help="Optional boolean mask image; only valid for single-image comparison."),
+    ] = None,
+    persist_to: Annotated[
+        Path | None,
+        typer.Option("--persist-to", help="Artifact root under which to write evaluation/image_metrics.json."),
+    ] = None,
+) -> None:
+    """Compute image-quality metrics (L1/L2/PSNR/SSIM) between reference and generated images."""
+    from prml_vslam.eval.contracts import ImageQualitySummary
+    from prml_vslam.eval.image_service import ImageQualityEvaluationService
+
+    path_config = get_path_config()
+    reference_path = path_config.resolve_repo_path(reference)
+    generated_path = path_config.resolve_repo_path(generated)
+    service = ImageQualityEvaluationService(path_config)
+
+    try:
+        if reference_path.is_dir() and generated_path.is_dir():
+            if mask is not None:
+                console.error("--mask is only supported for single-image comparison.")
+                raise typer.Exit(code=1)
+            summary = service.evaluate_directories(
+                reference_dir=reference_path,
+                generated_dir=generated_path,
+                data_range=data_range,
+            )
+        elif reference_path.is_file() and generated_path.is_file():
+            metrics = service.compute_pair(
+                reference_path=reference_path,
+                generated_path=generated_path,
+                data_range=data_range,
+                mask_path=path_config.resolve_repo_path(mask) if mask is not None else None,
+            )
+            summary = ImageQualitySummary.from_frames([metrics])
+        else:
+            console.error("reference and generated must both be files or both be directories.")
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload: dict[str, object] = {
+        "pair_count": summary.pair_count,
+        "mean_coverage": summary.mean_coverage,
+        "stats": {metric_id: stats.model_dump(mode="json") for metric_id, stats in summary.stats.items()},
+    }
+    if persist_to is not None:
+        payload["result_path"] = str(service.persist(summary, path_config.resolve_repo_path(persist_to)))
+    console.plog(payload)
+
+
+@app.command("render-cloud")
+def render_cloud(
+    cloud: Annotated[
+        Path,
+        typer.Argument(help="Colored point cloud (PLY), e.g. an artifact root's slam/dense_points.ply."),
+    ],
+    trajectory: Annotated[
+        Path,
+        typer.Argument(help="TUM trajectory whose poses (in the cloud's world frame) to render from."),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Directory to write rendered NNNNNN.png frames into."),
+    ],
+    intrinsics_json: Annotated[
+        Path | None,
+        typer.Option("--intrinsics-json", help="CameraIntrinsics JSON file (must include width_px/height_px)."),
+    ] = None,
+    fx: Annotated[
+        float | None, typer.Option("--fx", help="Focal length x (px); used when --intrinsics-json is omitted.")
+    ] = None,
+    fy: Annotated[float | None, typer.Option("--fy", help="Focal length y (px).")] = None,
+    cx: Annotated[float | None, typer.Option("--cx", help="Principal point x (px).")] = None,
+    cy: Annotated[float | None, typer.Option("--cy", help="Principal point y (px).")] = None,
+    width: Annotated[int | None, typer.Option("--width", help="Raster width (px).")] = None,
+    height: Annotated[int | None, typer.Option("--height", help="Raster height (px).")] = None,
+    depth_max_m: Annotated[
+        float, typer.Option("--depth-max-m", help="Drop points farther than this distance (m).")
+    ] = 50.0,
+    depth_scale: Annotated[float, typer.Option("--depth-scale", help="Open3D depth encoding factor.")] = 1000.0,
+    dilation_px: Annotated[
+        int,
+        typer.Option("--dilation-px", help="Optional morphological hole-fill radius for sparse clouds (0 = raw)."),
+    ] = 0,
+) -> None:
+    """Render synthetic frames from a point cloud along a trajectory.
+
+    This is the low-level primitive (explicit cloud + trajectory + intrinsics). To
+    score a finished run against its input frames, use `render-run`, which pairs by
+    timestamp and applies the coverage mask.
+    """
+    from prml_vslam.interfaces.camera import CameraIntrinsics
+    from prml_vslam.rendering import (
+        PointCloudRenderer,
+        RenderConfig,
+        poses_from_tum_trajectory,
+        render_trajectory_views,
+    )
+
+    path_config = get_path_config()
+    cloud_path = path_config.resolve_repo_path(cloud)
+    trajectory_path = path_config.resolve_repo_path(trajectory)
+    output_path = path_config.resolve_repo_path(output_dir)
+
+    try:
+        if intrinsics_json is not None:
+            intrinsics_payload = path_config.resolve_repo_path(intrinsics_json).read_text(encoding="utf-8")
+            intrinsics = CameraIntrinsics.model_validate_json(intrinsics_payload)
+        elif None not in (fx, fy, cx, cy, width, height):
+            intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width_px=width, height_px=height)
+        else:
+            console.error("Provide --intrinsics-json, or all of --fx --fy --cx --cy --width --height.")
+            raise typer.Exit(code=1)
+        if intrinsics.width_px is None or intrinsics.height_px is None:
+            console.error("Intrinsics must include width_px and height_px for rendering.")
+            raise typer.Exit(code=1)
+
+        config = RenderConfig(depth_scale=depth_scale, depth_max_m=depth_max_m, dilation_px=dilation_px)
+        renderer = PointCloudRenderer.from_ply(cloud_path, config=config)
+        poses = [pose for _, pose in poses_from_tum_trajectory(trajectory_path)]
+        rendered_paths = render_trajectory_views(renderer, intrinsics=intrinsics, poses=poses, output_dir=output_path)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    console.plog({"rendered_frames": len(rendered_paths), "output_dir": str(output_path)})
+
+
+@app.command("render-run")
+def render_run(
+    artifact_root: Annotated[
+        Path,
+        typer.Argument(help="A finished run's artifact root (e.g. .artifacts/<experiment>/<method>)."),
+    ],
+    no_gallery: Annotated[
+        bool, typer.Option("--no-gallery", help="Skip writing the GT/rendered/side-by-side gallery.")
+    ] = False,
+    gallery_every: Annotated[
+        int, typer.Option("--gallery-every", help="Save every Nth scored pair to the gallery (1 = all).")
+    ] = 10,
+    dilation_px: Annotated[
+        int, typer.Option("--dilation-px", help="Optional morphological hole-fill radius for sparse clouds.")
+    ] = 0,
+    depth_max_m: Annotated[
+        float,
+        typer.Option("--depth-max-m", help="Render depth clip in cloud units (huge default; SLAM is up-to-scale)."),
+    ] = 1e6,
+) -> None:
+    """Render a run's dense cloud from its trajectory and score it against the input frames.
+
+    Pairs each estimated pose with the input frame nearest in time, renders at the
+    source intrinsics, scores masked L1/L2/PSNR/SSIM, and writes
+    evaluation/image_metrics.json plus a side-by-side gallery for visual review.
+    """
+    from prml_vslam.eval.image_service import ImageQualityEvaluationService
+    from prml_vslam.eval.render_eval import RenderEvalConfig
+
+    path_config = get_path_config()
+    resolved_root = path_config.resolve_repo_path(artifact_root)
+    config = RenderEvalConfig(
+        save_gallery=not no_gallery,
+        gallery_every=gallery_every,
+        dilation_px=dilation_px,
+        depth_max_m=depth_max_m,
+    )
+    try:
+        result = ImageQualityEvaluationService(path_config).evaluate_run(resolved_root, config=config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload: dict[str, object] = {
+        "scored_pairs": result.scored_pairs,
+        "mean_coverage": result.summary.mean_coverage,
+        "stats": {metric_id: stats.model_dump(mode="json") for metric_id, stats in result.summary.stats.items()},
+        "result_path": str(result.metrics_path),
+    }
+    if result.gallery_dir is not None:
+        payload["gallery_dir"] = str(result.gallery_dir)
+    console.plog(payload)
+
+
 @app.command("write-demo-config")
 def write_demo_config(
     sequence_id: Annotated[

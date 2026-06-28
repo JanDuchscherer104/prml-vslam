@@ -6,6 +6,7 @@ from prml_vslam.align.gravity.spec import GROUND_ALIGNMENT_STAGE_SPEC
 from prml_vslam.align.icp.spec import CLOUD_ALIGNMENT_STAGE_SPEC
 from prml_vslam.align.trajectory_sim3.spec import TRAJECTORY_ALIGNMENT_STAGE_SPEC
 from prml_vslam.eval.stage_cloud.spec import CLOUD_EVALUATION_STAGE_SPEC
+from prml_vslam.eval.stage_image.spec import IMAGE_EVALUATION_STAGE_SPEC
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
 from prml_vslam.methods.stage.spec import SLAM_STAGE_SPEC
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -23,6 +24,7 @@ STAGE_RUNTIME_SPECS: dict[StageKey, StageRuntimeSpec] = {
     StageKey.RECONSTRUCTION: RECONSTRUCTION_STAGE_SPEC,
     StageKey.CLOUD_ALIGNMENT: CLOUD_ALIGNMENT_STAGE_SPEC,
     StageKey.CLOUD_EVALUATION: CLOUD_EVALUATION_STAGE_SPEC,
+    StageKey.IMAGE_EVALUATION: IMAGE_EVALUATION_STAGE_SPEC,
     StageKey.SUMMARY: SUMMARY_STAGE_SPEC,
 }
 

@@ -53,11 +53,16 @@ class AppPageId(StrEnum):
     PIPELINE = "pipeline"
     ARTIFACTS = "artifacts"
     METRICS = "metrics"
+    IMAGE_QUALITY = "image_quality"
 
     @property
     def label(self) -> str:
         """Return the user-facing page label."""
-        return {AppPageId.RECORD3D: "Record3D", AppPageId.DATASETS: "Datasets"}.get(self, self.value.capitalize())
+        return {
+            AppPageId.RECORD3D: "Record3D",
+            AppPageId.DATASETS: "Datasets",
+            AppPageId.IMAGE_QUALITY: "Image Quality",
+        }.get(self, self.value.capitalize())
 
 
 class PreviewStreamState(StrEnum):
@@ -241,6 +246,22 @@ class MetricsPageState(BaseData):
 
     result_path: Path | None = None
     """Most recently loaded or computed persisted result path."""
+
+
+class ImageQualityPageState(BaseData):
+    """Persisted selector state for the image-quality page."""
+
+    dataset: DatasetId = DatasetId.ADVIO
+    """Selected dataset."""
+
+    sequence_slug: str | None = None
+    """Selected dataset sequence, for example `advio-15`."""
+
+    run_root: Path | None = None
+    """Selected artifact root for one rendered-and-scored run."""
+
+    gallery_every: int = 10
+    """Save every Nth scored pair to the gallery when computing (1 = all)."""
 
 
 class ArtifactInspectorPageState(BaseData):
@@ -448,6 +469,9 @@ class PipelinePageState(BaseData):
     evaluate_cloud: bool = False
     """Whether dense-cloud evaluation should be planned."""
 
+    evaluate_image: bool = False
+    """Whether rendered-image evaluation should be planned."""
+
     ground_alignment_enabled: bool = False
     """Whether ground-plane alignment should be planned."""
 
@@ -551,6 +575,9 @@ class AppState(BaseData):
     metrics: MetricsPageState = Field(default_factory=MetricsPageState)
     """Metrics-page selector state."""
 
+    image_quality: ImageQualityPageState = Field(default_factory=ImageQualityPageState)
+    """Image-quality-page selector state."""
+
 
 __all__ = [
     "AppPageId",
@@ -558,6 +585,7 @@ __all__ = [
     "ArtifactInspectorPageState",
     "AdvioPageState",
     "DatasetPreviewSnapshot",
+    "ImageQualityPageState",
     "MetricsPageState",
     "PipelinePageState",
     "PipelineSourceId",
