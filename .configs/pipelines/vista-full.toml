@@ -16,14 +16,14 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    # source_id   = "tum_rgbd"
-    # sequence_id = "freiburg3_large_cabinet"
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
     # source_id   = "record3d_dataset"
     # sequence_id = "2026-06-03--18-29-08"
-    source_id   = "advio"
-    sequence_id = "advio-20"
+    # source_id   = "advio"
+    # sequence_id = "advio-20"
     frame_stride = 1
-    target_fps  = 15.0
+    # target_fps  = 30.0
     replay_mode = "fast_as_possible"
 
 [stages.slam]
@@ -53,8 +53,23 @@ sampling_interval_ms    = 1000
     # Frame cap to stop the backend after N frames.
     # max_frames = 1500
 
-    # Maximum number of keyframes the pose graph may hold.
-    max_view_num = 512
+    # ViSTA-SLAM TUM-RGBD paper/eval backend preset. The upstream paper/eval
+    # script uses stride=3 on the original TUM-RGBD frame index stream.
+    # Comparable to MASt3R `keyframe_buffer_size`: upper bound on retained
+    # keyframes before the backend would be capacity-limited.
+    # Upstream/paper ViSTA TUM-RGBD value is 400; this low-VRAM comparison cap
+    # mirrors MASt3R `keyframe_buffer_size = 32`.
+    max_view_num = 400
+
+    # Comparable to MASt3R's internal `FrameTracker` keyframe decision. MASt3R
+    # does not expose a stride/flow selector in this repo; keep source sampling
+    # shared when comparing effective input cadence.
+    keyframe_detection = "stride"
+
+    # Comparable to shared source `frame_stride` plus MASt3R's internal accepted
+    # keyframe density. MASt3R has no backend-local stride knob; use the shared
+    # source sampling policy for strict input-cadence control.
+    stride = 3
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe

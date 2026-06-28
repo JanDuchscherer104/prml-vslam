@@ -48,8 +48,34 @@ sampling_interval_ms    = 1000
     method_id = "mast3r"
     # Frame cap to stop the backend after N frames.
     # max_frames = 1500
-    img_size             = 224
-    keyframe_buffer_size = 64
+
+    # Paper/upstream MASt3R-SLAM no-calibration preset.
+    # Comparable to ViSTA's explicit backend graph/keyframe parameters below:
+    # this YAML owns MASt3R tracking, local optimization, matching, retrieval,
+    # and relocalization thresholds.
+    yaml_config_path = "external/mast3r-slam/config/base.yaml"
+
+    # Comparable to ViSTA's intrinsic-free STA frontend. Keep false for the
+    # uncalibrated benchmark; ViSTA estimates intrinsics internally instead of
+    # consuming source calibration.
+    use_calib = false
+
+    # Upstream model/runtime defaults used for reported MASt3R-SLAM results.
+    # Comparable to ViSTA's fixed 224x224 model raster. Do not force these equal:
+    # each backend's pretrained frontend expects its own native resolution.
+    img_size = 512
+
+    # Comparable to ViSTA `max_view_num`: upper bound on retained/preallocated
+    # keyframes before the backend would be capacity-limited.
+    # Upstream/default MASt3R-SLAM buffer is 512
+    # (`SharedKeyframes(..., buffer=512)`); this low-VRAM run intentionally
+    # reduces it to 32. For paper-faithful comparison, use 512 and set ViSTA
+    # `max_view_num = 400` from the TUM-RGBD paper/eval preset.
+    keyframe_buffer_size = 512
+
+    # Comparable to ViSTA `point_conf_thres`: confidence filter used when
+    # exporting dense reconstruction points.
+    c_conf_threshold = 1.5
 
 [stages.align_ground]
 enabled = true
