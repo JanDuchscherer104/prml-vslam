@@ -12,7 +12,7 @@ from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import FailureFingerprint, StageConfig
-from prml_vslam.pipeline.stages.base.contracts import StageResult
+from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime, StreamingStageRuntime
 from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, SequenceManifest
@@ -103,6 +103,10 @@ class StageResultStore:
     def ordered_outcomes(self) -> list[StageOutcome]:
         """Return terminal outcomes in first-completion order."""
         return [self._results[stage_key].outcome for stage_key in self._ordered_stage_keys]
+
+    def ordered_runtime_statuses(self) -> list[StageRuntimeStatus]:
+        """Return final runtime statuses in first-completion order."""
+        return [self._results[stage_key].final_runtime_status for stage_key in self._ordered_stage_keys]
 
 
 class StageRunner:
