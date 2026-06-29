@@ -176,37 +176,30 @@
   #h(29pt) @murai2025mast3rslam
 ]
 */
-
 #slide(title: [MASt3R-SLAM: System Overview])[
   #grid(
     columns: (1fr, 1fr, 1fr),
     gutter: 0.8cm,
     [
-      3D-Prior front-end
+      *3D-Prior front-end*
       - MASt3R (ViT-Large): a learned 3D foundation model — geometry straight from an image pair, no keypoints, no triangulation.
-      - Dense by construction: a 3D point for every pixel, fused across keyframes into the map.
+      - Dense by construction: a 3D point for *every* pixel, fused across keyframes into the map.
     ],
     [
-      Pixel → ray → depth
-      - For every pixel the network predicts a viewing ray and a depth along it → one dense 3D point per pixel.
+      *Pixel → ray → depth*
+      - For every pixel the network predicts a *viewing ray* and a *depth* along it → one dense 3D point per pixel.
       - Two frames are aligned directly in this ray/point space (point-to-ray error) — no 2D feature descriptors.
     ],
     [
-      <<<<<<< HEAD
-      Uncalibrated & real-time
-      - No calibration needed: generic central-camera model, focal estimated per keyframe → raw smartphone video.
-      - Intrinsics may even change mid-sequence (e.g. the camera zooms); still real-time (\~15 FPS) with loop closure.
-      =======
-      *Optimization & Backend*
-      - Resolves frame tracking via Gauss-Newton IRLS.
-      - Second-order $op("Sim")(3)$ global optimization at 15 FPS.
-      >>>>>>> fdf99dbd (docs(final): rename figure)
+      *Uncalibrated & real-time*
+      - No calibration needed: generic central-camera model, focal estimated *per keyframe* → raw smartphone video.
+      - Intrinsics may even change mid-sequence (e.g. the camera *zooms*); still real-time (\~15 FPS) with loop closure.
     ],
   )
 
   #v(0.35cm)
   #good-note[
-    Why $op("Sim")(3)$? Monocular + uncalibrated → the scene scale is unknown and drifts, so every keyframe carries a similarity transform (rotation, translation and scale) to absorb it.
+    *Why $op("Sim")(3)$?* Monocular + uncalibrated → the scene scale is unknown and drifts, so every keyframe carries a *similarity* transform (rotation, translation *and* scale) to absorb it.
   ]
 
   #align(center)[
