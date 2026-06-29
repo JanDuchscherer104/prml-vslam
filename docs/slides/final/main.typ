@@ -90,11 +90,11 @@
 ]
 
 #slide(title: [Motivation & Domain Introduction])[
-  *Why Visual SLAM over Foundation Spatial Models?*
+  *Why Visual SLAM over Structure from Motion?*
 
-  - *Foundation Spatial Models (FSM)* process uncalibrated data effectively but operate strictly offline, prohibiting real-time execution.
-  - *Visual SLAM (VSLAM)* fulfills real-time execution constraints required for emergency response and live stream analysis.
-  - *Methodological Overlap:* Modern learning-based VSLAM methods share architectural concepts with FSMs, particularly depth estimation within their loss functions.
+  - *Structure from Motion (SfM)* processes uncalibrated data effectively but operates strictly offline via batch processing, prohibiting real-time execution.
+  - *Visual SLAM (VSLAM)* incrementally processes video streams, fulfilling the real-time constraints required for emergency response and live stream analysis.
+  - *Methodological Overlap:* Modern learning-based VSLAM integrates robust SfM-like global optimization into its backend while maintaining a low-latency tracking frontend.
 ]
 
 #slide(title: [Goals & Non-Goals])[
@@ -119,31 +119,6 @@
 ]
 //       - intrinsics-free two-view association
 //       - Sim(3) pose graph @zhang2026vistaslam
-
-#slide(title: [Method Comparison])[
-  #grid(
-    columns: (1fr, 1fr, 1fr),
-    gutter: 0.6cm,
-    [
-      *ViSTA-SLAM* @zhang2026vistaslam
-      - *Strategy:* Fast, lightweight processing.
-      - *Matching:* Symmetric two-view geometry.
-      - *Memory:* Traditional $op("Sim")(3)$ pose graph.
-    ],
-    [
-      *MASt3R-SLAM* @murai2025mast3rslam
-      - *Strategy:* Robust "in-the-wild" accuracy.
-      - *Matching:* Ray-space Foundation Model.
-      - *Memory:* Adapts to dynamic intrinsics.
-    ],
-    [
-      *LingBot-Map* @chen2026gct
-      - *Strategy:* Continuous long-range streaming.
-      - *Matching:* Transformer token attention.
-      - *Memory:* Learned geometric buffer.
-    ],
-  )
-]
 
 #slide(title: [ViSTA SLAM: Method & Architecture])[
   #grid(
@@ -1160,4 +1135,29 @@
   #columns(2, gutter: 0.9cm)[
     #bibliography("../../references.bib", title: none)
   ]
+]
+
+#slide(title: [Method Comparison])[
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    gutter: 0.6cm,
+    [
+      *ViSTA-SLAM* @zhang2026vistaslam
+      - *Strategy:* Fast, lightweight processing.
+      - *Matching:* Symmetric two-view geometry.
+      - *Memory:* Traditional $op("Sim")(3)$ pose graph.
+    ],
+    [
+      *MASt3R-SLAM* @murai2025mast3rslam
+      - *Strategy:* Robust "in-the-wild" accuracy.
+      - *Matching:* Ray-space Foundation Model.
+      - *Memory:* Adapts to dynamic intrinsics.
+    ],
+    [
+      *LingBot-Map* @chen2026gct
+      - *Strategy:* Continuous long-range streaming.
+      - *Matching:* Transformer token attention.
+      - *Memory:* Learned geometric buffer.
+    ],
+  )
 ]
