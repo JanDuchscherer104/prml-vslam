@@ -144,9 +144,16 @@ def _plan(tmp_path: Path, run_config: RunConfig) -> RunPlan:
     )
 
 
-def _slam_artifacts(artifact_root: Path) -> SlamArtifacts:
+def _slam_artifacts(
+    artifact_root: Path,
+    *,
+    num_processed_frames: int = 0,
+    num_keyframes: int = 0,
+) -> SlamArtifacts:
     return SlamArtifacts(
-        trajectory_tum=ArtifactRef(path=artifact_root / "slam" / "trajectory.tum", kind="tum", fingerprint="traj")
+        trajectory_tum=ArtifactRef(path=artifact_root / "slam" / "trajectory.tum", kind="tum", fingerprint="traj"),
+        num_processed_frames=num_processed_frames,
+        num_keyframes=num_keyframes,
     )
 
 
@@ -188,6 +195,43 @@ def test_slam_runtime_offline_returns_stage_result(tmp_path: Path) -> None:
     assert isinstance(result.payload, SlamStageOutput)
     assert isinstance(result.payload.artifacts, SlamArtifacts)
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
+
+
+def test_slam_runtime_offline_final_status_uses_terminal_backend_counts(tmp_path: Path) -> None:
+    run_config = _run_config(tmp_path, mode=PipelineMode.OFFLINE)
+    plan = _plan(tmp_path, run_config)
+
+    class CountedBackend(_FakeBackend):
+        def run_observations(self, *args, **kwargs) -> SlamArtifacts:
+            super().run_observations(*args, **kwargs)
+            return _slam_artifacts(plan.artifact_root, num_processed_frames=5, num_keyframes=2)
+
+    backend_config = _FakeBackendConfig(CountedBackend(plan.artifact_root))
+    runtime = SlamStageRuntime()
+
+    result = runtime.run_offline(
+        SlamOfflineStageInput(
+            backend=backend_config,
+            outputs=run_config.stages.slam.outputs,
+            artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts"),
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            sequence_manifest=_sequence_manifest(tmp_path, frame_count=5),
+            benchmark_inputs=None,
+        )
+    )
+
+    status = result.final_runtime_status
+    assert status.lifecycle_state is StageStatus.COMPLETED
+    assert status.processed_items == 5
+    assert status.completed_steps == 5
+    assert status.progress_unit == "frames"
+    assert status.accepted_keyframes == 2
+    assert status.progress_message == "processed 5 frames, accepted 2 keyframes"
+    assert status.fps is None
+    assert status.throughput is None
+    assert status.throughput_unit is None
+    assert status.latency_ms is None
 
 
 def test_slam_runtime_offline_honors_backend_rgb_loading_preference(tmp_path: Path) -> None:

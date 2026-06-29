@@ -21,9 +21,9 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus, VisualizationIntent
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryStageInput
 from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
@@ -326,6 +326,21 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
             plan=plan,
             run_paths=run_paths,
             stage_outcomes=[prior_outcome],
+            stage_runtime_statuses=[
+                StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                    progress_message="processed 10 frames, accepted 3 keyframes",
+                    completed_steps=10,
+                    progress_unit="frames",
+                    processed_items=10,
+                    accepted_keyframes=3,
+                    fps=None,
+                    throughput=None,
+                    throughput_unit=None,
+                    latency_ms=None,
+                )
+            ],
         )
     )
 
@@ -334,9 +349,15 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert result.payload is not None
     assert result.payload.stage_status == {StageKey.SLAM: StageStatus.COMPLETED}
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].accepted_keyframes == 3
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].fps is None
     assert runtime.stage_manifests[0].stage_id is StageKey.SLAM
     assert run_paths.summary_path.exists()
     assert run_paths.stage_manifests_path.exists()
+    persisted_summary = RunSummary.model_validate_json(run_paths.summary_path.read_text(encoding="utf-8"))
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].throughput is None
 
 
 def _request_plan_paths(
