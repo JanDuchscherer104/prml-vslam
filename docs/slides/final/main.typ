@@ -69,21 +69,163 @@
   ]
 ]
 
-#slide(title: [Motivation: Uncalibrated Monocular VSLAM])[
-  - Domain Introduction, Goals & Non-Goals
-  // Lukas: include LingBot training signal here if needed:
-  // depth + uncertainty, camera-to-world pose, local relative pose.
-  - _LUKAS_
+#slide(title: [Challenge Introduction])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *Background*
+      - Professional Visual SLAM pipelines demand rigid factory calibration.
+      - Consumer frameworks utilize real-time sensor fusion but fail on retrospective, uncalibrated video streams.
+      - Global metric consistency and high-fidelity dense mapping deteriorate when intrinsics remain unknown.
+    ],
+    [
+      *The Challenge*
+      - Develop an off-device VSLAM pipeline utilizing state-of-the-art monocular dense methods.
+      - Input: Smartphone monocular video stream.
+      - Execution: Autonomously handle unknown intrinsics.
+      - Output: High-precision trajectory and dense 3D point cloud.
+    ]
+  )
+]
+
+#slide(title: [Motivation & Domain Introduction])[
+  *Why Visual SLAM over Foundation Spatial Models?*
+
+  - *Foundation Spatial Models (FSM)* process uncalibrated data effectively but operate strictly offline, prohibiting real-time execution.
+  - *Visual SLAM (VSLAM)* fulfills real-time execution constraints required for emergency response and live stream analysis.
+  - *Methodological Overlap:* Modern learning-based VSLAM methods share architectural concepts with FSMs, particularly depth estimation within their loss functions.
+]
+
+#slide(title: [Goals & Non-Goals])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      #good-note(width: 100%)[#align(center)[*Project Goals*]]
+      - Benchmark state-of-the-art uncalibrated VSLAM methods (ViSTA-SLAM, MASt3R-SLAM, LingBot).
+      - Establish robust evaluation metrics for trajectory drift and reconstruction fidelity.
+      - Develop a custom pipeline for high-quality test data acquisition.
+      - Analyze system latency and memory consumption.
+    ],
+    [
+      #warning-note(width: 100%)[#align(center)[*Explicit Non-Goals*]]
+      - Develop a novel SLAM algorithm from scratch.
+      - Perform real-time model inference directly on mobile edge devices.
+      - Deliver a production-ready graphical user interface for operators.
+      - Integrate ARCore as a fundamental pipeline component; it serves solely as an external baseline.
+    ]
+  )
 ]
 //       - intrinsics-free two-view association
 //       - Sim(3) pose graph @zhang2026vistaslam
 
+#slide(title: [Method Comparison])[
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    gutter: 0.6cm,
+    [
+      *ViSTA-SLAM* @zhang2026vistaslam
+      - *Strategy:* Fast, lightweight processing.
+      - *Matching:* Symmetric two-view geometry.
+      - *Memory:* Traditional $op("Sim")(3)$ pose graph.
+    ],
+    [
+      *MASt3R-SLAM* @murai2025mast3rslam
+      - *Strategy:* Robust "in-the-wild" accuracy.
+      - *Matching:* Ray-space Foundation Model.
+      - *Memory:* Adapts to dynamic intrinsics.
+    ],
+    [
+      *LingBot-Map* @chen2026gct
+      - *Strategy:* Continuous long-range streaming.
+      - *Matching:* Transformer token attention.
+      - *Memory:* Learned geometric buffer.
+    ],
+  )
+]
+
+#slide(title: [ViSTA SLAM: Method & Architecture])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *Symmetric Two-View Frontend*
+      - Predicts local point maps and relative poses symmetrically to reduce parameter count.
+      - *Frontend Loss:* Jointly optimizes pointmap consistency, geometric alignment, and the relative pose along the $op("SE")(3)$ manifold via cycle-consistency:
+
+      $ L_("pose") &= w_(i j) ( L_R(bold(R)_(i j), hat(bold(R))_(i j)) \
+                   &quad + L_t(bold(t)_(i j), hat(bold(t))_(i j)) + L_("id") ) \
+                   &quad - alpha log(w_(i j)) $
+    ],
+    [
+      *Backend: $op("Sim")(3)$ Pose Graph*
+      - Nodes hold absolute camera poses with an independent scale factor.
+      - Minimizes residual error in the $frak(s)frak(i)frak(m)(3)$ Lie algebra via Levenberg-Marquardt:
+
+      $ min_({bold(v)_i^j}) sum_(bold(e)_(i j)) norm(log_("Sim"(3)) (bold(e)_(i j) dot (bold(v)_i^j)^(-1) dot bold(v)_j^i))_(bold(Omega)_(i j))^2 $
+    ]
+  )
+
+  #v(0.2cm)
+  #align(center)[
+    #figure(
+      image("../../figures/papers/figure-2-vista-architecture.png", width: 95%),
+      caption: [ViSTA SLAM Pipeline Architecture @zhang2026vistaslam],
+    )
+  ]
+]
+
+#slide(title: [ViSTA SLAM: Scene Reconstruction (Record3D)])[
+  - *Reference (iPhone ARKit)*: Trajectory and LiDAR points in *Green*.
+  - *ViSTA SLAM*: Predicted trajectory in *Purple* with dense colored point cloud.
+
+  #align(center)[
+    #figure(
+      image("../../figures/evidence/record3d-29-08-pc+traj.png", height: 75%),
+      caption: [ViSTA SLAM vs. Ground Truth on Custom Record3D Capture],
+    )
+  ]
+]
+
+/*
 #slide(title: [MASt3R-SLAM])[
   - *Foundation Model Prior:* heavy pre-trained network → robust 3D geometry "in-the-wild".
   - *Direct 3D Matching:* matches in 3D ray-space, not 2D features.
   - *Generic Camera:* handles changing intrinsics mid-video (e.g. zoom).
   - Output: camera path + dense colored cloud → input for our metrics.
   #h(29pt) @murai2025mast3rslam
+]
+*/
+
+#slide(title: [MASt3R-SLAM: System Overview])[
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *3D Prior Foundation*
+      - Predicts dense 3D pointmaps directly from uncalibrated image pairs.
+      - Relies solely on a generic central camera model.
+    ],
+    [
+      *Projective Matching*
+      - Replaces 2D feature matching with a local 3D ray-space search.
+      - Minimizes angular difference between queried and target rays.
+    ],
+    [
+      *Optimization & Backend*
+      - Resolves frame tracking via Gauss-Newton IRLS.
+      - Second-order $op("Sim")(3)$ global optimization at 15 FPS.
+    ]
+  )
+
+  #v(0.4cm)
+  #align(center)[
+    #figure(
+      image("../../literature/tex-src/arXiv-MASt3R-SLAM/figs/system-diagram.pdf", width: 95%),
+      caption: [MASt3R-SLAM Pipeline @murai2025mast3rslam],
+    )
+  ]
 ]
 
 #slide(title: [LingBot-Map: Learned Geometric Context])[
@@ -798,7 +940,6 @@
   )
 ]
 
-
 // #slide(title: [Future Work: Performance Optimizations])[
 //   // Flo
 //   #set text(size: 13.2pt)
@@ -1046,6 +1187,18 @@
       ]
     ],
   )
+]
+
+
+#slide(title: [Future Work: Parameter Optimization])[
+  *Evaluation Limitations*
+  - Strict time constraints prevented a comprehensive parameter sweep across all sequences.
+  - The evaluation relies on baseline operational configurations, which exhibit varying degrees of robustness and memory footprint across different datasets.
+
+  *Optimization Strategy*
+  - *ViSTA-SLAM:* Tune the `loop_edge_num` and `loop_dist_min` parameters to balance loop closure frequency against computational overhead.
+  - *MASt3R-SLAM:* Adjust the `keyframe_buffer_size` and frame capacity thresholds to prevent termination failures on sparse, fast-moving sequences.
+  - *LingBot-Map:* Optimize the `kv_cache_sliding_window` and `overlap_keyframes` to improve long-range geometric context retention while satisfying rigid GPU memory limits.
 ]
 
 #slide(title: [Retrospective: What went right, what went wrong?])[
