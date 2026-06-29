@@ -344,7 +344,11 @@ class SlamStageRuntime(
             stage_key=StageKey.SLAM,
             payload=SlamStageOutput(artifacts=slam, visualization=visualization_artifacts),
             outcome=outcome,
-            final_runtime_status=self.status().model_copy(update={"lifecycle_state": status}),
+            final_runtime_status=self._final_runtime_status(
+                status=status,
+                processed_frames=processed_frames,
+                accepted_keyframes=accepted_keyframes,
+            ),
         )
 
     def _progress_message(self) -> str:
@@ -353,6 +357,38 @@ class SlamStageRuntime(
         if self._processed_frames:
             return f"processed {self._processed_frames} frames"
         return ""
+
+    def _final_runtime_status(
+        self,
+        *,
+        status: StageStatus,
+        processed_frames: int,
+        accepted_keyframes: int,
+    ) -> StageRuntimeStatus:
+        fps = rolling_fps(self._frame_timestamps) if len(self._frame_timestamps) >= 2 else None
+        throughput = rolling_fps(self._keyframe_timestamps) if len(self._keyframe_timestamps) >= 2 else None
+        progress_message = ""
+        if accepted_keyframes:
+            progress_message = f"processed {processed_frames} frames, accepted {accepted_keyframes} keyframes"
+        elif processed_frames:
+            progress_message = f"processed {processed_frames} frames"
+        return StageRuntimeStatus(
+            stage_key=StageKey.SLAM,
+            lifecycle_state=status,
+            progress_message=progress_message,
+            completed_steps=processed_frames,
+            progress_unit="frames",
+            failed_count=self._failed_frames,
+            processed_items=processed_frames,
+            accepted_keyframes=accepted_keyframes,
+            fps=fps,
+            throughput=throughput,
+            throughput_unit="keyframes/s" if throughput is not None else None,
+            latency_ms=self._last_latency_ms,
+            last_warning=self._last_warning,
+            last_error=self._last_error,
+            updated_at_ns=time.time_ns(),
+        )
 
 
 def _semantic_update(update: SlamUpdate) -> SlamUpdate:
