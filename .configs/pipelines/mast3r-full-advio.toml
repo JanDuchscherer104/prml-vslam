@@ -86,7 +86,7 @@ enabled = true
     min_confidence = 0.6
 
 [stages.align_cloud]
-enabled = true
+enabled = false
 # Tight ICP correspondence gate for cluttered SLAM clouds; larger values can
 # pull the aligned cloud toward wrong nearby surfaces.
 max_correspondence_distance_m = 0.02
@@ -95,7 +95,7 @@ max_correspondence_distance_m = 0.02
 enabled = true
 
 [stages.evaluate_cloud]
-enabled = true
+enabled = false
 
 [stages.align_trajectory]
 enabled = true

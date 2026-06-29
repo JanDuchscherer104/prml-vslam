@@ -10,12 +10,14 @@ import pytest
 from pydantic import ValidationError
 
 from prml_vslam.methods.stage.backend_config import MethodId
+from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.sweep import (
     SweepConfig,
     SweepDataset,
     SweepMeta,
     SweepRunItem,
     _build_run_id,
+    _load_method_template,
     _load_slam_stage_from_template,
     build_run_config_from_sweep_item,
     expand_sweep,
@@ -28,6 +30,8 @@ from prml_vslam.sources.config import (
 )
 from prml_vslam.sources.contracts import ReferenceSource
 from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
+from prml_vslam.sources.replay import ReplayMode
+from prml_vslam.visualization.contracts import VisualizationConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,6 +50,12 @@ num_gpus = 1.0
     method_id   = "vista"
     max_frames  = 50
     random_seed = 43
+
+[visualization]
+export_viewer_rrd = true
+log_camera_image_rgb = false
+point_cloud_decimation_keep_ratio = 0.05
+mesh_decimation_keep_ratio = 0.05
 """
 
 _MAST3R_SLAM_SECTION = """\
@@ -61,6 +71,12 @@ num_gpus = 1.0
     method_id   = "mast3r"
     max_frames  = 50
     random_seed = 43
+
+[visualization]
+export_viewer_rrd = true
+log_camera_image_rgb = false
+point_cloud_decimation_keep_ratio = 0.25
+mesh_decimation_keep_ratio = 0.25
 """
 
 _LINGBOT_SLAM_SECTION = """\
@@ -74,6 +90,9 @@ num_gpus = 1.0
 
     [stages.slam.backend]
     method_id = "lingbot_map"
+
+[visualization]
+export_viewer_rrd = false
 """
 
 
@@ -413,6 +432,17 @@ def test_load_slam_stage_from_template_preserves_backend_settings(tmp_path: Path
     assert slam.outputs.emit_sparse_points is False
 
 
+def test_load_method_template_preserves_visualization_settings(tmp_path: Path) -> None:
+    template = _write_template(tmp_path, "vista.toml", _VISTA_SLAM_SECTION)
+    slam, visualization = _load_method_template(template)
+
+    assert slam.backend is not None
+    assert slam.backend.method_id is MethodId.VISTA
+    assert visualization.export_viewer_rrd is True
+    assert visualization.log_camera_image_rgb is False
+    assert visualization.point_cloud_decimation_keep_ratio == pytest.approx(0.05)
+
+
 def test_load_slam_stage_from_template_raises_on_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         _load_slam_stage_from_template(tmp_path / "nonexistent.toml")
@@ -563,11 +593,14 @@ def _make_item(
     dataset_id: str = "tum_rgbd",
     sequence_id: str = "freiburg1_xyz",
     method_id: str = "vista",
+    replay_mode: ReplayMode = ReplayMode.REALTIME,
     align_trajectory: bool = False,
     evaluate_trajectory: bool = False,
     align_ground: bool = False,
+    align_ground_min_confidence: float = 0.6,
     reconstruction: bool = False,
     align_cloud: bool = False,
+    align_cloud_max_correspondence_distance_m: float = 0.05,
     evaluate_cloud: bool = False,
     baseline_source: ReferenceSource | None = None,
 ) -> SweepRunItem:
@@ -586,24 +619,34 @@ def _make_item(
         dataset=SweepDataset(
             dataset_id=dataset_id,
             sequence_id=sequence_id,
+            replay_mode=replay_mode,
             baseline_source=baseline_source,
             align_trajectory=align_trajectory,
             evaluate_trajectory=evaluate_trajectory,
             align_ground=align_ground,
+            align_ground_min_confidence=align_ground_min_confidence,
             reconstruction=reconstruction,
             align_cloud=align_cloud,
+            align_cloud_max_correspondence_distance_m=align_cloud_max_correspondence_distance_m,
             evaluate_cloud=evaluate_cloud,
         ),
         method_id=method_id,
         slam_stage=slam,
+        visualization=VisualizationConfig(export_viewer_rrd=True, log_camera_image_rgb=False),
     )
 
 
 def test_build_run_config_uses_tum_rgbd_source_backend(tmp_path: Path) -> None:
-    item = _make_item(tmp_path, dataset_id="tum_rgbd", sequence_id="freiburg1_xyz")
+    item = _make_item(
+        tmp_path,
+        dataset_id="tum_rgbd",
+        sequence_id="freiburg1_xyz",
+        replay_mode=ReplayMode.FAST_AS_POSSIBLE,
+    )
     run_cfg = build_run_config_from_sweep_item(item)
     assert isinstance(run_cfg.stages.source.backend, TumRgbdSourceConfig)
     assert run_cfg.stages.source.backend.sequence_id == "freiburg1_xyz"
+    assert run_cfg.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
 
 
 def test_build_run_config_uses_advio_source_backend(tmp_path: Path) -> None:
@@ -657,6 +700,22 @@ def test_build_run_config_injects_stage_flags(tmp_path: Path) -> None:
     assert run_cfg.stages.evaluate_cloud.enabled is True
 
 
+def test_build_run_config_preserves_stage_metric_parameters(tmp_path: Path) -> None:
+    item = _make_item(
+        tmp_path,
+        align_ground=True,
+        align_ground_min_confidence=0.7,
+        align_cloud=True,
+        align_cloud_max_correspondence_distance_m=0.02,
+    )
+
+    run_cfg = build_run_config_from_sweep_item(item)
+
+    assert run_cfg.stages.align_ground.ground.strategy == "ransac_point_cloud"
+    assert run_cfg.stages.align_ground.ground.min_confidence == pytest.approx(0.7)
+    assert run_cfg.stages.align_cloud.max_correspondence_distance_m == pytest.approx(0.02)
+
+
 def test_build_run_config_disabled_stages_by_default(tmp_path: Path) -> None:
     item = _make_item(tmp_path)
     run_cfg = build_run_config_from_sweep_item(item)
@@ -674,11 +733,63 @@ def test_build_run_config_summary_always_enabled(tmp_path: Path) -> None:
     assert run_cfg.stages.summary.enabled is True
 
 
-def test_build_run_config_visualization_defaults_off(tmp_path: Path) -> None:
+def test_build_run_config_uses_template_visualization(tmp_path: Path) -> None:
     item = _make_item(tmp_path)
     run_cfg = build_run_config_from_sweep_item(item)
     assert run_cfg.visualization.connect_live_viewer is False
-    assert run_cfg.visualization.export_viewer_rrd is False
+    assert run_cfg.visualization.export_viewer_rrd is True
+    assert run_cfg.visualization.log_camera_image_rgb is False
+
+
+def test_benchmark_sweep_configs_match_corrected_single_run_configs() -> None:
+    path_config = None
+    checks = [
+        (
+            Path(".configs/sweeps/benchmark-18-mast3r-uncapped-sweep.toml"),
+            "mast3r",
+            {
+                "advio": Path(".configs/pipelines/mast3r-full-advio.toml"),
+                "record3d_dataset": Path(".configs/pipelines/mast3r-full-r3d.toml"),
+                "tum_rgbd": Path(".configs/pipelines/mast3r-full-tum.toml"),
+            },
+        ),
+        (
+            Path(".configs/sweeps/benchmark-18-mast3r-sweep.toml"),
+            "mast3r",
+            {
+                "advio": Path(".configs/pipelines/mast3r-full-advio.toml"),
+                "record3d_dataset": Path(".configs/pipelines/mast3r-full-r3d.toml"),
+                "tum_rgbd": Path(".configs/pipelines/mast3r-full-tum.toml"),
+            },
+        ),
+        (
+            Path(".configs/sweeps/benchmark-18-vista-sweep.toml"),
+            "vista",
+            {
+                "advio": Path(".configs/pipelines/vista-full-advio.toml"),
+                "record3d_dataset": Path(".configs/pipelines/vista-full-r3d.toml"),
+                "tum_rgbd": Path(".configs/pipelines/vista-full-tum.toml"),
+            },
+        ),
+    ]
+
+    for sweep_path, method_id, single_configs in checks:
+        config = load_sweep_config(sweep_path, path_config)
+        items = expand_sweep(config, path_config)
+        by_dataset = {item.dataset.dataset_id: item for item in items if item.method_id == method_id}
+        for dataset_id, single_path in single_configs.items():
+            expected = _run_config_equivalence_payload(RunConfig.from_toml(single_path))
+            actual = _run_config_equivalence_payload(build_run_config_from_sweep_item(by_dataset[dataset_id]))
+            assert actual == expected, f"{sweep_path} {dataset_id} differs from {single_path}"
+
+
+def _run_config_equivalence_payload(config: RunConfig) -> dict:
+    payload = config.model_dump(mode="json")
+    payload.pop("experiment_name", None)
+    payload.pop("output_dir", None)
+    source_backend = payload["stages"]["source"]["backend"]
+    source_backend.pop("sequence_id", None)
+    return payload
 
 
 def test_build_run_config_carries_slam_stage_verbatim(tmp_path: Path) -> None:
