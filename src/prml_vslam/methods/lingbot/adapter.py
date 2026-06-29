@@ -71,6 +71,11 @@ class LingbotMapSlamBackend(SlamBackend):
         del sequence_manifest, benchmark_inputs, baseline_source
         config = _expect_lingbot_config(backend_config)
         _validate_output_policy(output_policy)
+        if config.max_frames is None:
+            raise RuntimeError(
+                "LingBot-Map terminal streaming requires `max_frames` so the adapter cannot retain an unbounded RGB "
+                "sequence. Use offline path-backed execution for full finite datasets."
+            )
         self._streaming_frames = []
         self._streaming_backend_config = config
         self._streaming_output_policy = output_policy
@@ -125,9 +130,13 @@ class LingbotMapSlamBackend(SlamBackend):
         config = _expect_lingbot_config(backend_config)
         _validate_output_policy(output_policy)
 
-        frames = list(observations)
-        if config.max_frames is not None:
-            frames = frames[: config.max_frames]
+        frames: list[Observation] = []
+        for frame in observations:
+            if config.max_frames is not None and len(frames) >= config.max_frames:
+                break
+            if frame.rgb_path is None:
+                raise RuntimeError("LingBot offline inference requires path-backed RGB observations.")
+            frames.append(_without_heavy_payloads(frame))
         return self._run_frames(
             frames,
             backend_config=config,
@@ -197,6 +206,21 @@ def _expect_lingbot_config(backend_config: SlamBackendConfig) -> LingbotMapSlamB
     if not isinstance(backend_config, LingbotMapSlamBackendConfig):
         raise TypeError(f"Expected LingbotMapSlamBackendConfig, got {type(backend_config).__name__}.")
     return backend_config
+
+
+def _without_heavy_payloads(frame: Observation) -> Observation:
+    return frame.model_copy(
+        update={
+            "rgb": None,
+            "depth_m": None,
+            "confidence": None,
+            "pointmap_xyz": None,
+            "point_cloud_xyz": None,
+            "point_cloud_rgb": None,
+            "intrinsics": None,
+            "T_world_camera": None,
+        }
+    )
 
 
 def _validate_output_policy(output_policy: SlamOutputPolicy) -> None:
