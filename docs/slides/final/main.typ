@@ -408,7 +408,6 @@
           #pc_icon()
           #v(0.25em)
           - Rerun live visualization
-          - persisted metrics
           - operator-facing map
         ],
         pc_color,
@@ -696,10 +695,68 @@
 ]
 
 #slide(title: [Real-time Performances])[
+  #let vista_color = rgb("3f7de0")
+  #let mast3r_color = rgb("f28e2b")
+  #let paper_color = rgb("6f7785")
+  #let bar_row(label, value, max, fill, value-label) = grid(
+    columns: (3.15cm, 1fr, 1.15cm),
+    column-gutter: 0.28cm,
+    align: (left, horizon, right),
+    [
+      #label
+    ],
+    [
+      #box(width: 100%, height: 0.34cm)[
+        #place(left + horizon, rect(width: 100%, height: 0.15cm, fill: rgb("e8ecf3"), radius: 3pt))
+        #place(left + horizon, rect(width: value / max * 100%, height: 0.15cm, fill: fill, radius: 3pt))
+      ]
+    ],
+    [
+      #value-label
+    ],
+  )
 
-  - FPS + latency?
-  - own measurments and paper reported numbers.
-  - nvidia-smi and perf stats.
+  #grid(
+    columns: (1.04fr, 0.96fr),
+    gutter: 0.5cm,
+    [
+      #color-block(title: [Streaming FPS])[
+        #bar_row([ViSTA TUM], 82.7, 90, vista_color, [82.7])
+        #bar_row([ViSTA R3D], 62.2, 90, vista_color, [62.2])
+        #bar_row([ViSTA\*], 78.0, 90, paper_color, [78.0])
+        #bar_row([MASt3R TUM], 17.4, 90, mast3r_color, [17.4])
+        #bar_row([MASt3R R3D], 16.3, 90, mast3r_color, [16.3])
+        #bar_row([MASt3R\*], 15.1, 90, paper_color, [15.1])
+
+        #v(0.35em)
+        #compact_note[
+          \* Paper bars: ViSTA 7Scenes redkitchen @zhang2026vistaslam; MASt3R-SLAM matching-system setting @murai2025mast3rslam.
+        ]
+      ]
+    ],
+    [
+      #color-block(title: [Pipeline telemetry])[
+        #table(
+          columns: (1.15fr, 0.85fr, 0.85fr),
+          align: (left, right, right),
+          table.header([run], [lat. ms], [key-FPS]),
+          [V TUM], [115.5], [2.99],
+          [M TUM], [52.7], [0.48],
+          [V R3D], [12.6], [1.73],
+          [M R3D], [59.3], [0.84],
+          [M ADVIO], [165.5], [2.78],
+        )
+
+        #v(0.35em)
+        #compact_note[
+          Local telemetry: SLAM-stage latency and accepted-keyframe throughput. M = MASt3R, V = ViSTA.
+        ]
+      ]
+      #quote-block[
+        Evaluated on a single NVIDIA RTX 3080 GPU, AMD Ryzen 7 5700X CPU, 32GB RAM
+      ]
+    ],
+  )
 ]
 
 
@@ -805,115 +862,115 @@
 //   ]
 // ]
 
-#slide(title: [Future Work: End-to-End Streaming Architecture])[
-  // Flo
-  #set text(size: 12.8pt)
-  #let device_color = rgb("4f7dd6")
-  #let model_color = rgb("7c5cc4")
-  #let pc_color = rgb("2f9e6d")
-  #let muted = rgb("5f6773")
-  #let panel(title, body, color) = block(
-    fill: color.lighten(75%),
-    stroke: 0.75pt + color.lighten(30%),
-    radius: 10pt,
-    inset: 0.7em,
-  )[
-    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
-    #v(0.35em)
-    #body
-  ]
-  #let flow_arrow(label) = block(width: 100%)[
-    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
-    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
-  ]
-  #let phone_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
-        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
-      ]
-    ]
-  ]
-  #let model_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: (auto, auto, auto),
-        rows: (auto, auto, auto),
-        gutter: 0.25cm,
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
+// #slide(title: [Future Work: End-to-End Streaming Architecture])[
+//   // Flo
+//   #set text(size: 12.8pt)
+//   #let device_color = rgb("4f7dd6")
+//   #let model_color = rgb("7c5cc4")
+//   #let pc_color = rgb("2f9e6d")
+//   #let muted = rgb("5f6773")
+//   #let panel(title, body, color) = block(
+//     fill: color.lighten(75%),
+//     stroke: 0.75pt + color.lighten(30%),
+//     radius: 10pt,
+//     inset: 0.7em,
+//   )[
+//     #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
+//     #v(0.35em)
+//     #body
+//   ]
+//   #let flow_arrow(label) = block(width: 100%)[
+//     #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
+//     #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
+//   ]
+//   #let phone_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
+//         #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
+//       ]
+//     ]
+//   ]
+//   #let model_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #grid(
+//         columns: (auto, auto, auto),
+//         rows: (auto, auto, auto),
+//         gutter: 0.25cm,
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
 
-        circle(radius: 0.16cm, fill: model_color),
-        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
-        circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//         rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
+//         circle(radius: 0.16cm, fill: model_color),
 
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-      )
-    ]
-  ]
-  #let pc_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: auto,
-        rows: (auto, auto),
-        gutter: 0.08cm,
-        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
-          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
-        ],
-        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
-      )
-    ]
-  ]
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//       )
+//     ]
+//   ]
+//   #let pc_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #grid(
+//         columns: auto,
+//         rows: (auto, auto),
+//         gutter: 0.08cm,
+//         rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
+//           #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
+//         ],
+//         align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
+//       )
+//     ]
+//   ]
 
-  #grid(
-    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
-    align: horizon,
-    gutter: 0.25cm,
-    [
-      #panel(
-        [Phone],
-        [
-          #phone_icon()
-          #v(0.25em)
-          - RGB stream
-          - timestamps
-          - optional ARKit/ARCore pose
-        ],
-        device_color,
-      )
-    ],
-    [#flow_arrow([network transport])],
-    [
-      #panel(
-        [VSLAM Model],
-        [
-          #model_icon()
-          #v(0.25em)
-          - frame buffer
-          - method adapter
-          - trajectory + dense cloud
-        ],
-        model_color,
-      )
-    ],
-    [#flow_arrow([artifacts + updates])],
-    [
-      #panel(
-        [PC / Operator],
-        [
-          #pc_icon()
-          #v(0.25em)
-          - live visualization
-          - persisted metrics
-          - operator-facing map
-        ],
-        pc_color,
-      )
-    ],
-  )
-]
+//   #grid(
+//     columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
+//     align: horizon,
+//     gutter: 0.25cm,
+//     [
+//       #panel(
+//         [Phone],
+//         [
+//           #phone_icon()
+//           #v(0.25em)
+//           - RGB stream
+//           - timestamps
+//           - optional ARKit/ARCore pose
+//         ],
+//         device_color,
+//       )
+//     ],
+//     [#flow_arrow([network transport])],
+//     [
+//       #panel(
+//         [VSLAM Model],
+//         [
+//           #model_icon()
+//           #v(0.25em)
+//           - frame buffer
+//           - method adapter
+//           - trajectory + dense cloud
+//         ],
+//         model_color,
+//       )
+//     ],
+//     [#flow_arrow([artifacts + updates])],
+//     [
+//       #panel(
+//         [PC / Operator],
+//         [
+//           #pc_icon()
+//           #v(0.25em)
+//           - live visualization
+//           - persisted metrics
+//           - operator-facing map
+//         ],
+//         pc_color,
+//       )
+//     ],
+//   )
+// ]
 
 //   #v(0.45em)
 //   #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
