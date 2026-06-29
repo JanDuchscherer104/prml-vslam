@@ -191,6 +191,34 @@
   )
 ]
 
+// #slide(title: [LingBot-Map: Why Excluded From Sweeps])[
+//   // The exact Record3D LingBot loop-closure-failure screenshot is not present
+//   // in this worktree. Keep the second panel reserved for the predicted-cloud
+//   // view when that screenshot is copied into docs/figures/evidence/.
+//   #grid(
+//     columns: (1.05fr, 0.95fr),
+//     gutter: 0.52cm,
+//     [
+//       #color-block(title: [Runtime modes], spacing: 0.42em)[
+//         - *Standard streaming*: paper benchmark mode; full GCA context @chen2026gct.
+//         - Sweep hardware: standard mode hit *GPU OOM* before full-sequence completion.
+//         - *Windowed streaming*: bounded memory; pose links stay inside the active *1024-frame* context.
+//         - Failure mode: revisits outside the window cannot close loops; drift remains in trajectory and cloud.
+//         - Stable windowed integration arrived after the primary runtime sweeps.
+//       ]
+//     ],
+//     [
+
+//       #figure(
+//         image("../../figures/evidence/tum-cabinet-lingbot.png", height: 50%, fit: "cover"),
+//         caption: [LingBot trajectory and point cloud evidence.],
+//       )
+//       #figure(image("../../figures/evidence/record3d-29-08-lingbot-loop-closure-fail.png", height: 65%)),
+//     ],
+//   )
+// ]
+
+
 
 #section-slide(title: [Methodology], subtitle: [Normalized boundaries, transforms, and evaluation])
 
@@ -305,112 +333,6 @@
             - evaluation of _real-time_ performance
           ]
         ],
-      )
-    ],
-  )
-]
-
-#slide(title: [End-to-End Streaming Architecture])[
-  // Flo
-  #set text(size: 12.8pt)
-  #let device_color = rgb("4f7dd6")
-  #let model_color = rgb("7c5cc4")
-  #let pc_color = rgb("2f9e6d")
-  #let muted = rgb("5f6773")
-  #let panel(title, body, color) = block(
-    fill: color.lighten(75%),
-    stroke: 0.75pt + color.lighten(30%),
-    radius: 10pt,
-    inset: 0.7em,
-  )[
-    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
-    #v(0.35em)
-    #body
-  ]
-  #let flow_arrow(label) = block(width: 100%)[
-    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
-    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
-  ]
-  #let phone_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
-        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
-      ]
-    ]
-  ]
-  #let model_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: (auto, auto, auto),
-        rows: (auto, auto, auto),
-        gutter: 0.25cm,
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-
-        circle(radius: 0.16cm, fill: model_color),
-        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
-        circle(radius: 0.16cm, fill: model_color),
-
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-      )
-    ]
-  ]
-  #let pc_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: auto,
-        rows: (auto, auto),
-        gutter: 0.08cm,
-        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
-          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
-        ],
-        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
-      )
-    ]
-  ]
-
-  #grid(
-    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
-    align: horizon,
-    gutter: 0.25cm,
-    [
-      #panel(
-        [Phone],
-        [
-          #phone_icon()
-          #v(0.25em)
-          - WebRTC RGB-(D) stream
-        ],
-        device_color,
-      )
-    ],
-    [#flow_arrow([network transport])],
-    [
-      #panel(
-        [VSLAM Model],
-        [
-          #model_icon()
-          #v(0.25em)
-          - method adapter
-          - trajectory + dense cloud
-        ],
-        model_color,
-      )
-    ],
-    [#flow_arrow([artifacts + updates])],
-    [
-      #panel(
-        [PC / Operator],
-        [
-          #pc_icon()
-          #v(0.25em)
-          - Rerun live visualization
-          - operator-facing map
-        ],
-        pc_color,
       )
     ],
   )
