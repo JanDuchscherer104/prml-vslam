@@ -70,7 +70,7 @@
 ]
 
 #slide(title: [Motivation: Uncalibrated Monocular VSLAM])[
-  - Domain Introduction & Goals
+  - Domain Introduction, Goals & Non-Goals
   // Lukas: include LingBot training signal here if needed:
   // depth + uncertainty, camera-to-world pose, local relative pose.
   - _LUKAS_
@@ -94,7 +94,6 @@
       *ViSTA*:\
       - intrinsics-free two-view association
       - Sim(3) pose graph @zhang2026vistaslam
-      _Lukas_
     ],
     [
       *LingBot*:\
@@ -390,6 +389,121 @@
   )
 ]
 
+#slide(title: [End-to-End Streaming Architecture])[
+  // Flo
+  #set text(size: 12.8pt)
+  #let device_color = rgb("4f7dd6")
+  #let model_color = rgb("7c5cc4")
+  #let pc_color = rgb("2f9e6d")
+  #let muted = rgb("5f6773")
+  #let panel(title, body, color) = block(
+    fill: color.lighten(75%),
+    stroke: 0.75pt + color.lighten(30%),
+    radius: 10pt,
+    inset: 0.7em,
+  )[
+    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
+    #v(0.35em)
+    #body
+  ]
+  #let flow_arrow(label) = block(width: 100%)[
+    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
+    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
+  ]
+  #let phone_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
+        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
+      ]
+    ]
+  ]
+  #let model_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: (auto, auto, auto),
+        rows: (auto, auto, auto),
+        gutter: 0.25cm,
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+      )
+    ]
+  ]
+  #let pc_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: auto,
+        rows: (auto, auto),
+        gutter: 0.08cm,
+        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
+          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
+        ],
+        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
+      )
+    ]
+  ]
+
+  #grid(
+    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
+    align: horizon,
+    gutter: 0.25cm,
+    [
+      #panel(
+        [Phone],
+        [
+          #phone_icon()
+          #v(0.25em)
+          - RGB stream
+          - timestamps
+          - optional ARKit/ARCore pose
+        ],
+        device_color,
+      )
+    ],
+    [#flow_arrow([network transport])],
+    [
+      #panel(
+        [VSLAM Model],
+        [
+          #model_icon()
+          #v(0.25em)
+          - frame buffer
+          - method adapter
+          - trajectory + dense cloud
+        ],
+        model_color,
+      )
+    ],
+    [#flow_arrow([artifacts + updates])],
+    [
+      #panel(
+        [PC / Operator],
+        [
+          #pc_icon()
+          #v(0.25em)
+          - live visualization
+          - persisted metrics
+          - operator-facing map
+        ],
+        pc_color,
+      )
+    ],
+  )
+
+  // #v(0.45em)
+  // #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+  //   Future work is not only the model: the system needs a robust peripheral pipeline from capture to inference to display.
+  // ]
+]
+
 // TODO: include docs/figures/evidence/teddy-vista-loop-closure.mov here!
 
 // #slide(title: [Transform Hygiene at Stage Boundaries])[
@@ -676,222 +790,107 @@
 ]
 
 
-#slide(title: [Future Work: Performance Optimizations])[
-  // Flo
-  #set text(size: 13.2pt)
-  #let active_frame = rgb("4f7dd6")
-  #let skipped_frame = rgb("d9dee8")
-  #let frame(active: true) = rect(
-    width: 0.78cm,
-    height: 0.48cm,
-    radius: 3pt,
-    fill: if active { active_frame } else { skipped_frame },
-    stroke: 0.45pt + if active { active_frame.darken(20%) } else { skipped_frame.darken(18%) },
-  )
-  #let frame_row(label, frames) = grid(
-    columns: (1.0fr, auto, auto, auto, auto, auto, auto, auto, auto),
-    align: horizon,
-    gutter: 0.16cm,
-    [#text(weight: "semibold")[#label]],
-    ..frames,
-  )
-  #let image_box(width, height) = rect(
-    width: width,
-    height: height,
-    radius: 5pt,
-    fill: rgb("eef3ff"),
-    stroke: 0.7pt + rgb("9bb7e5"),
-  )
+// #slide(title: [Future Work: Performance Optimizations])[
+//   // Flo
+//   #set text(size: 13.2pt)
+//   #let active_frame = rgb("4f7dd6")
+//   #let skipped_frame = rgb("d9dee8")
+//   #let frame(active: true) = rect(
+//     width: 0.78cm,
+//     height: 0.48cm,
+//     radius: 3pt,
+//     fill: if active { active_frame } else { skipped_frame },
+//     stroke: 0.45pt + if active { active_frame.darken(20%) } else { skipped_frame.darken(18%) },
+//   )
+//   #let frame_row(label, frames) = grid(
+//     columns: (1.0fr, auto, auto, auto, auto, auto, auto, auto, auto),
+//     align: horizon,
+//     gutter: 0.16cm,
+//     [#text(weight: "semibold")[#label]],
+//     ..frames,
+//   )
+//   #let image_box(width, height) = rect(
+//     width: width,
+//     height: height,
+//     radius: 5pt,
+//     fill: rgb("eef3ff"),
+//     stroke: 0.7pt + rgb("9bb7e5"),
+//   )
 
-  #grid(
-    columns: (1fr, 1fr),
-    gutter: 0.75cm,
-    [
-      #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
-        #text(weight: "bold")[Option 1: reduce resolution]
-        #v(0.55em)
-        #align(center)[
-          #grid(
-            columns: (auto, auto, auto, auto, auto),
-            align: horizon,
-            gutter: 0.25cm,
-            image_box(2.45cm, 1.62cm),
-            [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
-            image_box(1.85cm, 1.22cm),
-            [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
-            image_box(1.25cm, 0.82cm),
-          )
-        ]
-        #v(0.55em)
-        - fewer pixels per frame
-        - lower GPU memory and compute
-        - risk: weaker feature/detail quality
-      ]
-    ],
-    [
-      #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
-        #text(weight: "bold")[Option 2: increase frame stride]
-        #v(0.45em)
-        #frame_row([stride 1], (
-          frame(),
-          frame(),
-          frame(),
-          frame(),
-          frame(),
-          frame(),
-          frame(),
-          frame(),
-        ))
-        #v(0.28em)
-        #frame_row([stride 2], (
-          frame(),
-          frame(active: false),
-          frame(),
-          frame(active: false),
-          frame(),
-          frame(active: false),
-          frame(),
-          frame(active: false),
-        ))
-        #v(0.28em)
-        #frame_row([stride 4], (
-          frame(),
-          frame(active: false),
-          frame(active: false),
-          frame(active: false),
-          frame(),
-          frame(active: false),
-          frame(active: false),
-          frame(active: false),
-        ))
-        #v(0.55em)
-        - fewer frames through SLAM
-        - improves throughput directly
-        - risk: larger motion gaps and tracking failures
-      ]
-    ],
-  )
+//   #grid(
+//     columns: (1fr, 1fr),
+//     gutter: 0.75cm,
+//     [
+//       #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
+//         #text(weight: "bold")[Option 1: reduce resolution]
+//         #v(0.55em)
+//         #align(center)[
+//           #grid(
+//             columns: (auto, auto, auto, auto, auto),
+//             align: horizon,
+//             gutter: 0.25cm,
+//             image_box(2.45cm, 1.62cm),
+//             [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
+//             image_box(1.85cm, 1.22cm),
+//             [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
+//             image_box(1.25cm, 0.82cm),
+//           )
+//         ]
+//         #v(0.55em)
+//         - fewer pixels per frame
+//         - lower GPU memory and compute
+//         - risk: weaker feature/detail quality
+//       ]
+//     ],
+//     [
+//       #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
+//         #text(weight: "bold")[Option 2: increase frame stride]
+//         #v(0.45em)
+//         #frame_row([stride 1], (
+//           frame(),
+//           frame(),
+//           frame(),
+//           frame(),
+//           frame(),
+//           frame(),
+//           frame(),
+//           frame(),
+//         ))
+//         #v(0.28em)
+//         #frame_row([stride 2], (
+//           frame(),
+//           frame(active: false),
+//           frame(),
+//           frame(active: false),
+//           frame(),
+//           frame(active: false),
+//           frame(),
+//           frame(active: false),
+//         ))
+//         #v(0.28em)
+//         #frame_row([stride 4], (
+//           frame(),
+//           frame(active: false),
+//           frame(active: false),
+//           frame(active: false),
+//           frame(),
+//           frame(active: false),
+//           frame(active: false),
+//           frame(active: false),
+//         ))
+//         #v(0.55em)
+//         - fewer frames through SLAM
+//         - improves throughput directly
+//         - risk: larger motion gaps and tracking failures
+//       ]
+//     ],
+//   )
 
-  #v(0.55em)
-  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
-    Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
-  ]
-]
-
-#slide(title: [Future Work: End-to-End Streaming Architecture])[
-  // Flo
-  #set text(size: 12.8pt)
-  #let device_color = rgb("4f7dd6")
-  #let model_color = rgb("7c5cc4")
-  #let pc_color = rgb("2f9e6d")
-  #let muted = rgb("5f6773")
-  #let panel(title, body, color) = block(
-    fill: color.lighten(75%),
-    stroke: 0.75pt + color.lighten(30%),
-    radius: 10pt,
-    inset: 0.7em,
-  )[
-    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
-    #v(0.35em)
-    #body
-  ]
-  #let flow_arrow(label) = block(width: 100%)[
-    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
-    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
-  ]
-  #let phone_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
-        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
-      ]
-    ]
-  ]
-  #let model_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: (auto, auto, auto),
-        rows: (auto, auto, auto),
-        gutter: 0.25cm,
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-
-        circle(radius: 0.16cm, fill: model_color),
-        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
-        circle(radius: 0.16cm, fill: model_color),
-
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-        circle(radius: 0.16cm, fill: model_color),
-      )
-    ]
-  ]
-  #let pc_icon() = box(width: 100%, height: 2.3cm)[
-    #align(center + horizon)[
-      #grid(
-        columns: auto,
-        rows: (auto, auto),
-        gutter: 0.08cm,
-        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
-          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
-        ],
-        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
-      )
-    ]
-  ]
-
-  #grid(
-    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
-    align: horizon,
-    gutter: 0.25cm,
-    [
-      #panel(
-        [Phone],
-        [
-          #phone_icon()
-          #v(0.25em)
-          - RGB stream
-          - timestamps
-          - optional ARKit/ARCore pose
-        ],
-        device_color,
-      )
-    ],
-    [#flow_arrow([network transport])],
-    [
-      #panel(
-        [VSLAM Model],
-        [
-          #model_icon()
-          #v(0.25em)
-          - frame buffer
-          - method adapter
-          - trajectory + dense cloud
-        ],
-        model_color,
-      )
-    ],
-    [#flow_arrow([artifacts + updates])],
-    [
-      #panel(
-        [PC / Operator],
-        [
-          #pc_icon()
-          #v(0.25em)
-          - live visualization
-          - persisted metrics
-          - operator-facing map
-        ],
-        pc_color,
-      )
-    ],
-  )
-
-  #v(0.45em)
-  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
-    Future work is not only the model: the system needs a robust peripheral pipeline from capture to inference to display.
-  ]
-]
+//   #v(0.55em)
+//   #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+//     Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+//   ]
+// ]
 
 #slide(title: [Future Work: Toward Complete 4D Reconstruction])[
   // Flo
@@ -943,7 +942,7 @@
     [
       #warning-note(width: 100%)[#align(center)[*What went wrong* ✗]]
 
-      - Fast POC — but *huge refactorings* from AI slop.
+      - Fast POC — but *huge refactorings* from development with AI.
       - *Slow, intensive finalization:* running evaluation &
         getting comparable results across methods.
       - Hard to find the *best-fit parameters per method*.
