@@ -93,7 +93,7 @@
   )
 ]
 
-#section-slide(title: [Methodology], subtitle: [Intresting Implementation Details])
+#section-slide(title: [Methodology & Results], subtitle: [Interesting Implementation Details])
 
 #slide(title: [JD])[
   #grid(
@@ -134,10 +134,133 @@
 //   )
 // ]
 
-#slide(title: [Trajectory Evaluation])[
-  - Problem: not same frame, not same scale, not same orientation.
-  - Sim(3)
-  - APE metric?
+// ===========================================================================
+// Valentin Bumeder — Trajectory Evaluation
+// ===========================================================================
+#slide(title: [Trajectory Evaluation — The Alignment Problem])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *A monocular camera cannot observe:*
+      - the *scale*,
+      - the *world frame* (translation),
+      - the *orientation* (rotation).
+
+      → Estimate and reference are *never* in the same frame,
+      scale, or orientation.
+
+      → Alignment of *estimate onto the reference*
+
+      #note[
+        *Pipeline:*
+        - associate by timestamp (≤ 10 ms) → $"Sim"(3)$ align → measure.
+        - No alignment ⇒ no metric.
+      ]
+    ],
+    [
+      *Sim(3) alignment (Umeyama @umeyama1991least):*
+      best-fit *slide + spin + resize*.
+
+      $ bold(S)^* = arg min_(bold(S) in "Sim"(3)) sum_i norm(bold(x)_i^"ref" - bold(S) bold(x)_i^"est")^2 $
+      $ bold(S) bold(x) = underbrace(s, "scale") underbrace(bold(R), "rot.") bold(x) + underbrace(bold(t), "transl.") $
+
+      - Recovered scale $s$ is *itself a result*: $s approx 1$ ⇒ metric
+        scale recovered.
+
+      #good-note[
+        *ADVIO (phone, near-planar):* lock $bold(R)$ to *yaw about
+        gravity* — full $"Sim"(3)$ could flip a flat path upside-down.
+      ]
+    ],
+  )
+]
+
+#slide(title: [Trajectory Evaluation — Metrics: APE & RPE])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *Two questions × two quantities (m / deg):*
+
+      #table(
+        columns: (auto, 1fr),
+        align: (left, left),
+        inset: (x: 0.4em, y: 0.4em),
+        table.header([], [*translation* / *rotation*]),
+        [*APE* (global)], [_is the whole map right?_],
+        [*RPE* (local)], [_is each step right?_],
+      )
+
+      $ bold(e)_i^"APE" = op("trans")(bold(T)_i^(-1) hat(bold(T))_i) $
+      $ bold(E)_i^"RPE" = (bold(T)_i^(-1) bold(T)_(i+h))^(-1) (hat(bold(T))_i^(-1) hat(bold(T))_(i+h)) $
+
+      #text(size: 13pt)[Headline = *RMSE* over all residuals;
+      $Delta = 1"m"$ for RPE @grupp2017evo.]
+    ],
+    [
+      *Interpretation* — the reason we report both:
+
+      - *Low RPE + High APE* → good local tracking, *global
+        drift* (weak/no loop closure).
+      - *High RPE* → noisy, locally inconsistent odometry.
+      - *APE* catches drift & loop-closure quality;
+        *RPE* is robust to a single big error.
+    ],
+  )
+]
+
+#slide(title: [Trajectory Evaluation — First Results (pilot sweep)])[
+  #set text(size: 14pt)
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.7cm,
+    [
+      *Completion:* #h(0.3em)
+      ViSTA *18/18*, MASt3R *9/18*.
+
+      #warning-note[
+        *All 6 ADVIO MASt3R runs failed* (+ Record3D 27-25, TUM
+        floor/room) in the `align.trajectory` stage.
+      ]
+
+      *Why MASt3R fails — a chain:*
+      + `max_frames = 50` (vs ViSTA's 512).
+      + accepts only *1–5 keyframes* of those 50 (ViSTA: 138–417).
+      + writes *1 trajectory pose per keyframe*.
+      + $≤ 2$ poses ⇒ fails the $"Sim"(3)$ *spread check*.
+
+      #text(size: 12pt)[Config-driven *and* a real robustness weakness:
+      keyframing is intolerant of sparse/fast sampling.]
+    ],
+    [
+      #figure(
+        table(
+          columns: 5,
+          align: (left, center, center, center, center),
+          inset: (x: 0.35em, y: 0.34em),
+          table.header(
+            [Dataset], [APEt ViSTA], [done], [APEt MASt3R], [done],
+          ),
+          [TUM f1 (×6)], [≈0.10 m], [6/6], [≈0.03 m], [4/6],
+          [Record3D (×6)], [≈0.46 m], [6/6], [≈0.03 m], [5/6],
+          [ADVIO (×6)], [≈1.95 m], [6/6], [—], [0/6],
+        ),
+        caption: [Mean APE-translation RMSE; "done" = runs with metrics.],
+      )
+
+      - *Scale recovery:* MASt3R $s approx 1.0$ (metric model) vs
+        ViSTA $s = 0.4 dots 11$ (scale-free).
+      - MASt3R's tiny APE rests on *3–5 pairs* (7-DoF fit ⇒
+        near-overfit) and has *no RPE at all*.
+
+      #note[
+        *Caveats:* ADVIO is hard for both (ViSTA APE-rot 80–170°,
+        under investigation); LingBot pending; full 50×3 matrix is
+        future work.
+      ]
+    ],
+  )
 ]
 
 #include "_pointcloud_accuracy.typ"
@@ -439,13 +562,30 @@
 
 #slide(title: [Retrospective: What went right, what went wrong?])[
   // Valentin
-  -
-]
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      #good-note(width: 100%)[#align(center)[*What went right* ✓]]
 
-#slide(title: [Retrospective: What went right, want went wrong?
-])[
-  - Mapping from work packages to owner
-  -
+      - *AI* enabled a quick project setup (pipeline, Streamlit app, Rerun).
+      - Pipeline made integrating *multiple SLAM methods* easy
+        (ViSTA, MASt3R, LingBot).
+      - Supports *multiple datasets* (ADVIO, TUM, Record3D).
+      - *Fully configurable:* method, source, VSLAM config (frames…),
+        evaluation steps.
+      - *Sweeper* runs all sources × all methods.
+    ],
+    [
+      #warning-note(width: 100%)[#align(center)[*What went wrong* ✗]]
+
+      - Fast POC — but *huge refactorings* from AI slop.
+      - *Slow, intensive finalization:* running evaluation &
+        getting comparable results across methods.
+      - Hard to find the *best-fit parameters per method*.
+      - First sweep had a *misconfiguration* — MASt3R/ViSTA config mismatch messed up the results.
+    ],
+  )
 ]
 
 #slide(title: [References])[
