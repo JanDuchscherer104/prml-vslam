@@ -75,31 +75,15 @@
   // depth + uncertainty, camera-to-world pose, local relative pose.
   - _LUKAS_
 ]
+//       - intrinsics-free two-view association
+//       - Sim(3) pose graph @zhang2026vistaslam
 
-// TODO: maybe one slide per method?
-#slide(title: [Method Comparison])[
-  - conceptual comparison of the three candidate methods (ViSTA, MASt3R, LingBot)
-  - What are their main distinctive features?
-  #grid(
-    columns: (1fr, 1fr, 1fr),
-    [
-      *MASt3R* @murai2025mast3rslam:\
-      - *Foundation Model Prior:* heavy pre-trained network → robust 3D geometry "in-the-wild".
-      - *Direct 3D Matching:* matches in 3D ray-space, not 2D features.
-      - *Generic Camera:* handles changing intrinsics mid-video (e.g. zoom).
-      - Output: camera path + dense colored cloud → input for our metrics.
-    ],
-    [
-      *ViSTA*:\
-      - intrinsics-free two-view association
-      - Sim(3) pose graph @zhang2026vistaslam
-    ],
-    [
-      *LingBot*:\
-      - streaming reconstruction model
-      - Geometric Context Transformer @chen2026gct
-    ],
-  )
+#slide(title: [MASt3R-SLAM])[
+  - *Foundation Model Prior:* heavy pre-trained network → robust 3D geometry "in-the-wild".
+  - *Direct 3D Matching:* matches in 3D ray-space, not 2D features.
+  - *Generic Camera:* handles changing intrinsics mid-video (e.g. zoom).
+  - Output: camera path + dense colored cloud → input for our metrics.
+  #h(29pt) @murai2025mast3rslam
 ]
 
 #slide(title: [LingBot-Map: Learned Geometric Context])[
@@ -198,9 +182,10 @@
       #align(center)[
         #image(
           "../../figures/literature/lingbot-map-geometric-context-attention.pdf",
-          width: 70%,
+          width: 65%,
           fit: "contain",
         )
+        @chen2026gct
       ]
     ],
   )
@@ -222,7 +207,7 @@
         #set text(size: 17pt)
         - Pedestrian smartphone VIO
         - GT + ARKit/ARCore for _trajectory benchmarking_
-        - _Deployment realism_
+        - _Deployment realism_ @cortes2018advio
       ]
     ],
     [
@@ -234,7 +219,7 @@
 
         #set text(size: 17pt)
         - High quality _stereo RGB-D_ + _MoCap_ trajectoroes
-        - _Research standard_ for indoor SLAM benchmarking
+        - _Research standard_ for indoor SLAM benchmarking @newcombe2011kinectfusion
       ]
     ],
     [
@@ -397,9 +382,7 @@
         [
           #phone_icon()
           #v(0.25em)
-          - RGB stream
-          - timestamps
-          - optional ARKit/ARCore pose
+          - WebRTC RGB-(D) stream
         ],
         device_color,
       )
@@ -411,7 +394,6 @@
         [
           #model_icon()
           #v(0.25em)
-          - frame buffer
           - method adapter
           - trajectory + dense cloud
         ],
@@ -425,7 +407,7 @@
         [
           #pc_icon()
           #v(0.25em)
-          - live visualization
+          - Rerun live visualization
           - persisted metrics
           - operator-facing map
         ],
@@ -433,11 +415,6 @@
       )
     ],
   )
-
-  // #v(0.45em)
-  // #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
-  //   Future work is not only the model: the system needs a robust peripheral pipeline from capture to inference to display.
-  // ]
 ]
 
 // TODO: include docs/figures/evidence/teddy-vista-loop-closure.mov here!
@@ -822,120 +799,121 @@
 //     ],
 //   )
 
-  #v(0.55em)
-  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
-    Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+//   #v(0.55em)
+//   #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+//     Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+//   ]
+// ]
+
+#slide(title: [Future Work: End-to-End Streaming Architecture])[
+  // Flo
+  #set text(size: 12.8pt)
+  #let device_color = rgb("4f7dd6")
+  #let model_color = rgb("7c5cc4")
+  #let pc_color = rgb("2f9e6d")
+  #let muted = rgb("5f6773")
+  #let panel(title, body, color) = block(
+    fill: color.lighten(75%),
+    stroke: 0.75pt + color.lighten(30%),
+    radius: 10pt,
+    inset: 0.7em,
+  )[
+    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
+    #v(0.35em)
+    #body
   ]
+  #let flow_arrow(label) = block(width: 100%)[
+    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
+    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
+  ]
+  #let phone_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
+        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
+      ]
+    ]
+  ]
+  #let model_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: (auto, auto, auto),
+        rows: (auto, auto, auto),
+        gutter: 0.25cm,
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+      )
+    ]
+  ]
+  #let pc_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: auto,
+        rows: (auto, auto),
+        gutter: 0.08cm,
+        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
+          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
+        ],
+        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
+      )
+    ]
+  ]
+
+  #grid(
+    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
+    align: horizon,
+    gutter: 0.25cm,
+    [
+      #panel(
+        [Phone],
+        [
+          #phone_icon()
+          #v(0.25em)
+          - RGB stream
+          - timestamps
+          - optional ARKit/ARCore pose
+        ],
+        device_color,
+      )
+    ],
+    [#flow_arrow([network transport])],
+    [
+      #panel(
+        [VSLAM Model],
+        [
+          #model_icon()
+          #v(0.25em)
+          - frame buffer
+          - method adapter
+          - trajectory + dense cloud
+        ],
+        model_color,
+      )
+    ],
+    [#flow_arrow([artifacts + updates])],
+    [
+      #panel(
+        [PC / Operator],
+        [
+          #pc_icon()
+          #v(0.25em)
+          - live visualization
+          - persisted metrics
+          - operator-facing map
+        ],
+        pc_color,
+      )
+    ],
+  )
 ]
-
-// #slide(title: [Future Work: End-to-End Streaming Architecture])[
-//   // Flo
-//   #set text(size: 12.8pt)
-//   #let device_color = rgb("4f7dd6")
-//   #let model_color = rgb("7c5cc4")
-//   #let pc_color = rgb("2f9e6d")
-//   #let muted = rgb("5f6773")
-//   #let panel(title, body, color) = block(
-//     fill: color.lighten(75%),
-//     stroke: 0.75pt + color.lighten(30%),
-//     radius: 10pt,
-//     inset: 0.7em,
-//   )[
-//     #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
-//     #v(0.35em)
-//     #body
-//   ]
-//   #let flow_arrow(label) = block(width: 100%)[
-//     #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
-//     #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
-//   ]
-//   #let phone_icon() = box(width: 100%, height: 2.3cm)[
-//     #align(center + horizon)[
-//       #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
-//         #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
-//       ]
-//     ]
-//   ]
-//   #let model_icon() = box(width: 100%, height: 2.3cm)[
-//     #align(center + horizon)[
-//       #grid(
-//         columns: (auto, auto, auto),
-//         rows: (auto, auto, auto),
-//         gutter: 0.25cm,
-//         circle(radius: 0.16cm, fill: model_color),
-//         circle(radius: 0.16cm, fill: model_color),
-//         circle(radius: 0.16cm, fill: model_color),
-
-//         circle(radius: 0.16cm, fill: model_color),
-//         rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
-//         circle(radius: 0.16cm, fill: model_color),
-
-//         circle(radius: 0.16cm, fill: model_color),
-//         circle(radius: 0.16cm, fill: model_color),
-//         circle(radius: 0.16cm, fill: model_color),
-//       )
-//     ]
-//   ]
-//   #let pc_icon() = box(width: 100%, height: 2.3cm)[
-//     #align(center + horizon)[
-//       #grid(
-//         columns: auto,
-//         rows: (auto, auto),
-//         gutter: 0.08cm,
-//         rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
-//           #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
-//         ],
-//         align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
-//       )
-//     ]
-//   ]
-
-//   #grid(
-//     columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
-//     align: horizon,
-//     gutter: 0.25cm,
-//     [
-//       #panel(
-//         [Phone],
-//         [
-//           #phone_icon()
-//           #v(0.25em)
-//           - RGB stream
-//           - timestamps
-//           - optional ARKit/ARCore pose
-//         ],
-//         device_color,
-//       )
-//     ],
-//     [#flow_arrow([network transport])],
-//     [
-//       #panel(
-//         [VSLAM Model],
-//         [
-//           #model_icon()
-//           #v(0.25em)
-//           - frame buffer
-//           - method adapter
-//           - trajectory + dense cloud
-//         ],
-//         model_color,
-//       )
-//     ],
-//     [#flow_arrow([artifacts + updates])],
-//     [
-//       #panel(
-//         [PC / Operator],
-//         [
-//           #pc_icon()
-//           #v(0.25em)
-//           - live visualization
-//           - persisted metrics
-//           - operator-facing map
-//         ],
-//         pc_color,
-//       )
-//     ],
-//   )
 
 //   #v(0.45em)
 //   #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
