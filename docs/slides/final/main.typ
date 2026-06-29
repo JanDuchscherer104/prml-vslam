@@ -83,10 +83,12 @@
   #grid(
     columns: (1fr, 1fr, 1fr),
     [
-      *MASt3R*:\
+      *MASt3R* @murai2025mast3rslam:\
       _Christopher_
-      - learned two-view priors
-      - explicit SLAM backend @murai2025mast3rslam
+      - *Foundation Model Prior:* heavy pre-trained network → robust 3D geometry "in-the-wild".
+      - *Direct 3D Matching:* matches in 3D ray-space, not 2D features.
+      - *Generic Camera:* handles changing intrinsics mid-video (e.g. zoom).
+      - Output: camera path + dense colored cloud → input for our metrics.
     ],
     [
       *ViSTA*:\
@@ -390,121 +392,280 @@
 
 // TODO: include docs/figures/evidence/teddy-vista-loop-closure.mov here!
 
-#slide(title: [Transform Hygiene at Stage Boundaries])[
+// #slide(title: [Transform Hygiene at Stage Boundaries])[
+//   #grid(
+//     columns: (1fr, 1fr),
+//     gutter: 0.72cm,
+//     [
+//       #color-block(title: [Frame contract], spacing: 0.34em)[
+//         #set text(size: 14.2pt)
+//         A pose is publishable only after its coordinate convention and temporal
+//         role are explicit:
+//         - dataset axes become RDF camera/world frames @rerun2026
+//         - RGB-D/provider trajectories may be rebased to the first pose
+//         - timestamp alignment happens before metrics or fusion
+
+//         $
+//           bold(p)^"rdf" = bold(B) bold(p)^"raw",
+//           quad
+//           bold(R)^"rdf" = bold(B) bold(R)^"raw" bold(B)^(-1)
+//         $
+
+//         $
+//           bold(T)'_k = bold(T)_0^(-1) bold(T)_k
+//         $
+//       ]
+//     ],
+//     [
+//       #color-block(title: [Frobenius projection], spacing: 0.34em)[
+//         #set text(size: 14.2pt)
+//         Upstream poses sometimes arrive as near-rotations. We project them onto
+//         $"SO"(3)$ before they cross a stage boundary @higham1986polar:
+
+//         $
+//           bold(Q)^* =
+//           arg min_(bold(Q) in "SO"(3)) norm(bold(A) - bold(Q))_"F"
+//         $
+
+//         $
+//           bold(A) = bold(U) bold(Sigma) bold(V)^T,
+//           quad
+//           bold(Q)^* =
+//           bold(U) op("diag")(1, 1, op("det")(bold(U) bold(V)^T)) bold(V)^T
+//         $
+
+//         #compact_note[
+//           The residual $epsilon_R = norm(bold(A) - bold(Q)^*)_"F"$ is a validity
+//           check. It prevents silently accepting matrices that are too far from a
+//           rotation, instead of correcting arbitrary bad poses.
+//         ]
+//       ]
+//     ],
+//   )
+// ]
+
+// #slide(title: [Dense Geometry: Unprojection + ICP])[
+//   #grid(
+//     columns: (1fr, 1fr),
+//     gutter: 0.75cm,
+//     [
+//       #color-block(title: [Depth to point cloud], spacing: 0.34em)[
+//         #set text(size: 14.0pt)
+//         Depth maps are not converted wholesale. The metric artifact records
+//         camera intrinsics, pose provenance, pixel stride, validity filtering,
+//         random seed, and maximum point count.
+
+//         $
+//           cal(Omega)_d = { (u, v) | u equiv 0 mod d, v equiv 0 mod d }
+//         $
+
+//         $
+//           cal(J)_d = { (u, v) in cal(Omega)_d | z(u,v) > 0, z(u,v) in RR }
+//         $
+
+//         $
+//           (u_j, v_j) in cal(J)_d,
+//           quad
+//           bold(q)_j =
+//           z_j bold(K)^(-1) mat(u_j; v_j; 1),
+//           quad
+//           bold(p)_j = bold(T)^"w"_"c" bold(q)_j
+//         $
+
+//         $
+//           cal(I) ~ op("sample")_"seed"({1, dots, N}, min(N, M)),
+//           quad
+//           P_M = { bold(p)_i | i in cal(I) }
+//         $
+//       ]
+//     ],
+//     [
+//       #color-block(title: [ICP placement diagnostic], spacing: 0.34em)[
+//         #set text(size: 14.2pt)
+//         After global trajectory placement, ICP estimates a local rigid
+//         correction. It is a dense-geometry diagnostic, not a substitute for
+//         trajectory APE/RPE @besl1992method @zhou2018open3d.
+
+//         $
+//           bold(T)^* =
+//           arg min_(bold(T) in "SE"(3)) sum_(bold(p) in P)
+//           norm(bold(T) bold(p) - op("NN")_Q(bold(T) bold(p)))^2
+//         $
+
+//         Fitness and inlier RMSE depend on the correspondence threshold, so the
+//         threshold belongs in the metric record.
+//       ]
+//     ],
+//   )
+
+//   #compact_note[
+//     Dense-cloud scores should be discussed only after the method, dataset,
+//     sampling, and artifact matrix are frozen; ICP alone is not a leaderboard.
+//   ]
+// ]
+#slide(title: [Trajectory Evaluation — Metrics: APE & RPE])[
   #grid(
     columns: (1fr, 1fr),
-    gutter: 0.72cm,
+    gutter: 0.8cm,
     [
-      #color-block(title: [Frame contract], spacing: 0.34em)[
-        #set text(size: 14.2pt)
-        A pose is publishable only after its coordinate convention and temporal
-        role are explicit:
-        - dataset axes become RDF camera/world frames @rerun2026
-        - RGB-D/provider trajectories may be rebased to the first pose
-        - timestamp alignment happens before metrics or fusion
+      *Two questions × two quantities (m / deg):*
 
-        $
-          bold(p)^"rdf" = bold(B) bold(p)^"raw",
-          quad
-          bold(R)^"rdf" = bold(B) bold(R)^"raw" bold(B)^(-1)
-        $
+      #table(
+        columns: (auto, 1fr),
+        align: (left, left),
+        inset: (x: 0.4em, y: 0.4em),
+        table.header([], [*translation* / *rotation*]),
+        [*APE* (global)], [_is the whole map right?_],
+        [*RPE* (local)], [_is each step right?_],
+      )
 
-        $
-          bold(T)'_k = bold(T)_0^(-1) bold(T)_k
-        $
-      ]
+      $ bold(e)_i^"APE" = op("trans")(bold(T)_i^(-1) hat(bold(T))_i) $
+      $ bold(E)_i^"RPE" = (bold(T)_i^(-1) bold(T)_(i+h))^(-1) (hat(bold(T))_i^(-1) hat(bold(T))_(i+h)) $
+
+      #text(size: 13pt)[Headline = *RMSE* over all residuals;
+        $Delta = 1"m"$ for RPE @grupp2017evo.]
     ],
     [
-      #color-block(title: [Frobenius projection], spacing: 0.34em)[
-        #set text(size: 14.2pt)
-        Upstream poses sometimes arrive as near-rotations. We project them onto
-        $"SO"(3)$ before they cross a stage boundary @higham1986polar:
+      *Interpretation* — the reason we report both:
 
-        $
-          bold(Q)^* =
-          arg min_(bold(Q) in "SO"(3)) norm(bold(A) - bold(Q))_"F"
-        $
+      - *Low RPE + High APE* → good local tracking, *global
+        drift* (weak/no loop closure).
+      - *High RPE* → noisy, locally inconsistent odometry.
+      - *APE* catches drift & loop-closure quality;
+        *RPE* is robust to a single big error.
+    ],
+  )
+]
 
-        $
-          bold(A) = bold(U) bold(Sigma) bold(V)^T,
-          quad
-          bold(Q)^* =
-          bold(U) op("diag")(1, 1, op("det")(bold(U) bold(V)^T)) bold(V)^T
-        $
+#slide(title: [Trajectory Evaluation — First Results (pilot sweep)])[
+  #set text(size: 14pt)
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.7cm,
+    [
+      *Completion:* #h(0.3em)
+      ViSTA *18/18*, MASt3R *9/18*.
 
-        #compact_note[
-          The residual $epsilon_R = norm(bold(A) - bold(Q)^*)_"F"$ is a validity
-          check. It prevents silently accepting matrices that are too far from a
-          rotation, instead of correcting arbitrary bad poses.
-        ]
+      #warning-note[
+        *All 6 ADVIO MASt3R runs failed* (+ Record3D 27-25, TUM
+        floor/room) in the `align.trajectory` stage.
+      ]
+
+      *Why MASt3R fails — a chain:*
+      + `max_frames = 50` (vs ViSTA's 512).
+      + accepts only *1–5 keyframes* of those 50 (ViSTA: 138–417).
+      + writes *1 trajectory pose per keyframe*.
+      + $≤ 2$ poses ⇒ fails the $"Sim"(3)$ *spread check*.
+
+      #text(size: 12pt)[Config-driven *and* a real robustness weakness:
+        keyframing is intolerant of sparse/fast sampling.]
+    ],
+    [
+      #figure(
+        table(
+          columns: 5,
+          align: (left, center, center, center, center),
+          inset: (x: 0.35em, y: 0.34em),
+          table.header([Dataset], [APEt ViSTA], [done], [APEt MASt3R], [done]),
+          [TUM f1 (×6)], [≈0.10 m], [6/6], [≈0.03 m], [4/6],
+          [Record3D (×6)], [≈0.46 m], [6/6], [≈0.03 m], [5/6],
+          [ADVIO (×6)], [≈1.95 m], [6/6], [—], [0/6],
+        ),
+        caption: [Mean APE-translation RMSE; "done" = runs with metrics.],
+      )
+
+      - *Scale recovery:* MASt3R $s approx 1.0$ (metric model) vs
+        ViSTA $s = 0.4 dots 11$ (scale-free).
+      - MASt3R's tiny APE rests on *3–5 pairs* (7-DoF fit ⇒
+        near-overfit) and has *no RPE at all*.
+
+      #note[
+        *Caveats:* ADVIO is hard for both (ViSTA APE-rot 80–170°,
+        under investigation); LingBot pending; full 50×3 matrix is
+        future work.
       ]
     ],
   )
 ]
 
-#slide(title: [Dense Geometry: Unprojection + ICP])[
+#include "_pointcloud_accuracy.typ"
+#include "_pointcloud_completeness.typ"
+#include "_pointcloud_chamfer.typ"
+#include "_pointcloud_f1.typ"
+#include "_pointcloud_results.typ"
+
+// ===========================================================================
+// Christopher Kirschner — MASt3R
+// ===========================================================================
+#slide(title: [Render-based Image Metrics])[
   #grid(
     columns: (1fr, 1fr),
-    gutter: 0.75cm,
+    gutter: 0.8cm,
     [
-      #color-block(title: [Depth to point cloud], spacing: 0.34em)[
-        #set text(size: 14.0pt)
-        Depth maps are not converted wholesale. The metric artifact records
-        camera intrinsics, pose provenance, pixel stride, validity filtering,
-        random seed, and maximum point count.
+      *Idea:* Evaluate *in image space*.
 
-        $
-          cal(Omega)_d = { (u, v) | u equiv 0 mod d, v equiv 0 mod d }
-        $
-
-        $
-          cal(J)_d = { (u, v) in cal(Omega)_d | z(u,v) > 0, z(u,v) in RR }
-        $
-
-        $
-          (u_j, v_j) in cal(J)_d,
-          quad
-          bold(q)_j =
-          z_j bold(K)^(-1) mat(u_j; v_j; 1),
-          quad
-          bold(p)_j = bold(T)^"w"_"c" bold(q)_j
-        $
-
-        $
-          cal(I) ~ op("sample")_"seed"({1, dots, N}, min(N, M)),
-          quad
-          P_M = { bold(p)_i | i in cal(I) }
-        $
-      ]
+      - Render the dense cloud from the *estimated poses* (Open3D
+        projection @zhou2018open3d).
+      - Compare each render to the nearest input frame, *pixel-wise*.
+      - Score only *filled* pixels (mask $Omega$) — don't punish the
+        cloud for holes it never covered.
     ],
     [
-      #color-block(title: [ICP placement diagnostic], spacing: 0.34em)[
-        #set text(size: 14.2pt)
-        After global trajectory placement, ICP estimates a local rigid
-        correction. It is a dense-geometry diagnostic, not a substitute for
-        trajectory APE/RPE @besl1992method @zhou2018open3d.
+      *Metrics* — over the $N$ filled pixels $Omega$ ($I$ real, $hat(I)$ render):
 
-        $
-          bold(T)^* =
-          arg min_(bold(T) in "SE"(3)) sum_(bold(p) in P)
-          norm(bold(T) bold(p) - op("NN")_Q(bold(T) bold(p)))^2
-        $
+      $ "L1" = 1/N sum_(p in Omega) abs(I_p - hat(I)_p) $
+      #text(size: 13pt)[→ mean per-pixel error.]
 
-        Fitness and inlier RMSE depend on the correspondence threshold, so the
-        threshold belongs in the metric record.
+      $ "PSNR" = 10 log_10 (L^2 \/ "MSE") $
+      #text(size: 13pt)[→ higher = closer. MSE = mean sq. error, $L$ = max value (255).]
+
+      - SSIM: local *structure*, 7×7 window // @wang2004ssim.
+      - Coverage: fraction of pixels the cloud fills.
+
+      #note[
+        Read every score *with coverage* — the absolute number means
+        little on its own.
       ]
     ],
   )
-
-  #compact_note[
-    Dense-cloud scores should be discussed only after the method, dataset,
-    sampling, and artifact matrix are frozen; ICP alone is not a leaderboard.
-  ]
 ]
 
-#slide(title: [Image Metrics])[
-  - Metrics used.
-  - Brief performance comparison.
+#slide(title: [Results — what they say])[
+  #grid(
+    columns: (1.15fr, 0.85fr),
+    gutter: 0.7cm,
+    [
+      #figure(
+        table(
+          columns: 6,
+          align: (left, center, center, center, center, center, center),
+          table.header([Method], [Pairs], [Cov.], [PSNR], [SSIM], [L1]),
+          [ViSTA-SLAM], [357], [0.79], [10.8], [0.10], [0.19],
+          [MASt3R-SLAM], [154], [0.63], [11.2], [0.07], [0.18],
+        ),
+        caption: [
+          Render-based image-quality results on ADVIO
+          advio-15 @cortes2018advio. PSNR/SSIM/L1 averaged over filled
+          pixels.
+        ],
+      )
+
+      *Takeaways:*
+      - *Not an absolute quality score* — we use these to *compare the two
+        methods* on the same sequence.
+      - *Low SSIM could mean a sparse cloud, not bad geometry:* SSIM's sliding
+        window also feels the holes, while PSNR/L1 mask pixels cleanly.
+    ],
+    [
+      #figure(
+        image("../../figures/render_eval/vista_advio15_sbs_a.png", width: 100%),
+        caption: [
+          Ground truth (left) vs. ViSTA's dense cloud rendered from the
+          estimated camera pose (right).
+        ],
+      )
+    ],
+  )
 ]
 
 #slide(title: [Real-time Performances])[
@@ -515,22 +676,280 @@
 ]
 
 
-#slide(title: [Future Work])[
+#slide(title: [Future Work: Performance Optimizations])[
   // Flo
-  - Strong FPS dependence of ViSTA and MASt3R (limitation for streaming when FPS is low).
-  - Real-time capability on consumer grade GPUs with loss of performance.
-  -
+  #set text(size: 13.2pt)
+  #let active_frame = rgb("4f7dd6")
+  #let skipped_frame = rgb("d9dee8")
+  #let frame(active: true) = rect(
+    width: 0.78cm,
+    height: 0.48cm,
+    radius: 3pt,
+    fill: if active { active_frame } else { skipped_frame },
+    stroke: 0.45pt + if active { active_frame.darken(20%) } else { skipped_frame.darken(18%) },
+  )
+  #let frame_row(label, frames) = grid(
+    columns: (1.0fr, auto, auto, auto, auto, auto, auto, auto, auto),
+    align: horizon,
+    gutter: 0.16cm,
+    [#text(weight: "semibold")[#label]],
+    ..frames,
+  )
+  #let image_box(width, height) = rect(
+    width: width,
+    height: height,
+    radius: 5pt,
+    fill: rgb("eef3ff"),
+    stroke: 0.7pt + rgb("9bb7e5"),
+  )
+
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.75cm,
+    [
+      #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
+        #text(weight: "bold")[Option 1: reduce resolution]
+        #v(0.55em)
+        #align(center)[
+          #grid(
+            columns: (auto, auto, auto, auto, auto),
+            align: horizon,
+            gutter: 0.25cm,
+            image_box(2.45cm, 1.62cm),
+            [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
+            image_box(1.85cm, 1.22cm),
+            [#text(size: 22pt, fill: theme_color_primary_hm)[$arrow.r$]],
+            image_box(1.25cm, 0.82cm),
+          )
+        ]
+        #v(0.55em)
+        - fewer pixels per frame
+        - lower GPU memory and compute
+        - risk: weaker feature/detail quality
+      ]
+    ],
+    [
+      #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.7em)[
+        #text(weight: "bold")[Option 2: increase frame stride]
+        #v(0.45em)
+        #frame_row([stride 1], (
+          frame(),
+          frame(),
+          frame(),
+          frame(),
+          frame(),
+          frame(),
+          frame(),
+          frame(),
+        ))
+        #v(0.28em)
+        #frame_row([stride 2], (
+          frame(),
+          frame(active: false),
+          frame(),
+          frame(active: false),
+          frame(),
+          frame(active: false),
+          frame(),
+          frame(active: false),
+        ))
+        #v(0.28em)
+        #frame_row([stride 4], (
+          frame(),
+          frame(active: false),
+          frame(active: false),
+          frame(active: false),
+          frame(),
+          frame(active: false),
+          frame(active: false),
+          frame(active: false),
+        ))
+        #v(0.55em)
+        - fewer frames through SLAM
+        - improves throughput directly
+        - risk: larger motion gaps and tracking failures
+      ]
+    ],
+  )
+
+  #v(0.55em)
+  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+    Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+  ]
+]
+
+#slide(title: [Future Work: End-to-End Streaming Architecture])[
+  // Flo
+  #set text(size: 12.8pt)
+  #let device_color = rgb("4f7dd6")
+  #let model_color = rgb("7c5cc4")
+  #let pc_color = rgb("2f9e6d")
+  #let muted = rgb("5f6773")
+  #let panel(title, body, color) = block(
+    fill: color.lighten(75%),
+    stroke: 0.75pt + color.lighten(30%),
+    radius: 10pt,
+    inset: 0.7em,
+  )[
+    #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
+    #v(0.35em)
+    #body
+  ]
+  #let flow_arrow(label) = block(width: 100%)[
+    #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
+    #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
+  ]
+  #let phone_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
+        #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
+      ]
+    ]
+  ]
+  #let model_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: (auto, auto, auto),
+        rows: (auto, auto, auto),
+        gutter: 0.25cm,
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
+        circle(radius: 0.16cm, fill: model_color),
+
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+        circle(radius: 0.16cm, fill: model_color),
+      )
+    ]
+  ]
+  #let pc_icon() = box(width: 100%, height: 2.3cm)[
+    #align(center + horizon)[
+      #grid(
+        columns: auto,
+        rows: (auto, auto),
+        gutter: 0.08cm,
+        rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
+          #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
+        ],
+        align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
+      )
+    ]
+  ]
+
+  #grid(
+    columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
+    align: horizon,
+    gutter: 0.25cm,
+    [
+      #panel(
+        [Phone],
+        [
+          #phone_icon()
+          #v(0.25em)
+          - RGB stream
+          - timestamps
+          - optional ARKit/ARCore pose
+        ],
+        device_color,
+      )
+    ],
+    [#flow_arrow([network transport])],
+    [
+      #panel(
+        [VSLAM Model],
+        [
+          #model_icon()
+          #v(0.25em)
+          - frame buffer
+          - method adapter
+          - trajectory + dense cloud
+        ],
+        model_color,
+      )
+    ],
+    [#flow_arrow([artifacts + updates])],
+    [
+      #panel(
+        [PC / Operator],
+        [
+          #pc_icon()
+          #v(0.25em)
+          - live visualization
+          - persisted metrics
+          - operator-facing map
+        ],
+        pc_color,
+      )
+    ],
+  )
+
+  #v(0.45em)
+  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+    Future work is not only the model: the system needs a robust peripheral pipeline from capture to inference to display.
+  ]
+]
+
+#slide(title: [Future Work: Toward Complete 4D Reconstruction])[
+  // Flo
+  #set text(size: 12.6pt)
+  #grid(
+    columns: (1.35fr, 0.85fr),
+    gutter: 0.65cm,
+    [
+      #figure(
+        image("../../figures/papers/lift4d.jpg", width: 100%),
+        caption: [Lift4D reconstructs complete dynamic objects from monocular in-the-wild video.],
+      )
+    ],
+    [
+      #block(fill: rgb("fbfcff"), stroke: 0.7pt + rgb("d9dee8"), radius: 9pt, inset: 0.75em)[
+        *Lift4D* @litman2026lift4d
+
+        #v(0.35em)
+        - monocular video input
+        - temporally consistent single-view 3D prior
+        - deformable 3D Gaussian representation
+        - occlusion-aware completion of unseen regions
+
+        #v(0.45em)
+        #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: 0.55em)[
+          Long-term direction: move from sparse SLAM maps toward complete, dynamic scene reconstructions.
+        ]
+      ]
+    ],
+  )
 ]
 
 #slide(title: [Retrospective: What went right, what went wrong?])[
   // Valentin
-  -
-]
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      #good-note(width: 100%)[#align(center)[*What went right* ✓]]
 
-#slide(title: [Work breakdown
-])[
-  - Mapping from work packages to owner
-  -
+      - *AI* enabled a quick project setup (pipeline, Streamlit app, Rerun).
+      - Pipeline made integrating *multiple SLAM methods* easy
+        (ViSTA, MASt3R, LingBot).
+      - Supports *multiple datasets* (ADVIO, TUM, Record3D).
+      - *Fully configurable:* method, source, VSLAM config (frames…),
+        evaluation steps.
+      - *Sweeper* runs all sources × all methods.
+    ],
+    [
+      #warning-note(width: 100%)[#align(center)[*What went wrong* ✗]]
+
+      - Fast POC — but *huge refactorings* from AI slop.
+      - *Slow, intensive finalization:* running evaluation &
+        getting comparable results across methods.
+      - Hard to find the *best-fit parameters per method*.
+      - First sweep had a *misconfiguration* — MASt3R/ViSTA config mismatch messed up the results.
+    ],
+  )
 ]
 
 #slide(title: [References])[
