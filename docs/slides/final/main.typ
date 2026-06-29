@@ -71,6 +71,8 @@
 
 #slide(title: [Motivation: Uncalibrated Monocular VSLAM])[
   - Domain Introduction & Goals
+  // Lukas: include LingBot training signal here if needed:
+  // depth + uncertainty, camera-to-world pose, local relative pose.
   - _LUKAS_
 ]
 
@@ -102,43 +104,82 @@
 ]
 
 #slide(title: [LingBot-Map: Learned Geometric Context])[
+  // Runtime-token slide. Training supervision belongs in Lukas' domain
+  // introduction: depth + uncertainty, camera-to-world pose, local relative pose.
+  // Speaker transcript, max 1 minute:
+  // LingBot-Map is the learned streaming method in our comparison. Its key
+  // idea is not just to predict depth and poses frame by frame, but to keep a
+  // learned geometric memory. Each image first becomes DINOv2 image tokens.
+  // The model appends a camera token, register tokens, and an anchor token.
+  // Frame attention refines tokens only within one frame. Geometric Context
+  // Attention then lets the current query read three structured sources:
+  // anchors for scale and coordinate grounding, a recent window with full
+  // image tokens for local pose cues, and compact memory tokens from older
+  // frames for long-range context. This is why the method can stream: old
+  // image tokens are evicted, but six context tokens per old frame remain.
+  // Finally, the camera head reads the camera token to predict pose, while the
+  // depth head reads image tokens to predict depth.
   #let stage_node(title, body) = block(
     fill: rgb("f4f6fb"),
     inset: (x: 0.7em, y: 0.42em),
     radius: 8pt,
     stroke: 0.7pt + rgb("cbd3df"),
   )[
-    #text(size: 16pt, fill: theme_color_footer.darken(42%))[#title]
+    #text(fill: theme_color_footer.darken(42%))[#title]
     #parbreak()
-    #align(center)[#text(size: 20pt)[#body]]
+    #align(center)[#body]
   ]
 
-  #let fact(fill, title, body) = block(
+  #let state_fact(fill, title, body) = block(
     fill: fill,
     inset: (x: 0.55em, y: 0.36em),
     radius: 7pt,
     stroke: 0.65pt + fill.darken(25%),
   )[
-    #text(size: 18pt, weight: "bold")[#title]
+    #text(weight: "bold")[#title]
     #parbreak()
-    #text(size: 16pt)[#body]
+    #body
   ]
 
-  #let arrow = text(size: 30pt, fill: theme_color_primary_hm)[#sym.arrow.r];
+  #let order_fact(fill, num, title, body) = block(
+    fill: fill,
+    inset: (x: 0.58em, y: 0.42em),
+    radius: 7pt,
+    height: 2.2cm,
+    stroke: 0.65pt + fill.darken(25%),
+  )[
+    #grid(
+      columns: (auto, 1fr),
+      gutter: 0.18cm,
+      align: horizon,
+      box(
+        fill: theme_color_primary_hm,
+        inset: (x: 0.28em, y: 0.08em),
+        radius: 2pt,
+      )[#text(weight: "bold", fill: white)[#num]],
+      text(weight: "bold")[#title],
+    )
+    #v(0.07cm)
+    #body
+  ]
 
+  #let arrow = text(fill: theme_color_primary_hm)[#sym.arrow.r];
+
+  #set text(size: 14pt)
+  #set list(spacing: 0.14em, indent: 0.65em, body-indent: 0.35em)
 
 
   #grid(
     columns: (1fr, auto, 1fr, auto, 1fr, auto, 1fr),
     gutter: 0.18cm,
     align: center + horizon,
-    stage_node[Unposed RGB Frames][$I_(1:t)$],
+    stage_node[unposed RGB][$I_(1:t)$],
     [#arrow],
-    stage_node[DINOv2 tokens][$X_t in RR^(M times C)$],
+    stage_node[DINOv2 image tokens][$X_t in RR^(M times C)$],
     [#arrow],
-    stage_node[learned context][$cal(A), cal(W), cal(M)$],
+    stage_node[append learned tokens][$c_t, r_t^(1:4), a_t$],
     [#arrow],
-    stage_node[heads][$hat(P)_t, hat(D)_t$],
+    stage_node[camera head + depth head][$c_t -> hat(P)_t, quad X_t -> hat(D)_t$],
   )
 
   #v(0.24cm)
@@ -147,14 +188,18 @@
     columns: (0.92fr, 1.08fr),
     gutter: 0.46cm,
     [
-      #color-block(title: [GCA state = learned SLAM memory], spacing: 0.22em)[
+      #color-block(title: [GCA = masked geometric memory], spacing: 0.22em)[
         #align(center)[
-          #text(size: 20pt)[$cal(C)_t = cal(A)_(1:n) union cal(W)_(t-k:t) union cal(M)_(n:t-k)$]
+          $cal(C)_t = cal(A)_(1:n) union cal(W)_(t-k:t) union cal(M)_(n:t-k)$
         ]
 
-        - *$cal(A)$ anchors* scale + coordinates
-        - *$cal(W)$ sliding window* full image tokens
-        - *$cal(M)$ memory* compact old-frame tokens
+        #grid(
+          columns: (1fr, 1fr, 1fr),
+          gutter: 0.16cm,
+          state_fact(rgb("fff7eb"))[$cal(A)$ anchors][full tokens; scale + coordinates],
+          state_fact(rgb("eef5ff"))[$cal(W)$ window][recent frames keep full image tokens],
+          state_fact(rgb("eefaf4"))[$cal(M)$ memory][old frames keep context tokens only],
+        )
       ]
     ],
     [
@@ -168,17 +213,33 @@
     ],
   )
 
-  #v(0.22cm)
+  #v(0.18cm)
+
+  #text(weight: "bold", fill: theme_color_footer.darken(40%))[Attention order and token ownership]
+  #v(0.08cm)
 
   #grid(
     columns: (1fr, 1fr, 1fr, 1fr),
-    gutter: 0.42cm,
-    fact(rgb("fff7eb"))[Anchor scale][First $n$ frames fix scale; depth and translation are normalized.],
-    fact(rgb("eefaf4"))[Token budget][Old frames keep $6$ tokens; about $80 times$ lower growth.],
-    fact(rgb("fef3f3"))[Training signal][Depth + uncertainty, camera-to-world pose, local relative pose.],
-    fact(rgb("eef5ff"))[Inference][Direct persistent state; VO uses Sim(3) window stitching.],
+    gutter: 0.18cm,
+    order_fact(rgb("f4f6fb"))[1][token set][
+      $bold(z)_t = {X_t, c_t, r_t^(1:4), a_t}$\
+      $abs(bold(z)_t) = M + 6$
+    ],
+    order_fact(rgb("eef5ff"))[2][frame attention][
+      self-attend inside $bold(z)_t$\
+      no temporal reads
+    ],
+    order_fact(rgb("f4f0ff"))[3][GCA memory read][
+      $q_t -> cal(A)_(1:n) union cal(W)_(t-k:t)\
+      union cal(M)_(n:t-k)$
+    ],
+    order_fact(rgb("eefaf4"))[4][token budget][
+      old $X_i$ drop; keep\
+      $c_i, r_i^(1:4), a_i$ ($6$ / frame)
+    ],
   )
 ]
+
 
 #section-slide(title: [Methodology], subtitle: [Normalized boundaries, transforms, and evaluation])
 
@@ -220,7 +281,7 @@
         - *Geometry*:
           + _resize_ RGB-D frames & intrinsics
           + depth units & _point cloud_ creation
-          + _frame_ conventions & _SE(3) corrections_ + _fixedpoint_ transforms
+          + _frame_ conventions & _SE(3) Frobenius projection_ + _fixedpoint_ transforms
         - *Temporal*:
           + _timestamp_ alignment & _frame_ selection
           + _trajectory_ placement & _Sim(3)_ alignment
@@ -327,6 +388,8 @@
   )
 ]
 
+// TODO: include docs/figures/evidence/teddy-vista-loop-closure.mov here!
+
 #slide(title: [Transform Hygiene at Stage Boundaries])[
   #grid(
     columns: (1fr, 1fr),
@@ -374,57 +437,6 @@
           check. It prevents silently accepting matrices that are too far from a
           rotation, instead of correcting arbitrary bad poses.
         ]
-      ]
-    ],
-  )
-]
-
-#slide(title: [Trajectory Evaluation: Frame + Time + Scale])[
-  #grid(
-    columns: (1.05fr, 0.95fr),
-    gutter: 0.72cm,
-    [
-      #color-block(title: [Admissible pose pairs], spacing: 0.38em)[
-        #set text(size: 14.5pt)
-        - First associate timestamps with a declared tolerance.
-        - Then check pose relation and target-frame metadata.
-        - Only then estimate placement and compute APE/RPE @zhang2018trajectory @grupp2017evo.
-      ]
-
-      #text(size: 14.2pt)[
-        $
-          cal(A)_tau = { (i, j) | abs(t_i^"ref" - t_j^"est") <= tau }
-        $
-
-        $
-          bold(S)^* =
-          arg min_(bold(S) in "Sim"(3)) sum_((i,j) in cal(A)_tau)
-          norm(bold(x)_i^"ref" - bold(S) bold(x)_j^"est")^2
-        $
-
-        $
-          bold(S) bold(x) = s bold(R) bold(x) + bold(t)
-        $
-      ]
-    ],
-    [
-      #color-block(title: [What the alignment model means], spacing: 0.38em)[
-        #set text(size: 14.2pt)
-        - Timestamp-only APE asks whether metric scale and placement were recovered.
-        - Sim(3)-aligned APE asks whether the trajectory shape agrees after monocular scale ambiguity is removed @umeyama1991least.
-        - Gravity-aware alignment estimates scale, yaw, and translation when vertical is meaningful.
-      ]
-
-      #text(size: 14.2pt)[
-        $
-          bold(S)^* =
-          arg min_(s, theta, bold(t)) sum_i
-          norm(bold(x)_i^"ref" - (s bold(R)_"yaw"(theta) bold(x)_i^"est" + bold(t)))^2
-        $
-
-        $
-          bold(R)_"yaw" bold(u) = bold(u)
-        $
       ]
     ],
   )
