@@ -563,55 +563,94 @@
   )
 ]
 
-#slide(title: [Trajectory Evaluation — First Results (pilot sweep)])[
+#slide(title: [Trajectory Evaluation — Results: APE & RPE])[
   #set text(size: 14pt)
+  #align(center)[#text(size: 11.5pt, fill: theme_color_footer.darken(30%))[
+    Sim(3)-aligned *RMSE*, matched-scene *medians* (15 scenes both methods finished);
+    RPE at $Delta = 1$ m. Bold = clear winner.
+  ]]
+  #v(0.18em)
+  #align(center)[#table(
+    columns: (auto, auto, auto, auto, auto, auto),
+    align: (left, left, center, center, center, center),
+    inset: (x: 0.5em, y: 0.4em),
+    table.header(
+      [Dataset], [Method], [APE t (m)], [APE rot (°)], [RPE t (m)], [RPE rot (°)],
+    ),
+    [TUM (6–14 m)], [MASt3R], [*0.05*], [*2.3*], [*0.09*], [*2.0*],
+    [], [ViSTA], [0.14], [6.1], [0.17], [3.9],
+    [Record3D (43–211 m)], [MASt3R], [1.97], [6.0], [0.41], [1.2],
+    [], [ViSTA], [2.02], [7.9], [2.03], [4.6],
+    [ADVIO (138–217 m)], [MASt3R], [*5.4*], [*88*], [*4.2*], [*7.0*],
+    [], [ViSTA], [17.3], [112], [4.3], [13.5],
+  )]
+  #v(0.2em)
   #grid(
     columns: (1fr, 1fr),
+    gutter: 0.6cm,
+    [
+      *APE* = global error (whole map); *RPE* = local drift per 1 m.
+      - *TUM:* both work — MASt3R *cm-level*, ~3× better. Small APE *and*
+        RPE → consistent locally *and* globally.
+      - *Record3D:* near-tie on global APE, but MASt3R ~5× steadier locally.
+    ],
+    [
+      - *ADVIO:* both *fail*, and it is *rotational* — APE-rot 88–112°
+        (orientation ≈ decorrelated); RPE-trans ≈ 4 m/1m → broken locally too.
+      #note[Numbers are Sim(3)-aligned (shape, not metric scale); ADVIO
+        rotation is *inflated by a known gravity-lock gate issue* — partly
+        pipeline, not only method.]
+    ],
+  )
+]
+
+#slide(title: [Trajectory Evaluation — Findings & AR Baselines])[
+  #set text(size: 13.5pt)
+  #grid(
+    columns: (1.05fr, 0.95fr),
     gutter: 0.7cm,
     [
-      *Completion:* #h(0.3em)
-      ViSTA *18/18*, MASt3R *9/18*.
-
-      #warning-note[
-        *All 6 ADVIO MASt3R runs failed* (+ Record3D 27-25, TUM
-        floor/room) in the `align.trajectory` stage.
+      #color-block(title: [What drives the difference])[
+        #set text(size: 12.8pt)
+        - *Robustness:* ViSTA *18/18*, MASt3R *15/18* — crashes on the 3
+          longest scenes (fixed *512-keyframe buffer*).
+        - *Length crossover* (Record3D): ViSTA/MASt3R APE ratio
+          *4.0 → 0.65* across *43 → 211 m* → MASt3R wins short,
+          *ViSTA wins long* (≈ 60–90 m).
+        - *Why:* MASt3R's local RPE *cliffs* 0.3 → 3.7 on the longest scenes;
+          ViSTA stays flat (~1–2). Same 512 limit: _fine → cliff → crash_.
+        - *Metric scale* $s$ (ideal 1.0): MASt3R *≈ 0.9–1.1*; ViSTA wild
+          (*0.25 / 0.53 / 2.7*).
       ]
-
-      *Why MASt3R fails — a chain:*
-      + `max_frames = 50` (vs ViSTA's 512).
-      + accepts only *1–5 keyframes* of those 50 (ViSTA: 138–417).
-      + writes *1 trajectory pose per keyframe*.
-      + $≤ 2$ poses ⇒ fails the $"Sim"(3)$ *spread check*.
-
-      #text(size: 12pt)[Config-driven *and* a real robustness weakness:
-        keyframing is intolerant of sparse/fast sampling.]
     ],
     [
       #figure(
         table(
-          columns: 5,
-          align: (left, center, center, center, center),
-          inset: (x: 0.35em, y: 0.34em),
-          table.header([Dataset], [APEt ViSTA], [done], [APEt MASt3R], [done]),
-          [TUM f1 (×6)], [≈0.10 m], [6/6], [≈0.03 m], [4/6],
-          [Record3D (×6)], [≈0.46 m], [6/6], [≈0.03 m], [5/6],
-          [ADVIO (×6)], [≈1.95 m], [6/6], [—], [0/6],
+          columns: 4,
+          align: (left, center, center, center),
+          inset: (x: 0.4em, y: 0.34em),
+          table.header([ADVIO vs GT], [APE t (m)], [APE rot (°)], [RPE t (m)]),
+          [*ARCore*], [*1.5*], [13], [*0.39*],
+          [*ARKit*], [1.8], [*11*], [0.41],
+          [MASt3R], [5.4], [88], [4.2],
+          [ViSTA], [17.3], [112], [4.3],
         ),
-        caption: [Mean APE-translation RMSE; "done" = runs with metrics.],
+        caption: [Phone AR tracking vs our SLAM — same VIO ground truth.],
       )
-
-      - *Scale recovery:* MASt3R $s approx 1.0$ (metric model) vs
-        ViSTA $s = 0.4 dots 11$ (scale-free).
-      - MASt3R's tiny APE rests on *3–5 pairs* (7-DoF fit ⇒
-        near-overfit) and has *no RPE at all*.
-
-      #note[
-        *Caveats:* ADVIO is hard for both (ViSTA APE-rot 80–170°,
-        under investigation); LingBot pending; full 50×3 matrix is
-        future work.
-      ]
+      #set text(size: 12.2pt)
+      - AR = *visual-inertial odometry* (camera *+ IMU*), recorded with ADVIO.
+      - Beats our methods *~3–12×* (position), *~10×* (rotation & local drift).
+      - The *IMU* gives *metric scale + gravity + blur-robust rotation* —
+        exactly what monocular vision can't recover on long walks.
     ],
   )
+  #v(0.3em)
+  #note[
+    *Takeaway:* on phone data sensor fusion beats backbone — ours solves the
+    harder *uncalibrated, vision-only* problem, so AR is the *ceiling/context*,
+    not a rival (and *not GT* either: 1.5–1.8 m ≈ 1–2 % off).
+    #h(0.4em) *MASt3R = accuracy but brittle; ViSTA = robustness but drifts.*
+  ]
 ]
 
 #include "_pointcloud_accuracy.typ"
