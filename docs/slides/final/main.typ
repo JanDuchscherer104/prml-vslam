@@ -84,7 +84,6 @@
     columns: (1fr, 1fr, 1fr),
     [
       *MASt3R* @murai2025mast3rslam:\
-      _Christopher_
       - *Foundation Model Prior:* heavy pre-trained network → robust 3D geometry "in-the-wild".
       - *Direct 3D Matching:* matches in 3D ray-space, not 2D features.
       - *Generic Camera:* handles changing intrinsics mid-video (e.g. zoom).
@@ -99,34 +98,18 @@
       *LingBot*:\
       - streaming reconstruction model
       - Geometric Context Transformer @chen2026gct
-      _Jan_
     ],
   )
 ]
 
 #slide(title: [LingBot-Map: Learned Geometric Context])[
-  // Runtime-token slide. Training supervision belongs in Lukas' domain
-  // introduction: depth + uncertainty, camera-to-world pose, local relative pose.
-  // Speaker transcript, max 1 minute:
-  // LingBot-Map is the learned streaming method in our comparison. Its key
-  // idea is not just to predict depth and poses frame by frame, but to keep a
-  // learned geometric memory. Each image first becomes DINOv2 image tokens.
-  // The model appends a camera token, register tokens, and an anchor token.
-  // Frame attention refines tokens only within one frame. Geometric Context
-  // Attention then lets the current query read three structured sources:
-  // anchors for scale and coordinate grounding, a recent window with full
-  // image tokens for local pose cues, and compact memory tokens from older
-  // frames for long-range context. This is why the method can stream: old
-  // image tokens are evicted, but six context tokens per old frame remain.
-  // Finally, the camera head reads the camera token to predict pose, while the
-  // depth head reads image tokens to predict depth.
   #let stage_node(title, body) = block(
     fill: rgb("f4f6fb"),
     inset: (x: 0.7em, y: 0.42em),
     radius: 8pt,
     stroke: 0.7pt + rgb("cbd3df"),
   )[
-    #text(fill: theme_color_footer.darken(42%))[#title]
+    #text(fill: theme_color_footer.darken(42%), size: 18pt)[#title]
     #parbreak()
     #align(center)[#body]
   ]
@@ -137,9 +120,11 @@
     radius: 7pt,
     stroke: 0.65pt + fill.darken(25%),
   )[
-    #text(weight: "bold")[#title]
-    #parbreak()
-    #body
+    #align(center)[
+      #text(weight: "bold")[#title]
+      #parbreak()
+      #body
+    ]
   ]
 
   #let order_fact(fill, num, title, body) = block(
@@ -158,7 +143,7 @@
         inset: (x: 0.28em, y: 0.08em),
         radius: 2pt,
       )[#text(weight: "bold", fill: white)[#num]],
-      text(weight: "bold")[#title],
+      text(weight: "bold", size: 14pt)[#title],
     )
     #v(0.07cm)
     #body
@@ -166,19 +151,21 @@
 
   #let arrow = text(fill: theme_color_primary_hm)[#sym.arrow.r];
 
-  #set text(size: 14pt)
+  #set text(size: 16pt)
   #set list(spacing: 0.14em, indent: 0.65em, body-indent: 0.35em)
 
 
   #grid(
-    columns: (1fr, auto, 1fr, auto, 1fr, auto, 1fr),
+    columns: (1fr, auto, 1fr, auto, 1.2fr, auto, 1fr, auto, 1fr),
     gutter: 0.18cm,
     align: center + horizon,
-    stage_node[unposed RGB][$I_(1:t)$],
+    stage_node[RGB Frames][$I_(1:t)$],
     [#arrow],
-    stage_node[DINOv2 image tokens][$X_t in RR^(M times C)$],
+    stage_node[DINOv2 tokens][$X_t in RR^(M times C)$],
     [#arrow],
-    stage_node[append learned tokens][$c_t, r_t^(1:4), a_t$],
+    stage_node[append learned tokens][$bold(z)_t = {X_t, c_t, r_t^(1:4), a_t}$],
+    [#arrow],
+    stage_node[Geometric Context Attention][],
     [#arrow],
     stage_node[camera head + depth head][$c_t -> hat(P)_t, quad X_t -> hat(D)_t$],
   )
@@ -186,57 +173,35 @@
   #v(0.24cm)
 
   #grid(
-    columns: (0.92fr, 1.08fr),
-    gutter: 0.46cm,
+    columns: (1.4fr, 1.0fr),
+    gutter: 0.6cm,
     [
-      #color-block(title: [GCA = masked geometric memory], spacing: 0.22em)[
-        #align(center)[
-          $cal(C)_t = cal(A)_(1:n) union cal(W)_(t-k:t) union cal(M)_(n:t-k)$
-        ]
+      #color-block(title: [GCA = masked geometric memory])[
+        #set align(center)
+
+        $cal(C)_t = cal(A)_(1:n) union cal(W)_(t-k:t) union cal(M)_(n:t-k)$
 
         #grid(
-          columns: (1fr, 1fr, 1fr),
-          gutter: 0.16cm,
-          state_fact(rgb("fff7eb"))[$cal(A)$ anchors][full tokens; scale + coordinates],
-          state_fact(rgb("eef5ff"))[$cal(W)$ window][recent frames keep full image tokens],
-          state_fact(rgb("eefaf4"))[$cal(M)$ memory][old frames keep context tokens only],
+          columns: (auto, auto, auto),
+          gutter: 0.6cm,
+          state_fact(rgb("edebff"))[$cal(A)$ anchors][full tokens \ Sim(3) grounding],
+          state_fact(rgb("#ffe397c0"))[$cal(W)$ window][recent frames \ all tokens],
+          state_fact(rgb("eefaf4"))[$cal(M)$  memory][old frames \ register tokens $r_t^(1:4)$],
         )
+      ]
+      #quote-block[
+        $c_t$: camera pose token\
+        $a_t$: anchor / scale-context token
       ]
     ],
     [
       #align(center)[
         #image(
           "../../figures/literature/lingbot-map-geometric-context-attention.pdf",
-          width: 108%,
+          width: 70%,
           fit: "contain",
         )
       ]
-    ],
-  )
-
-  #v(0.18cm)
-
-  #text(weight: "bold", fill: theme_color_footer.darken(40%))[Attention order and token ownership]
-  #v(0.08cm)
-
-  #grid(
-    columns: (1fr, 1fr, 1fr, 1fr),
-    gutter: 0.18cm,
-    order_fact(rgb("f4f6fb"))[1][token set][
-      $bold(z)_t = {X_t, c_t, r_t^(1:4), a_t}$\
-      $abs(bold(z)_t) = M + 6$
-    ],
-    order_fact(rgb("eef5ff"))[2][frame attention][
-      self-attend inside $bold(z)_t$\
-      no temporal reads
-    ],
-    order_fact(rgb("f4f0ff"))[3][GCA memory read][
-      $q_t -> cal(A)_(1:n) union cal(W)_(t-k:t)\
-      union cal(M)_(n:t-k)$
-    ],
-    order_fact(rgb("eefaf4"))[4][token budget][
-      old $X_i$ drop; keep\
-      $c_i, r_i^(1:4), a_i$ ($6$ / frame)
     ],
   )
 ]
@@ -244,38 +209,51 @@
 
 #section-slide(title: [Methodology], subtitle: [Normalized boundaries, transforms, and evaluation])
 
-// #slide(title: [Jan: What Is Worth Explaining?])[
-//   #grid(
-//     columns: (1.02fr, 0.98fr),
-//     gutter: 0.75cm,
-//     [
-//       #color-block(title: [Ranked contribution candidates], spacing: 0.42em)[
-//         #set text(size: 15.5pt)
-//         1. Normalized datastore as a reusable benchmark boundary.
-//         2. Typed stage handoffs: methods emit artifacts, metrics consume artifacts.
-//         3. Frame and timestamp contracts before trajectory metrics.
-//         4. SO(3) projection, Sim(3), timestamp alignment, depth sampling, ICP.
-//       ]
+#slide(title: [Datasets for vSLAM Benchmarking])[
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    gutter: 0.38cm,
+    [
+      #color-block(title: [ADVIO])[
+        #figure(
+          image("../../figures/evidence/dataset-gt-advio.png", width: 90%),
+          caption: [Reference Trajectories. `advio-01`.],
+        )
+        #set text(size: 17pt)
+        - Pedestrian smartphone VIO
+        - GT + ARKit/ARCore for _trajectory benchmarking_
+        - _Deployment realism_
+      ]
+    ],
+    [
+      #color-block(title: [TUM RGB-D])[
+        #figure(
+          image("../../figures/evidence/dataset-gt-tum-rgbd.png", width: 90%),
+          caption: [GT cloud and trajectory. `fr1/room`.],
+        )
 
-//       #compact_note[
-//         The presentation angle is not a LingBot-Map method slide. It is the
-//         benchmark machinery that makes heterogeneous monocular SLAM outputs
-//         comparable @bodin2018slambench2 @tancik2023nerfstudio.
-//       ]
-//     ],
-//     [
-//       #align(center)[#figure(
-//         image("../../figures/mermaid/pipeline/03-run-config-stage-plan.png", width: 76%),
-//         caption: [Deterministic stage plan.],
-//       )]
-//     ],
-//   )
-// ]
+        #set text(size: 17pt)
+        - High quality _stereo RGB-D_ + _MoCap_ trajectoroes
+        - _Research standard_ for indoor SLAM benchmarking
+      ]
+    ],
+    [
+      #color-block(title: [Custom Record3D])[
+        #figure(
+          image("../../figures/evidence/dataset-gt-record3d.png", width: 90%),
+          caption: [LiDAR reference cloud and ARKit trajectory. `2026-06-03--18-29-08`.],
+        )
+        - LiDAR depth-maps & ARKit trajectories.
+        - Realistic smartphone capture of outdoor scenes.
+        - Target-domain E2E validation.
+      ]
+    ],
+  )
+]
 
 #slide(title: [Normalized vSLAM Datastore])[
   #grid(
     columns: (1fr, 1.05fr),
-
     [
       #color-block(title: [Why normalize first?], spacing: 0.34em)[
         - *File layouts* & *formats* (i.e.`png`, `mov`, `r3d`)
@@ -308,47 +286,6 @@
   ]
 ]
 
-#slide(title: [Dataset Reference Signals])[
-  #grid(
-    columns: (1fr, 1fr, 1fr),
-    gutter: 0.38cm,
-    [
-      #color-block(title: [ADVIO])[
-        #figure(
-          image("../../figures/evidence/dataset-gt-advio.png", width: 100%),
-          caption: [Reference Trajectories. `advio-01`.],
-        )
-
-        #set text(size: 16pt)
-        - Mobile-device indoor/outdoor scenes.
-        - GT plus ARKit/ARCore provider trajectories.
-      ]
-    ],
-    [
-      #color-block(title: [TUM RGB-D])[
-        #figure(
-          image("../../figures/evidence/dataset-gt-tum-rgbd.png", width: 100%),
-          caption: [GT cloud and trajectory. `fr1/room`.],
-        )
-
-        #set text(size: 16pt)
-        - RGB-D benchmark scenes with ground-truth camera trajectory.
-        - Metric reference geometry for reconstruction checks.
-      ]
-    ],
-    [
-      #color-block(title: [Custom Record3D])[
-        #figure(
-          image("../../figures/evidence/dataset-gt-record3d.png", width: 100%),
-          caption: [LiDAR reference cloud and ARKit trajectory. `2026-06-03--18-29-08`.],
-        )
-        #set text(size: 16pt)
-        - Local LiDAR/RGB-D captures from phone archives.
-        - Dense reference geometry for reconstruction checks.
-      ]
-    ],
-  )
-]
 
 #slide(title: [Pipeline Architecture: Runtime Boundary])[
   #grid(
@@ -364,7 +301,7 @@
       ]
     ],
     [
-      // <do not edit contents>
+
       #grid(
         columns: (1fr, 1fr),
         gutter: 0.45cm,
@@ -384,7 +321,6 @@
           ]
         ],
       )
-      // <do not edit contents>
     ],
   )
 ]
@@ -886,9 +822,124 @@
 //     ],
 //   )
 
-//   #v(0.55em)
+  #v(0.55em)
+  #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
+    Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+  ]
+]
+
+// #slide(title: [Future Work: End-to-End Streaming Architecture])[
+//   // Flo
+//   #set text(size: 12.8pt)
+//   #let device_color = rgb("4f7dd6")
+//   #let model_color = rgb("7c5cc4")
+//   #let pc_color = rgb("2f9e6d")
+//   #let muted = rgb("5f6773")
+//   #let panel(title, body, color) = block(
+//     fill: color.lighten(75%),
+//     stroke: 0.75pt + color.lighten(30%),
+//     radius: 10pt,
+//     inset: 0.7em,
+//   )[
+//     #align(center)[#text(weight: "bold", fill: color.darken(25%))[#title]]
+//     #v(0.35em)
+//     #body
+//   ]
+//   #let flow_arrow(label) = block(width: 100%)[
+//     #align(center)[#text(size: 28pt, fill: theme_color_primary_hm)[$arrow.r$]]
+//     #align(center)[#text(size: 10.5pt, fill: muted)[#label]]
+//   ]
+//   #let phone_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #rect(width: 1.15cm, height: 2.05cm, radius: 9pt, fill: rgb("f8fbff"), stroke: 1.2pt + device_color)[
+//         #align(center + horizon)[#circle(radius: 0.18cm, fill: device_color)]
+//       ]
+//     ]
+//   ]
+//   #let model_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #grid(
+//         columns: (auto, auto, auto),
+//         rows: (auto, auto, auto),
+//         gutter: 0.25cm,
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+
+//         circle(radius: 0.16cm, fill: model_color),
+//         rect(width: 0.9cm, height: 0.55cm, radius: 4pt, fill: model_color.lighten(25%), stroke: 0.6pt + model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//         circle(radius: 0.16cm, fill: model_color),
+//       )
+//     ]
+//   ]
+//   #let pc_icon() = box(width: 100%, height: 2.3cm)[
+//     #align(center + horizon)[
+//       #grid(
+//         columns: auto,
+//         rows: (auto, auto),
+//         gutter: 0.08cm,
+//         rect(width: 2.0cm, height: 1.25cm, radius: 4pt, fill: rgb("f8fbff"), stroke: 1.1pt + pc_color)[
+//           #align(center + horizon)[#text(size: 10pt, fill: pc_color.darken(20%))[viewer]]
+//         ],
+//         align(center)[#rect(width: 0.8cm, height: 0.12cm, radius: 2pt, fill: pc_color)],
+//       )
+//     ]
+//   ]
+
+//   #grid(
+//     columns: (1fr, 0.42fr, 1fr, 0.42fr, 1fr),
+//     align: horizon,
+//     gutter: 0.25cm,
+//     [
+//       #panel(
+//         [Phone],
+//         [
+//           #phone_icon()
+//           #v(0.25em)
+//           - RGB stream
+//           - timestamps
+//           - optional ARKit/ARCore pose
+//         ],
+//         device_color,
+//       )
+//     ],
+//     [#flow_arrow([network transport])],
+//     [
+//       #panel(
+//         [VSLAM Model],
+//         [
+//           #model_icon()
+//           #v(0.25em)
+//           - frame buffer
+//           - method adapter
+//           - trajectory + dense cloud
+//         ],
+//         model_color,
+//       )
+//     ],
+//     [#flow_arrow([artifacts + updates])],
+//     [
+//       #panel(
+//         [PC / Operator],
+//         [
+//           #pc_icon()
+//           #v(0.25em)
+//           - live visualization
+//           - persisted metrics
+//           - operator-facing map
+//         ],
+//         pc_color,
+//       )
+//     ],
+//   )
+
+//   #v(0.45em)
 //   #block(fill: rgb("f4f6fb"), stroke: 0.6pt + rgb("d9dee8"), radius: 6pt, inset: (x: 0.7em, y: 0.45em))[
-//     Goal: measure quality/runtime tradeoffs instead of optimizing for speed blindly.
+//     Future work is not only the model: the system needs a robust peripheral pipeline from capture to inference to display.
 //   ]
 // ]
 
