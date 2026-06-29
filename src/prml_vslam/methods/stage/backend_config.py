@@ -396,7 +396,8 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
         """Return backend-specific planning notes."""
         return [
             "LingBot-Map is wired as an offline and bounded terminal-streaming repository backend.",
-            "Streaming runs buffer RGB frames and emit terminal artifacts at finish, without incremental live preview.",
+            "Streaming requires max_frames and emits terminal artifacts at finish, without incremental live preview.",
+            "Windowed mode delegates finite-sequence windowing, overlap alignment, and stitching to upstream LingBot-Map.",
             "Install the LingBot optional dependency group and provide the checkpoint before real runs.",
         ]
 
