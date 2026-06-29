@@ -1,0 +1,62 @@
+# ViSTA-SLAM core example sweep across prepared smoke-test sequences.
+#
+# This is the clean first-run target for validating method integration across
+# the normalized benchmark sources.
+#
+# Inspect the expanded plan:
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/example-vista-core-sweep.toml
+#
+# Execute sequentially, attempt all runs:
+#   uv run --extra vista prml-vslam run-sweep-config .configs/sweeps/example-vista-core-sweep.toml \
+#       --continue-on-failure
+
+[sweep]
+name       = "example-vista-core"
+output_dir = ".artifacts/sweeps"
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 1
+target_fps = 30.0
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk"
+frame_stride        = 1
+target_fps = 30.0
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-01"
+frame_stride        = 2
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 1
+target_fps          = 30.0
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[methods.vista]
+config_path = ".configs/templates/vista-slam.toml"

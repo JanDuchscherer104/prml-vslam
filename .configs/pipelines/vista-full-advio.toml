@@ -138,7 +138,7 @@ max_correspondence_distance_m = 0.02
 enabled = true
 
 [stages.evaluate_cloud]
-enabled = true
+enabled = false
 
 [stages.align_trajectory]
 enabled = true

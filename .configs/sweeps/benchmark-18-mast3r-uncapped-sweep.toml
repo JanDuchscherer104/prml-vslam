@@ -1,4 +1,9 @@
-# MASt3R-SLAM 18-scene sweep: 6 TUM RGB-D + 6 ADVIO + 6 Record3D.
+# MASt3R-SLAM 18-scene sweep with no SLAM max_frames cap.
+#
+# This supersedes benchmark-18-mast3r-sweep.toml, whose MASt3R template used
+# max_frames=50 during the previous run, and benchmark-18-mast3r-512-sweep.toml,
+# which was interrupted after two completed runs.  The distinct sweep name keeps
+# the uncapped artifacts separate from those capped/partial sweeps.
 #
 # Requires the mast3r extra (conflicts with vista and lingbot; install separately):
 #   mamba activate prml-vslam
@@ -6,14 +11,14 @@
 #   uv sync --extra dev --extra streaming --extra mast3r
 #
 # Inspect the expanded plan (no execution):
-#   uv run prml-vslam plan-sweep-config .configs/sweeps/benchmark-18-mast3r-sweep.toml
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/benchmark-18-mast3r-uncapped-sweep.toml
 #
 # Execute sequentially, attempting all runs:
-#   uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/benchmark-18-mast3r-sweep.toml \
+#   uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/benchmark-18-mast3r-uncapped-sweep.toml \
 #       --continue-on-failure
 
 [sweep]
-name       = "benchmark-18-mast3r"
+name       = "benchmark-18-mast3r-uncapped"
 output_dir = ".artifacts/sweeps"
 
 # -- TUM RGB-D -----------------------------------------------------------------
