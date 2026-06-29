@@ -1031,7 +1031,8 @@
       - Fast POC — but *huge refactorings* from development with AI.
       - *Slow, intensive finalization:* running evaluation &
         getting comparable results across methods.
-      - Hard to find the *best-fit parameters per method*.
+      - *Hard to run the methods on limited hardware* — heavy
+        tweaking of per-method parameters to fit constrained GPUs.
       - First sweep had a *misconfiguration* — MASt3R/ViSTA config mismatch messed up the results.
     ],
   )
