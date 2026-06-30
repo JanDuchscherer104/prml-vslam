@@ -44,12 +44,12 @@ from prml_vslam.sources.config import (
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
 from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
     AdvioDownloadRequest,
-    AdvioPoseFrameMode,
     AdvioPoseSource,
 )
 from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
@@ -61,7 +61,7 @@ from prml_vslam.sources.datasets.normalization import (
     normalize_dataset_entries,
     normalize_dataset_entry,
     normalize_dataset_source_configs,
-    normalized_profile_for_dataset,
+    normalized_runtime_profile_for_dataset,
     normalized_store_for_service,
     parse_dataset_id,
 )
@@ -140,8 +140,10 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
             ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
             ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
-            ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
-            ("--stages.source.backend.normalize_video_orientation", "Normalize video display orientation."),
+            (
+                "--stages.source.backend.dataset_serving.pose_frame_mode",
+                "ADVIO normalized replay pose frame mode.",
+            ),
             ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
             ("--stages.source.backend.device_index", "Record3D USB device index."),
             ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
@@ -846,24 +848,22 @@ def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathCo
                 continue
             dataset_id = dataset_id_for_source_config(source_backend)
             service = dataset_service(dataset_id, path_config)
-            profile = normalized_profile_for_dataset(
+            frame_selection = runtime_frame_selection_for_source_config(source_backend)
+            profile = normalized_runtime_profile_for_dataset(
                 dataset_id=dataset_id,
                 service=service,
                 source_config=source_backend,
             )
-            normalized_store_for_service(dataset_id, path_config).resolve_entry(
+            normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
                 profile,
-                frame_selection=FrameSelectionConfig(
-                    frame_stride=source_backend.frame_stride,
-                    target_fps=source_backend.target_fps,
-                ),
+                frame_selection=frame_selection,
             )
         except Exception as exc:
             failures.append(f"{item.run_id}: {exc}")
     if failures:
         joined = "\n- ".join(failures)
         raise FileNotFoundError(
-            "Sweep normalized datastore preflight failed. Build the missing compatible entries first with "
+            "Sweep normalized datastore preflight failed. Build compatible normalized runtime entries with "
             "`prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml`.\n"
             f"- {joined}"
         )
@@ -970,11 +970,19 @@ def write_demo_config(
     ] = None,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo run config."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo run config."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
+        ),
     ] = None,
 ) -> None:
     """Persist the canonical ADVIO demo run config as TOML."""
@@ -1047,28 +1055,21 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseSource.GROUND_TRUTH,
-    pose_frame_mode: Annotated[
-        AdvioPoseFrameMode,
-        typer.Option(
-            "--pose-frame-mode",
-            help="Frame semantics used when serving ADVIO replay poses.",
-            case_sensitive=False,
-        ),
-    ] = AdvioPoseFrameMode.PROVIDER_WORLD,
-    normalize_video_orientation: Annotated[
-        bool,
-        typer.Option(
-            "--normalize-video-orientation/--raw-video-orientation",
-            help="Whether to normalize video display orientation during replay.",
-        ),
-    ] = True,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Target FPS used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
+        ),
     ] = None,
     poll_interval_seconds: Annotated[
         float,
@@ -1090,8 +1091,6 @@ def pipeline_demo(
         mode=PipelineMode.STREAMING,
         method=method,
         pose_source=pose_source,
-        pose_frame_mode=pose_frame_mode,
-        normalize_video_orientation=normalize_video_orientation,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
@@ -1454,7 +1453,6 @@ def dataset_summary(
             "dataset_id": dataset_id.value,
             "store_root": path_config.resolve_normalized_datastore_dir(dataset_id.value),
             "record_count": len(query.records),
-            "default_record_count": len(query.default_records),
             "sequence_count": len(query.sequence_ids),
             "issue_count": len(query.issues),
             **_dataset_summary_tables(query, sequence=sequence, profile_key=profile_key, verbose=verbose),
@@ -1710,7 +1708,7 @@ def _resolve_demo_sequence_id(path_config: PathConfig, *, explicit_sequence_id: 
     """Resolve one normalized ADVIO sequence for the CLI demo."""
     if explicit_sequence_id is not None:
         return explicit_sequence_id
-    records = query_normalized_dataset(DatasetId.ADVIO, path_config).default_records
+    records = query_normalized_dataset(DatasetId.ADVIO, path_config).records
     sequence_ids = [
         int(record.sequence_id.split("-", maxsplit=1)[1])
         for record in records

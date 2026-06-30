@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...replay import ReplayMode
 from ..contracts import FrameSelectionConfig, ReferenceCloudConfig, SequenceKey
-from ..normalized_store import NormalizedDatasetProfile, NormalizedDatasetStore
 from ..sources import DatasetSequenceSource, DatasetServiceBase
 from .tum_rgbd_download import TumRgbdDownloadManager
 from .tum_rgbd_layout import load_tum_rgbd_catalog
@@ -16,31 +14,23 @@ from .tum_rgbd_sequence import TumRgbdSequence
 class TumRgbdDatasetService(DatasetServiceBase, TumRgbdDownloadManager):
     catalog_loader = staticmethod(load_tum_rgbd_catalog)
 
-    def _build_raw_streaming_source(
+    def _build_normalization_materializer(
         self,
         *,
         sequence_id: SequenceKey,
         frame_selection: FrameSelectionConfig | None = None,
-        replay_mode: ReplayMode = ReplayMode.REALTIME,
         reference_cloud: ReferenceCloudConfig | None = None,
         rgb_max_width_px: int = 392,
         rgb_dimension_multiple: int = 14,
-        normalized_store: NormalizedDatasetStore | None = None,
-        normalized_profile: NormalizedDatasetProfile | None = None,
-        **stream_kwargs,
     ) -> DatasetSequenceSource:
-        return self._build_streaming_source(
+        return self._build_source(
             sequence_id=sequence_id,
             frame_selection=frame_selection or FrameSelectionConfig(),
-            replay_mode=replay_mode,
             sequence_kwargs={
                 "reference_cloud": reference_cloud or ReferenceCloudConfig(),
                 "rgb_max_width_px": rgb_max_width_px,
                 "rgb_dimension_multiple": rgb_dimension_multiple,
             },
-            normalized_store=normalized_store,
-            normalized_profile=normalized_profile,
-            **stream_kwargs,
         )
 
     def _preview_timestamps_ns(self, sequence: TumRgbdSequence) -> list[int]:

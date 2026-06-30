@@ -77,7 +77,7 @@ def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
         "sequence_id": sequence_id,
         "dataset_serving": {
             "pose_source": "ground_truth",
-            "pose_frame_mode": "provider_world",
+            "pose_frame_mode": "fixedpoint_common_start_local",
         },
     }
 
@@ -323,9 +323,8 @@ def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Pa
     assert request.visualization.connect_live_viewer is True
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
     )
-    assert request.stages.source.backend.normalize_video_orientation is True
 
 
 def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: Path) -> None:
@@ -335,14 +334,14 @@ def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: P
         mode=PipelineMode.STREAMING,
         method=MethodId.VISTA,
         pose_source=AdvioPoseSource.ARCORE,
-        normalize_video_orientation=True,
+        dataset_target_fps=15.0,
     )
 
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.ARCORE,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
     )
-    assert request.stages.source.backend.normalize_video_orientation is True
+    assert request.stages.source.backend.target_fps == 15.0
 
 
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -535,7 +534,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam]
 enabled = true
@@ -1278,9 +1277,8 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
-            normalize_video_orientation=True,
         ),
         method=MethodId.VISTA,
         max_frames=2,
