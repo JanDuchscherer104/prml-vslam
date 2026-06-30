@@ -118,6 +118,14 @@ def test_normalized_store_loads_current_entry_paths(tmp_path: Path) -> None:
     assert loaded.stats_long_path == (entry_root / "stats_long.csv").resolve()
     assert store.issues() == []
 
+    (entry_root / ENTRY_FILENAME).write_text(
+        entry.model_copy(update={"stats_long_path": None}).model_dump_json(), encoding="utf-8"
+    )
+    loaded_without_stats = store.load_entry(profile)
+
+    assert loaded_without_stats.root == entry_root.resolve()
+    assert loaded_without_stats.stats_long_path is None
+
 
 def test_dataset_summary_uses_one_preferred_profile_per_sequence() -> None:
     query = NormalizedDatasetQuery(
