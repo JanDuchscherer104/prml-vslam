@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from prml_vslam.eval.image_service import ImageQualityEvaluationService
 from prml_vslam.eval.render_eval import RenderEvalResult
-from prml_vslam.eval.stage_image.contracts import ImageEvaluationStageInput
+from prml_vslam.eval.stage_image.contracts import ImageEvaluationStageInput, image_evaluation_input_fingerprint_payload
 from prml_vslam.interfaces.artifacts import ArtifactRef, artifact_ref
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.provenance import StageStatus
@@ -60,12 +60,7 @@ class ImageEvaluationRuntime(OfflineStageRuntime[ImageEvaluationStageInput]):
             stage_key=StageKey.IMAGE_EVALUATION,
             status=StageStatus.COMPLETED,
             config_hash=stable_hash(input_payload.render_config),
-            input_fingerprint=stable_hash(
-                {
-                    "slam_dense": input_payload.slam.dense_points_ply,
-                    "slam_trajectory": input_payload.slam.trajectory_tum,
-                }
-            ),
+            input_fingerprint=stable_hash(image_evaluation_input_fingerprint_payload(input_payload)),
             artifacts=_artifact_map(result),
             metrics=_headline_metrics(result),
         )

@@ -59,7 +59,11 @@ def render(context: AppContext) -> None:
             st.caption("Start a run from the `Pipeline` page or the CLI first.")
             return
         default_run_index = next(
-            (index for index, candidate in enumerate(selection_state.runs) if candidate.artifact_root == state.run_root),
+            (
+                index
+                for index, candidate in enumerate(selection_state.runs)
+                if candidate.artifact_root == state.run_root
+            ),
             0,
         )
         run = st.selectbox(
@@ -101,7 +105,7 @@ def render(context: AppContext) -> None:
             try:
                 summary = service.evaluate_run(
                     run.artifact_root,
-                    config=RenderEvalConfig(gallery_every=gallery_every, compute_lpips=True),
+                    config=RenderEvalConfig(gallery_every=gallery_every),
                 ).summary
             except _COMPUTE_ERRORS as exc:
                 st.error(str(exc))

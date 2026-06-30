@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from prml_vslam.eval.render_eval import RenderEvalConfig
 from prml_vslam.eval.stage_image.config import ImageEvaluationPolicy
-from prml_vslam.eval.stage_image.contracts import ImageEvaluationStageInput
+from prml_vslam.eval.stage_image.contracts import ImageEvaluationStageInput, image_evaluation_input_fingerprint_payload
 from prml_vslam.eval.stage_image.runtime import ImageEvaluationRuntime
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
 from prml_vslam.pipeline.contracts.stages import StageKey
@@ -29,17 +29,18 @@ def _build_offline_input(context: PipelineExecutionContext) -> ImageEvaluationSt
         artifact_root=context.plan.artifact_root,
         render_config=_render_config(config.rendering),
         slam=context.results.require_slam_artifacts(),
+        sequence_manifest_path=context.run_paths.sequence_manifest_path,
+        input_timestamps_path=context.run_paths.input_timestamps_path,
+        input_intrinsics_path=context.run_paths.input_intrinsics_path,
+        input_frames_dir=context.run_paths.input_frames_dir,
     )
 
 
 def _failure_fingerprint(context: PipelineExecutionContext) -> FailureFingerprint:
-    slam = context.results.require_slam_artifacts()
+    input_payload = _build_offline_input(context)
     return FailureFingerprint(
         config_payload=context.run_config.stages.evaluate_image.rendering,
-        input_payload={
-            "slam_dense": slam.dense_points_ply,
-            "slam_trajectory": slam.trajectory_tum,
-        },
+        input_payload=image_evaluation_input_fingerprint_payload(input_payload),
     )
 
 

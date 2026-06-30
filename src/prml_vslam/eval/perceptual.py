@@ -46,9 +46,7 @@ class LpipsScorer:
 
         self._torch = torch
         self._device = (
-            torch.device(device)
-            if device is not None
-            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            torch.device(device) if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
         self._model = lpips_lib.LPIPS(net=net, verbose=False).to(self._device).eval()
 

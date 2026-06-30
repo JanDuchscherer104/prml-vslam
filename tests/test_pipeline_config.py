@@ -747,6 +747,7 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
         "torch==2.5.1",
         "torchvision==0.20.1",
         "torchaudio==2.5.1",
+        "lpips>=0.1.4,<0.2",
         "xformers",
         "MAST3R-SLAM",
         "MAST3R",
@@ -777,6 +778,7 @@ def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
     assert lingbot_extra == {
         "torch==2.5.1",
         "torchvision==0.20.1",
+        "lpips>=0.1.4,<0.2",
         "lingbot-map",
         "flashinfer-python",
         "torch-c-dlpack-ext==0.1.5",
