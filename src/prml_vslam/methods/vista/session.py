@@ -86,11 +86,16 @@ class VistaSlamRuntime:
             view_name=f"frame_{self._accepted_keyframe_count:06d}",
         )
         grayscale = prepared_frame.gray_u8
+        stride_keyframe = (self._source_frame_count - 1) % self._cfg.stride == 0
         if self._cfg.keyframe_detection == "stride":
-            # emulate upstream stride indexing logic: range(1, last, stride)
-            is_keyframe = (self._source_frame_count - 1) % self._cfg.stride == 0
+            is_keyframe = stride_keyframe
         else:
-            is_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+            flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+            is_keyframe = flow_keyframe or (
+                self._cfg.keyframe_detection == "flow_stride"
+                and self._accepted_keyframe_count >= self._cfg.max_view_num
+                and stride_keyframe
+            )
         if not is_keyframe:
             self._pending_updates.append(
                 SlamUpdate(
