@@ -208,7 +208,7 @@ class NormalizedDatasetStore:
         entry_path = self.entry_root(profile) / ENTRY_FILENAME
         if not entry_path.exists():
             raise FileNotFoundError(self.missing_entry_message(profile))
-        entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+        entry = _load_normalized_entry(entry_path)
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
         return entry
@@ -258,7 +258,7 @@ class NormalizedDatasetStore:
                 f"Missing normalized dataset entry dataset_id={self.dataset_id.value} "
                 f"sequence_id={sequence_id} profile_key={profile_key}."
             )
-        entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+        entry = _load_normalized_entry(entry_path)
         profile = NormalizedDatasetProfile.model_validate(entry.profile)
         self._validate_entry(entry=entry, profile=profile, entry_path=entry_path)
         self._validate_entry_payloads(entry)
@@ -507,7 +507,7 @@ class NormalizedDatasetStore:
         issues: list[NormalizedDatasetStoreIssue] = []
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = _load_normalized_entry(entry_path)
                 profile = entry.profile
                 if not _is_current_schema(entry, profile):
                     issues.append(
@@ -529,7 +529,7 @@ class NormalizedDatasetStore:
         entries: list[NormalizedDatasetEntry] = []
         for entry_path in sorted(self.store_root.glob(f"*/*/{ENTRY_FILENAME}")):
             try:
-                entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+                entry = _load_normalized_entry(entry_path)
                 profile = entry.profile
                 if not _is_current_schema(entry, profile):
                     continue
@@ -1368,10 +1368,10 @@ def _validate_manifest_paths(root: Path, manifest: SequenceManifest) -> None:
         manifest.intrinsics_path,
         manifest.rotation_metadata_path,
     ):
-        _ensure_optional_existing_under(root, path)
+        _ensure_optional_existing_under(root, None if path is None else _resolve_loaded_entry_path(root, path))
     if manifest.advio is None:
         return
-    _ensure_existing_under(root, manifest.advio.calibration_path)
+    _ensure_existing_under(root, _resolve_loaded_entry_path(root, manifest.advio.calibration_path))
     if manifest.advio.fixpoints_csv_path is not None or manifest.advio.pose_refs is not None:
         raise RuntimeError("Normalized ADVIO entries must not persist raw pose or fixpoint sidecars.")
     _validate_no_raw_advio_sidecars(root)
@@ -1379,24 +1379,27 @@ def _validate_manifest_paths(root: Path, manifest: SequenceManifest) -> None:
 
 def _validate_benchmark_input_paths(root: Path, benchmark_inputs: PreparedBenchmarkInputs) -> None:
     for trajectory in [*benchmark_inputs.reference_trajectories, *benchmark_inputs.candidate_trajectories]:
-        _ensure_existing_under(root, trajectory.path)
-        _ensure_optional_existing_under(root, trajectory.metadata_path)
+        _ensure_existing_under(root, _resolve_loaded_entry_path(root, trajectory.path))
+        _ensure_optional_existing_under(
+            root,
+            None if trajectory.metadata_path is None else _resolve_loaded_entry_path(root, trajectory.metadata_path),
+        )
     for cloud in benchmark_inputs.reference_clouds:
-        _ensure_existing_under(root, cloud.path)
-        _ensure_existing_under(root, cloud.metadata_path)
+        _ensure_existing_under(root, _resolve_loaded_entry_path(root, cloud.path))
+        _ensure_existing_under(root, _resolve_loaded_entry_path(root, cloud.metadata_path))
     for ref in benchmark_inputs.observation_sequences:
-        _ensure_existing_under(root, ref.index_path)
-        _ensure_existing_under(root, ref.payload_root)
-        index = ObservationSequenceIndex.model_validate_json(ref.index_path.read_text(encoding="utf-8"))
+        index_path = _resolve_loaded_entry_path(root, ref.index_path)
+        payload_root = _resolve_loaded_entry_path(root, ref.payload_root)
+        _ensure_existing_under(root, index_path)
+        _ensure_existing_under(root, payload_root)
+        index = ObservationSequenceIndex.model_validate_json(index_path.read_text(encoding="utf-8"))
         for row in index.rows:
             if row.rgb_path is None:
                 raise RuntimeError("Normalized observation rows require rgb_path image payloads.")
+            _ensure_optional_existing_under(payload_root, _resolve_observation_payload(payload_root, row.rgb_path))
             _ensure_optional_existing_under(
-                ref.payload_root, _resolve_observation_payload(ref.payload_root, row.rgb_path)
-            )
-            _ensure_optional_existing_under(
-                ref.payload_root,
-                _resolve_observation_payload(ref.payload_root, row.depth_path),
+                payload_root,
+                _resolve_observation_payload(payload_root, row.depth_path),
             )
 
 
@@ -1424,6 +1427,26 @@ def _resolve_observation_payload(payload_root: Path, path: Path | None) -> Path 
 def _ensure_optional_existing_under(root: Path, path: Path | None) -> None:
     if path is not None:
         _ensure_existing_under(root, path)
+
+
+def _load_normalized_entry(entry_path: Path) -> NormalizedDatasetEntry:
+    entry = NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+    root = _resolve_loaded_entry_path(entry_path.parent, entry.root)
+    return entry.model_copy(
+        update={
+            "root": root,
+            "sequence_manifest_path": _resolve_loaded_entry_path(root, entry.sequence_manifest_path),
+            "benchmark_inputs_path": _resolve_loaded_entry_path(root, entry.benchmark_inputs_path),
+            "stats_long_path": _resolve_loaded_entry_path(root, entry.stats_long_path),
+            "metadata_long_path": None
+            if entry.metadata_long_path is None
+            else _resolve_loaded_entry_path(root, entry.metadata_long_path),
+        }
+    )
+
+
+def _resolve_loaded_entry_path(base: Path, path: Path) -> Path:
+    return path.resolve() if path.is_absolute() else (base / path).resolve()
 
 
 def _ensure_existing_under(root: Path, path: Path) -> None:

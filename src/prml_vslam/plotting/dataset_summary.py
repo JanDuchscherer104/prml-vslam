@@ -7,7 +7,6 @@ from xml.sax.saxutils import escape
 
 import numpy as np
 import plotly.graph_objects as go
-import plotly.io as pio
 from evo.core.trajectory import PoseTrajectory3D
 from plotly.subplots import make_subplots
 
@@ -97,14 +96,62 @@ def build_dataset_summary_bar_svg(
     height: int = 610,
     variant: str = "clean",
 ) -> str:
-    """Build a static SVG bar chart with Plotly's normal image export."""
-    figure = build_dataset_summary_bar_figure(summaries, width=width, height=height, variant=variant)
-    try:
-        return pio.to_image(figure, format="svg", width=width, height=height).decode("utf-8")
-    except ValueError as exc:
-        if "Kaleido" in str(exc) or "kaleido" in str(exc):
-            raise RuntimeError("Plotly SVG export requires the Kaleido package.") from exc
-        raise
+    """Build a static SVG bar chart for sequence counts and durations."""
+    if variant not in _SUMMARY_CHART_VARIANTS:
+        variants = ", ".join(dataset_summary_chart_variants())
+        raise ValueError(f"Unknown dataset summary chart variant '{variant}'. Expected one of: {variants}.")
+    style = _SUMMARY_CHART_VARIANTS[variant]
+    metrics = (
+        (
+            "Sequences",
+            "count",
+            [float(row.sequence_count) for row in summaries],
+            [f"{row.sequence_count}" for row in summaries],
+        ),
+        (
+            "Total duration",
+            "min",
+            [row.total_duration_s / 60.0 for row in summaries],
+            [f"{row.total_duration_s / 60.0:.1f}" for row in summaries],
+        ),
+        (
+            "Avg. duration",
+            "s",
+            [row.average_duration_s for row in summaries],
+            [f"{row.average_duration_s:.1f}" for row in summaries],
+        ),
+    )
+    labels = [row.dataset_label for row in summaries]
+    colors = [_DATASET_COLORS.get(row.dataset_id.value, "#6B7280") for row in summaries]
+    plot_top = 118.0
+    plot_bottom = height - 126.0
+    panel_gap = 40.0
+    panel_width = (width - 112.0 - panel_gap * 2.0) / 3.0
+    parts = [
+        _svg_open(width, height),
+        f'<rect width="{width}" height="{height}" fill="{style["paper_bgcolor"]}"/>',
+        _text(56, 48, str(style["title"]), size=28, fill=str(style["title_color"]), weight="700"),
+        _text(56, 78, str(style["subtitle"]), size=16, fill=_MUTED_TEXT, weight="500"),
+    ]
+    for metric_index, (title, unit, values, value_labels) in enumerate(metrics):
+        panel_left = 56.0 + metric_index * (panel_width + panel_gap)
+        parts.extend(
+            _dataset_summary_svg_panel(
+                labels=labels,
+                colors=colors,
+                title=title,
+                unit=unit,
+                values=values,
+                value_labels=value_labels,
+                x=panel_left,
+                y=plot_top,
+                width=panel_width,
+                height=plot_bottom - plot_top,
+                style=style,
+            )
+        )
+    parts.append("</svg>")
+    return "\n".join(parts)
 
 
 def build_dataset_summary_bar_figure(
@@ -266,6 +313,58 @@ def build_reference_data_svg(
     parts.append(_text(width - 28, height - 24, f"{axis_a}/{axis_b} view", size=14, fill=_MUTED_TEXT, anchor="end"))
     parts.append("</svg>")
     return "\n".join(parts)
+
+
+def _dataset_summary_svg_panel(
+    *,
+    labels: Sequence[str],
+    colors: Sequence[str],
+    title: str,
+    unit: str,
+    values: Sequence[float],
+    value_labels: Sequence[str],
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    style: dict[str, str | float],
+) -> list[str]:
+    max_value = max(values, default=0.0)
+    scale = height / (max_value * 1.18 if max_value > 0.0 else 1.0)
+    bar_count = max(len(values), 1)
+    slot_width = width / bar_count
+    bar_width = min(76.0, slot_width * 0.62)
+    baseline = y + height
+    parts = [
+        f'<rect x="{x:.2f}" y="{y - 26:.2f}" width="{width:.2f}" height="{height + 78:.2f}" '
+        f'fill="{style["plot_bgcolor"]}"/>',
+        _text(x + width / 2.0, y - 48.0, title, size=24, fill=str(style["title_color"]), weight="700", anchor="middle"),
+        _text(x + width - 4.0, y - 14.0, unit, size=15, fill=str(style["axis_color"]), anchor="end"),
+        f'<line x1="{x:.2f}" y1="{baseline:.2f}" x2="{x + width:.2f}" y2="{baseline:.2f}" '
+        f'stroke="{style["gridcolor"]}" stroke-width="2"/>',
+    ]
+    for index, (label, color, value, value_label) in enumerate(zip(labels, colors, values, value_labels, strict=True)):
+        center_x = x + slot_width * (index + 0.5)
+        bar_height = max(value * scale, 2.0)
+        bar_x = center_x - bar_width / 2.0
+        bar_y = baseline - bar_height
+        parts.extend(
+            (
+                f'<rect x="{bar_x:.2f}" y="{bar_y:.2f}" width="{bar_width:.2f}" height="{bar_height:.2f}" '
+                f'rx="4" fill="{color}" fill-opacity="{style["bar_opacity"]}" '
+                f'stroke="{style["bar_line"]}" stroke-width="2"/>',
+                _text(
+                    center_x,
+                    bar_y + min(34.0, bar_height * 0.55),
+                    value_label,
+                    size=21,
+                    fill="#FFFFFF",
+                    anchor="middle",
+                ),
+                _text(center_x, baseline + 34.0, label, size=18, fill=str(style["axis_color"]), anchor="middle"),
+            )
+        )
+    return parts
 
 
 def _view_transform(xy_arrays: Sequence[np.ndarray], *, width: int, height: int):
