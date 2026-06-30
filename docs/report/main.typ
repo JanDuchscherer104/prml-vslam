@@ -32,10 +32,12 @@
     when ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
     implementation materializes ADVIO, TUM RGB-D, and Record3D as normalized observation sequences;
     adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, clouds, transform
-    metadata, and metric inputs. Rather than reporting a leaderboard, the paper specifies the
-    transform contract: RDF camera frames, ADVIO fixedpoint registration with common-start
-    localization, first-pose-relative RGB-D sources, Sim(3) or gravity-aware trajectory placement,
-    and ICP-based dense-geometry diagnostics.
+    metadata, and metric inputs. The paper specifies the transform contract: RDF camera frames,
+    ADVIO fixedpoint registration with common-start localization, first-pose-relative RGB-D
+    sources, Sim(3) or gravity-aware trajectory placement, and ICP-based dense-geometry
+    diagnostics. Matched local sweep evidence shows MASt3R-SLAM is more accurate on short indoor
+    TUM RGB-D sequences, ViSTA-SLAM is more robust on long runs, and visual-inertial phone
+    baselines remain substantially stronger than vision-only monocular methods on ADVIO.
   ],
   index-terms: (
     "VSLAM",
