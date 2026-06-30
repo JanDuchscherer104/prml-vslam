@@ -114,6 +114,41 @@ def test_summary_from_frames_aggregates() -> None:
     assert summary.stats["image.l1"].mean == pytest.approx(np.mean([frame.l1 for frame in frames]))
 
 
+def test_lpips_is_none_without_scorer() -> None:
+    metrics = compute_image_metrics(_rng_image(0), _rng_image(1))
+    assert metrics.lpips is None
+
+
+def test_lpips_scorer_is_injected_and_ignores_mask() -> None:
+    calls: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+    def scorer(reference01: np.ndarray, generated01: np.ndarray) -> float:
+        calls.append((reference01.shape, generated01.shape))
+        return 0.42
+
+    mask = np.zeros((32, 32), dtype=bool)
+    mask[:16, :] = True  # masked metrics restrict to the top half; LPIPS must still see the full frame.
+    metrics = compute_image_metrics(_rng_image(0), _rng_image(1), mask=mask, lpips_scorer=scorer)
+    assert metrics.lpips == pytest.approx(0.42)
+    assert calls == [((32, 32, 3), (32, 32, 3))]  # full image passed, not the masked subset
+
+
+def test_summary_includes_lpips_only_when_all_frames_have_it() -> None:
+    scorer = lambda reference01, generated01: 0.3  # noqa: E731 - tiny stand-in scorer
+    with_lpips = [
+        compute_image_metrics(_rng_image(seed), _rng_image(seed + 100), lpips_scorer=scorer) for seed in range(3)
+    ]
+    summary = ImageQualitySummary.from_frames(with_lpips)
+    assert "image.lpips" in summary.stats
+    assert summary.stats["image.lpips"].mean == pytest.approx(0.3)
+
+    mixed = [
+        compute_image_metrics(_rng_image(0), _rng_image(100), lpips_scorer=scorer),
+        compute_image_metrics(_rng_image(1), _rng_image(101)),  # no LPIPS -> excluded from the summary
+    ]
+    assert "image.lpips" not in ImageQualitySummary.from_frames(mixed).stats
+
+
 def test_summary_from_frames_rejects_empty() -> None:
     with pytest.raises(ValueError, match="zero image pairs"):
         ImageQualitySummary.from_frames([])

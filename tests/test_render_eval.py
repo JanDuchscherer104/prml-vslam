@@ -97,6 +97,24 @@ def test_manifest_rgb_dir_resolves_frames_outside_canonical(tmp_path: Path) -> N
     assert result.scored_pairs == 2  # manifest-backed rgb_dir still scores
 
 
+def test_compute_lpips_records_perceptual_metric(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import prml_vslam.eval.render_eval as render_eval
+
+    root = tmp_path / "run"
+    _build_synthetic_run(root)
+
+    # Substitute the torch-backed scorer with a deterministic stand-in so the test stays
+    # offline (no backbone download) while still exercising the compute_lpips wiring.
+    monkeypatch.setattr(render_eval, "_build_lpips_scorer", lambda config: (lambda ref01, gen01: 0.25))
+
+    result = evaluate_run_from_artifact_root(
+        root, config=RenderEvalConfig(save_gallery=False, compute_lpips=True)
+    )
+    assert "image.lpips" in result.summary.stats
+    assert result.summary.stats["image.lpips"].mean == pytest.approx(0.25)
+    assert all(frame.lpips == pytest.approx(0.25) for frame in result.summary.frames)
+
+
 def test_zero_coverage_poses_are_skipped(tmp_path: Path) -> None:
     root = tmp_path / "run"
     _build_synthetic_run(root)

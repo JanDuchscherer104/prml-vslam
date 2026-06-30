@@ -10,7 +10,7 @@ reloads the result under the canonical ``<run_root>/evaluation/`` layout.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -90,6 +90,7 @@ class ImageQualityEvaluationService:
         generated_path: Path,
         data_range: float | None = None,
         mask_path: Path | None = None,
+        lpips_scorer: Callable[[np.ndarray, np.ndarray], float] | None = None,
     ) -> ImageQualityMetrics:
         """Compute image-quality metrics for one reference/generated image pair."""
         mask = _load_mask(mask_path) if mask_path is not None else None
@@ -98,6 +99,7 @@ class ImageQualityEvaluationService:
             load_image_rgb(generated_path),
             data_range=data_range,
             mask=mask,
+            lpips_scorer=lpips_scorer,
         )
 
     def compute_set(
@@ -105,8 +107,12 @@ class ImageQualityEvaluationService:
         pairs: Sequence[tuple[Path, Path]],
         *,
         data_range: float | None = None,
+        lpips_scorer: Callable[[np.ndarray, np.ndarray], float] | None = None,
     ) -> ImageQualitySummary:
-        """Compute and aggregate metrics for a sequence of ``(reference, generated)`` paths."""
+        """Compute and aggregate metrics for a sequence of ``(reference, generated)`` paths.
+
+        Passing ``lpips_scorer`` also records the learned perceptual LPIPS distance per pair.
+        """
         if not pairs:
             raise FileNotFoundError("No image pairs were provided for evaluation.")
         frames = [
@@ -114,6 +120,7 @@ class ImageQualityEvaluationService:
                 load_image_rgb(reference_path),
                 load_image_rgb(generated_path),
                 data_range=data_range,
+                lpips_scorer=lpips_scorer,
             )
             for reference_path, generated_path in pairs
         ]
@@ -125,6 +132,7 @@ class ImageQualityEvaluationService:
         reference_dir: Path,
         generated_dir: Path,
         data_range: float | None = None,
+        lpips_scorer: Callable[[np.ndarray, np.ndarray], float] | None = None,
     ) -> ImageQualitySummary:
         """Pair images by filename across two directories and aggregate their metrics."""
         pairs = [
@@ -133,7 +141,7 @@ class ImageQualityEvaluationService:
         ]
         if not pairs:
             raise FileNotFoundError(f"No image pairs share a filename between '{reference_dir}' and '{generated_dir}'.")
-        return self.compute_set(pairs, data_range=data_range)
+        return self.compute_set(pairs, data_range=data_range, lpips_scorer=lpips_scorer)
 
     def evaluate_run(
         self,

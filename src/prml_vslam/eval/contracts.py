@@ -185,6 +185,7 @@ class ImageQualityMetricId(StrEnum):
     MSE = "image.mse"
     PSNR = "image.psnr"
     SSIM = "image.ssim"
+    LPIPS = "image.lpips"
 
 
 class ImageQualityMetrics(BaseData):
@@ -211,6 +212,13 @@ class ImageQualityMetrics(BaseData):
 
     ssim: float
     """Structural similarity index in ``[-1, 1]`` (``1.0`` for identical images)."""
+
+    lpips: float | None = None
+    """Learned perceptual distance (LPIPS); lower is more similar. ``None`` when not computed.
+
+    Computed on the full image pair (the coverage mask is ignored), so it is only comparable
+    across pairs scored with the same backbone. Optional so older artifacts reload unchanged.
+    """
 
     coverage: float = 1.0
     """Fraction of pixels scored after masking (``1.0`` when unmasked)."""
@@ -246,6 +254,10 @@ class ImageQualitySummary(BaseData):
             ImageQualityMetricId.PSNR: "psnr",
             ImageQualityMetricId.SSIM: "ssim",
         }
+        # LPIPS is optional: only summarize it when every frame carries it, so runs scored
+        # without the perceptual backbone keep the original metric set (and stay reloadable).
+        if all(frame.lpips is not None for frame in frames):
+            field_by_metric[ImageQualityMetricId.LPIPS] = "lpips"
         stats = {
             metric_id.value: MetricStats.from_error_values(
                 np.asarray([getattr(frame, attribute) for frame in frames], dtype=np.float64)

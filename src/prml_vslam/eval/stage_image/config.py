@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import ConfigDict, Field
 
+from prml_vslam.eval.perceptual import LpipsNet
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
@@ -33,6 +34,12 @@ class ImageEvaluationPolicy(BaseConfig):
 
     gallery_every: int = Field(default=10, ge=1)
     """Save every Nth scored pair to the gallery (1 = all)."""
+
+    compute_lpips: bool = False
+    """Also score the learned perceptual LPIPS distance (loads a torch backbone; off by default)."""
+
+    lpips_net: LpipsNet = "alex"
+    """LPIPS backbone when ``compute_lpips`` is set (``alex`` = fast, ``vgg`` = slower paper variant)."""
 
 
 class ImageEvaluationStageConfig(StageConfig):
