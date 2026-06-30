@@ -55,7 +55,7 @@ from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
 from prml_vslam.sources.datasets.contracts import DatasetId
@@ -587,12 +587,9 @@ def test_cloud_evaluation_stage_is_supported_by_request_preview(tmp_path: Path) 
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
     run_config = build_run_config(
         experiment_name="placeholder",
-        mode=PipelineMode.OFFLINE,
+        mode=PipelineMode.STREAMING,
         output_dir=path_config.artifacts_dir,
-        source_backend=AdvioSourceConfig(
-            sequence_id="advio-01",
-            dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "fixedpoint_common_start_local"},
-        ),
+        source_backend=Record3DSourceConfig(),
         method=MethodId.VISTA,
         evaluate_cloud=True,
     )

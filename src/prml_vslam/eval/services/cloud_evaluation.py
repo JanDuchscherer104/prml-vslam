@@ -146,8 +146,10 @@ def _read_non_empty_point_cloud(path: Path, *, label: str, operation: str = "eva
 
 
 def _load_cloud_alignment(path: Path | None) -> CloudAlignmentArtifact | None:
-    if path is None or not path.exists():
+    if path is None:
         return None
+    if not path.exists():
+        raise FileNotFoundError(f"Cloud alignment artifact does not exist: {path}")
     return CloudAlignmentArtifact.model_validate_json(path.read_text(encoding="utf-8"))
 
 

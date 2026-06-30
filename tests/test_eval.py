@@ -700,6 +700,21 @@ def test_dense_cloud_evaluation_service_computes_open3d_metrics(tmp_path: Path) 
     assert loaded.estimates[0].metrics[CloudMetricId.F1] == pytest.approx(1.0)
 
 
+def test_dense_cloud_evaluation_requires_explicit_alignment_artifact(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    points = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
+    reference_path = write_point_cloud_ply(tmp_path / "reference.ply", points)
+    sim3_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_aligned.ply", points)
+
+    with pytest.raises(FileNotFoundError, match="Cloud alignment artifact does not exist"):
+        DenseCloudEvaluationService().compute_dense_evaluations(
+            artifact_root=tmp_path / "run",
+            reference_cloud_path=reference_path,
+            estimates=[(CloudEstimateKind.SIM3_ICP, sim3_path)],
+            cloud_alignment_path=tmp_path / "missing_cloud_alignment.json",
+        )
+
+
 def test_cloud_evaluation_runtime_publishes_metrics_and_cloud_artifacts(tmp_path: Path) -> None:
     pytest.importorskip("open3d")
     reference_points = np.array(
