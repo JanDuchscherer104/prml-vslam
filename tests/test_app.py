@@ -546,6 +546,8 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
             "vista_slam_dir": Path("external/vista-slam"),
             "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
             "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+            "keyframe_detection": "flow_stride",
+            "stride": 25,
         },
     )
     monkeypatch.setattr(
@@ -564,6 +566,8 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert backend_spec is not None
     assert backend_spec.kind == "vista"
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
+    assert backend_spec.keyframe_detection == "flow_stride"
+    assert backend_spec.stride == 25
     assert context.state.pipeline.pose_source.value == "ground_truth"
     assert context.state.pipeline.pose_frame_mode.value == "fixedpoint_common_start_local"
     assert context.state.pipeline.dataset_target_fps == 15.0
@@ -574,6 +578,8 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
     assert error is None
     assert isinstance(rebuilt_run_config, RunConfig)
     assert rebuilt_run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
+    assert rebuilt_run_config.stages.slam.backend.keyframe_detection == "flow_stride"
+    assert rebuilt_run_config.stages.slam.backend.stride == 25
     assert rebuilt_run_config.stages.source.backend.target_fps == 15.0
 
 
