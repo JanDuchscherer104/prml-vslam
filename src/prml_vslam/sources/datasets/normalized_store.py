@@ -1437,7 +1437,9 @@ def _load_normalized_entry(entry_path: Path) -> NormalizedDatasetEntry:
             "root": root,
             "sequence_manifest_path": _resolve_loaded_entry_path(root, entry.sequence_manifest_path),
             "benchmark_inputs_path": _resolve_loaded_entry_path(root, entry.benchmark_inputs_path),
-            "stats_long_path": _resolve_loaded_entry_path(root, entry.stats_long_path),
+            "stats_long_path": None
+            if entry.stats_long_path is None
+            else _resolve_loaded_entry_path(root, entry.stats_long_path),
             "metadata_long_path": None
             if entry.metadata_long_path is None
             else _resolve_loaded_entry_path(root, entry.metadata_long_path),
