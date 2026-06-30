@@ -97,6 +97,15 @@ def test_manifest_rgb_dir_resolves_frames_outside_canonical(tmp_path: Path) -> N
     assert result.scored_pairs == 2  # manifest-backed rgb_dir still scores
 
 
+def test_invalid_sequence_manifest_fails_loudly(tmp_path: Path) -> None:
+    root = tmp_path / "run"
+    _build_synthetic_run(root)
+    (root / "input" / "sequence_manifest.json").write_text("{invalid-json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid sequence manifest"):
+        evaluate_run_from_artifact_root(root, config=RenderEvalConfig(save_gallery=False))
+
+
 def test_compute_lpips_records_perceptual_metric(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import prml_vslam.eval.render_eval as render_eval
 
@@ -107,9 +116,7 @@ def test_compute_lpips_records_perceptual_metric(tmp_path: Path, monkeypatch: py
     # offline (no backbone download) while still exercising the compute_lpips wiring.
     monkeypatch.setattr(render_eval, "_build_lpips_scorer", lambda config: (lambda ref01, gen01: 0.25))
 
-    result = evaluate_run_from_artifact_root(
-        root, config=RenderEvalConfig(save_gallery=False, compute_lpips=True)
-    )
+    result = evaluate_run_from_artifact_root(root, config=RenderEvalConfig(save_gallery=False, compute_lpips=True))
     assert "image.lpips" in result.summary.stats
     assert result.summary.stats["image.lpips"].mean == pytest.approx(0.25)
     assert all(frame.lpips == pytest.approx(0.25) for frame in result.summary.frames)
@@ -171,6 +178,10 @@ def test_image_evaluation_stage_runtime(tmp_path: Path) -> None:
             artifact_root=root,
             render_config=RenderEvalConfig(save_gallery=False),
             slam=slam,
+            sequence_manifest_path=root / "input" / "sequence_manifest.json",
+            input_timestamps_path=root / "input" / "timestamps.json",
+            input_intrinsics_path=root / "input" / "intrinsics.yaml",
+            input_frames_dir=root / "input" / "frames",
         )
     )
 
@@ -181,6 +192,38 @@ def test_image_evaluation_stage_runtime(tmp_path: Path) -> None:
     assert result.outcome.metrics["scored_pairs"] == 2
     assert (root / "evaluation" / "image_metrics.json").exists()
     assert runtime.status().lifecycle_state is StageStatus.COMPLETED
+
+
+def test_image_evaluation_stage_fingerprint_tracks_source_inputs(tmp_path: Path) -> None:
+    from prml_vslam.eval.render_eval import RenderEvalConfig
+    from prml_vslam.eval.stage_image.contracts import (
+        ImageEvaluationStageInput,
+        image_evaluation_input_fingerprint_payload,
+    )
+    from prml_vslam.interfaces.artifacts import artifact_ref
+    from prml_vslam.interfaces.slam import SlamArtifacts
+
+    root = tmp_path / "run"
+    _build_synthetic_run(root)
+    slam = SlamArtifacts(
+        trajectory_tum=artifact_ref(root / "slam" / "trajectory.tum", kind="tum"),
+        dense_points_ply=artifact_ref(root / "slam" / "point_cloud.ply", kind="ply"),
+    )
+    input_payload = ImageEvaluationStageInput(
+        artifact_root=root,
+        render_config=RenderEvalConfig(save_gallery=False),
+        slam=slam,
+        sequence_manifest_path=root / "input" / "sequence_manifest.json",
+        input_timestamps_path=root / "input" / "timestamps.json",
+        input_intrinsics_path=root / "input" / "intrinsics.yaml",
+        input_frames_dir=root / "input" / "frames",
+    )
+
+    before = image_evaluation_input_fingerprint_payload(input_payload)
+    (root / "input" / "intrinsics.yaml").write_text(_INTRINSICS_YAML.replace("100.0", "120.0", 1))
+    after = image_evaluation_input_fingerprint_payload(input_payload)
+
+    assert before["input_intrinsics"] != after["input_intrinsics"]
 
 
 def test_image_evaluation_stage_registered_and_planned(tmp_path: Path) -> None:

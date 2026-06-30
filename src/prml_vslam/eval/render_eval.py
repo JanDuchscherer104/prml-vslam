@@ -259,15 +259,15 @@ def _resolve_run_inputs(paths: RunArtifactPaths) -> tuple[Path, list[int], list[
 
 
 def _load_sequence_manifest(path: Path) -> SequenceManifest | None:
-    """Load the persisted sequence manifest, tolerating absence or older formats."""
+    """Load the persisted sequence manifest, tolerating absence only."""
     if not path.exists():
         return None
     try:
         return SequenceManifest.model_validate_json(path.read_text(encoding="utf-8"))
-    except (ValueError, OSError):
-        # An unreadable or older-schema manifest is not fatal: fall back to the
-        # canonical input/* layout rather than failing an otherwise valid run.
-        return None
+    except OSError as exc:
+        raise RuntimeError(f"Could not read sequence manifest '{path}'.") from exc
+    except ValueError as exc:
+        raise ValueError(f"Invalid sequence manifest '{path}'.") from exc
 
 
 def _prefer_existing(candidate: Path | None, canonical: Path, *, what: str) -> Path:

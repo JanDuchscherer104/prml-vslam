@@ -59,9 +59,9 @@ sequence, not as an absolute image-quality score. On advio-15 MASt3R-SLAM and
 ViSTA-SLAM deliver a similar reconstruction quality — PSNR and L1 are close. The
 clearest difference is the coverage: ViSTA-SLAM sets more keyframes, while
 MASt3R-SLAM in its default setting only adds a new keyframe once enough new image
-content appears. SSIM also calls for extra care: it is sensitive to the estimated 
-intrinsics — if the focal length is off, this acts like a zoom and shifts the 
-image structure. Through its window it also counts the holes indirectly. 
+content appears. SSIM also calls for extra care: it is sensitive to the estimated
+intrinsics — if the focal length is off, this acts like a zoom and shifts the
+image structure. Through its window it also counts the holes indirectly.
 Read together with the coverage, the values thus show how well and how completely a
 method reconstructs the scene. MASt3R-SLAM shows its real strengths, where
 things get difficult: with a zoom during the video or in low-texture scenes, for
