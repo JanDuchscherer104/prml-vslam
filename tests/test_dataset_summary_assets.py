@@ -35,7 +35,7 @@ from prml_vslam.sources.datasets.summary import (
 )
 
 
-def test_normalized_store_resolves_legacy_relative_entry_paths(tmp_path: Path) -> None:
+def test_normalized_store_loads_current_entry_paths(tmp_path: Path) -> None:
     store = NormalizedDatasetStore(store_root=tmp_path / "store" / "record3d", dataset_id=DatasetId.RECORD3D)
     profile = NormalizedDatasetProfile(
         dataset_id=DatasetId.RECORD3D,
@@ -70,8 +70,8 @@ def test_normalized_store_resolves_legacy_relative_entry_paths(tmp_path: Path) -
         SequenceManifest(
             sequence_id="scene-a",
             dataset_id=DatasetId.RECORD3D,
-            rgb_dir=Path("observations/rgb"),
-            observation_index_path=Path("observations/index.json"),
+            rgb_dir=rgb_dir,
+            observation_index_path=observation_index_path,
         ).model_dump_json(),
         encoding="utf-8",
     )
@@ -81,8 +81,8 @@ def test_normalized_store_resolves_legacy_relative_entry_paths(tmp_path: Path) -
                 ObservationSequenceRef(
                     source_id="record3d_dataset",
                     sequence_id="scene-a",
-                    index_path=Path("observations/index.json"),
-                    payload_root=Path("observations"),
+                    index_path=observation_index_path,
+                    payload_root=observations_root,
                     observation_count=1,
                 )
             ]
@@ -103,11 +103,11 @@ def test_normalized_store_resolves_legacy_relative_entry_paths(tmp_path: Path) -
         source_id="record3d_dataset",
         profile_key=profile.profile_key,
         profile=profile.model_dump(mode="json"),
-        root=Path("."),
-        sequence_manifest_path=Path("sequence_manifest.json"),
-        benchmark_inputs_path=Path("benchmark_inputs.json"),
-        stats_long_path=Path("stats_long.csv"),
-        metadata_long_path=Path("metadata_long.csv"),
+        root=entry_root,
+        sequence_manifest_path=entry_root / "sequence_manifest.json",
+        benchmark_inputs_path=entry_root / "benchmark_inputs.json",
+        stats_long_path=entry_root / "stats_long.csv",
+        metadata_long_path=entry_root / "metadata_long.csv",
     )
     (entry_root / ENTRY_FILENAME).write_text(entry.model_dump_json(), encoding="utf-8")
 
@@ -164,7 +164,6 @@ def test_dataset_summary_bar_svg_contains_three_metrics_and_stable_labels() -> N
         ),
     ]
     figure = build_dataset_summary_bar_figure(summaries)
-    svg = build_dataset_summary_bar_svg(summaries)
 
     assert dataset_summary_chart_variants() == ("clean", "presentation", "minimal", "contrast", "wide")
     assert len(figure.data) == 3
@@ -178,6 +177,8 @@ def test_dataset_summary_bar_svg_contains_three_metrics_and_stable_labels() -> N
     assert figure.layout.yaxis.title.text == "count"
     assert figure.layout.yaxis2.title.text == "min"
     assert figure.layout.yaxis3.title.text == "s"
+    pytest.importorskip("kaleido")
+    svg = build_dataset_summary_bar_svg(summaries)
     assert "Sequences" in svg
     assert "Total duration" in svg
     assert "Avg. duration" in svg
