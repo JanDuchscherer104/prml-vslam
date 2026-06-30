@@ -17,6 +17,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Initialize Python submodules needed by uv
+        run: |
+          git -C external/mast3r-slam submodule update --init --depth=1 thirdparty/in3d/thirdparty/pyimgui
+          git -C external/vista-slam submodule update --init --depth=1 DBoW3Py
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
