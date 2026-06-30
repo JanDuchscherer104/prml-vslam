@@ -23,6 +23,8 @@ correspond pixel-for-pixel.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from skimage.metrics import structural_similarity as _structural_similarity
 
@@ -43,24 +45,32 @@ def compute_image_metrics(
     *,
     data_range: float | None = None,
     mask: np.ndarray | None = None,
+    lpips_scorer: Callable[[np.ndarray, np.ndarray], float] | None = None,
 ) -> ImageQualityMetrics:
     """Compute the full image-quality metric set for one image pair.
 
     Normalizes both images once and evaluates L1 (MAE), L2 (RMSE), MSE, PSNR,
     and SSIM. Returns an :class:`ImageQualityMetrics` payload carrying the scored
     coverage fraction and the resolved ``data_range`` for reproducibility.
+
+    When ``lpips_scorer`` is given (a callable taking the two ``[0, 1]`` normalized
+    images and returning a scalar), the learned perceptual LPIPS distance is also
+    recorded. The scorer is injected so this module stays free of torch and model
+    state; LPIPS is computed on the full pair and ignores ``mask``.
     """
     reference01, generated01, mask_bool, resolved_range = _prepare(
         reference, generated, data_range=data_range, mask=mask
     )
     mse = _mean_squared_error(reference01, generated01, mask_bool)
     coverage = 1.0 if mask_bool is None else float(np.count_nonzero(mask_bool) / mask_bool.size)
+    lpips_value = float(lpips_scorer(reference01, generated01)) if lpips_scorer is not None else None
     return ImageQualityMetrics(
         l1=_mean_absolute_error(reference01, generated01, mask_bool),
         l2=float(np.sqrt(mse)),
         mse=mse,
         psnr=_psnr_from_mse(mse),
         ssim=_ssim(reference01, generated01, mask_bool),
+        lpips=lpips_value,
         coverage=coverage,
         data_range=resolved_range,
     )

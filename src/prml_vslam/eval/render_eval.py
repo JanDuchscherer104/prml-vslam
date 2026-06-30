@@ -30,6 +30,7 @@ from pydantic import ConfigDict, Field
 from prml_vslam.eval.contracts import ImageQualitySummary
 from prml_vslam.eval.image_metrics import compute_image_metrics
 from prml_vslam.eval.image_service import ImageQualityEvaluationService, load_image_rgb
+from prml_vslam.eval.perceptual import LpipsNet, LpipsScorerProtocol
 from prml_vslam.interfaces.camera import CameraIntrinsics, load_camera_intrinsics_yaml
 from prml_vslam.rendering import PointCloudRenderer, RenderConfig, poses_from_tum_trajectory, write_image_rgb
 from prml_vslam.sources.contracts import SequenceManifest
@@ -69,6 +70,12 @@ class RenderEvalConfig(BaseData):
     max_pair_dt_ms: float | None = Field(default=None, gt=0.0)
     """Drop a pose when no input frame is within this timestamp tolerance (None = always pair nearest)."""
 
+    compute_lpips: bool = False
+    """Also score the learned perceptual LPIPS distance (loads a torch backbone; off by default)."""
+
+    lpips_net: LpipsNet = "alex"
+    """LPIPS backbone when ``compute_lpips`` is set (``alex`` = fast, ``vgg`` = slower paper variant)."""
+
 
 class RenderEvalResult(BaseData):
     """Outcome of one run-level render-and-score evaluation."""
@@ -107,6 +114,7 @@ def evaluate_rendered_run(
     skipped rather than failing the whole evaluation.
     """
     config = config or RenderEvalConfig()
+    lpips_scorer = _build_lpips_scorer(config)
     poses = poses_from_tum_trajectory(trajectory_path)
     if not poses:
         raise ValueError(f"Trajectory '{trajectory_path}' contains no poses to render.")
@@ -155,7 +163,7 @@ def evaluate_rendered_run(
             # No point projected into this view (pose looks away / fully clipped); skip rather
             # than score an all-background frame (which masked metrics would reject anyway).
             continue
-        frames.append(compute_image_metrics(reference, view.rgb, mask=view.coverage))
+        frames.append(compute_image_metrics(reference, view.rgb, mask=view.coverage, lpips_scorer=lpips_scorer))
         if gallery_dir is not None and keyframe_index % config.gallery_every == 0:
             name = f"{keyframe_index:06d}_src{frame_index:06d}.png"
             write_image_rgb(gallery_dir / "gt" / name, reference)
@@ -211,6 +219,19 @@ def evaluate_run_from_artifact_root(
         output_root=paths.artifact_root,
         config=config,
     )
+
+
+def _build_lpips_scorer(config: RenderEvalConfig) -> LpipsScorerProtocol | None:
+    """Build the LPIPS scorer once per run when enabled, else ``None``.
+
+    Kept as a tiny seam so the torch-backed backbone is constructed lazily (only when
+    ``compute_lpips`` is set) and so tests can substitute a lightweight dummy scorer.
+    """
+    if not config.compute_lpips:
+        return None
+    from prml_vslam.eval.perceptual import LpipsScorer
+
+    return LpipsScorer(net=config.lpips_net)
 
 
 def _resolve_run_inputs(paths: RunArtifactPaths) -> tuple[Path, list[int], list[Path]]:

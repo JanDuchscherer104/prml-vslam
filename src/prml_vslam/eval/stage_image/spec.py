@@ -18,6 +18,8 @@ def _render_config(policy: ImageEvaluationPolicy) -> RenderEvalConfig:
         dilation_px=policy.dilation_px,
         save_gallery=policy.save_gallery,
         gallery_every=policy.gallery_every,
+        compute_lpips=policy.compute_lpips,
+        lpips_net=policy.lpips_net,
     )
 
 

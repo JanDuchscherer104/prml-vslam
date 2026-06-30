@@ -1278,6 +1278,22 @@ requires-dist = [
 provides-extras = ["vis", "demo"]
 
 [[package]]
+name = "lpips"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e8/2d/4b8148d32f5bd461eb7d5daa54fcc998f86eaa709a57f4ef6aa4c62f024f/lpips-0.1.4.tar.gz", hash = "sha256:3846331df6c69688aec3d300a5eeef6c529435bc8460bd58201c3d62e56188fa", size = 18029, upload-time = "2021-08-25T22:10:32.803Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/13/1df50c7925d9d2746702719f40e864f51ed66f307b20ad32392f1ad2bb87/lpips-0.1.4-py3-none-any.whl", hash = "sha256:fd537af5828b69d2e6ffc0a397bd506dbc28ca183543617690844c08e102ec5e", size = 53763, upload-time = "2021-08-25T22:10:31.257Z" },
+]
+
+[[package]]
 name = "lxml"
 version = "6.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2228,6 +2244,7 @@ dev = [
 lingbot = [
     { name = "flashinfer-python" },
     { name = "lingbot-map" },
+    { name = "lpips" },
     { name = "torch" },
     { name = "torch-c-dlpack-ext" },
     { name = "torchvision" },
@@ -2237,6 +2254,7 @@ mast3r = [
     { name = "curope", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "imgui" },
     { name = "in3d" },
+    { name = "lpips" },
     { name = "mast3r" },
     { name = "mast3r-slam" },
     { name = "torch" },
@@ -2251,6 +2269,7 @@ streaming = [
 vista = [
     { name = "dbow3py" },
     { name = "einops" },
+    { name = "lpips" },
     { name = "munch" },
     { name = "pykdtree" },
     { name = "pypose" },
@@ -2282,6 +2301,9 @@ requires-dist = [
     { name = "in3d", marker = "extra == 'mast3r'", editable = "external/mast3r-slam/thirdparty/in3d" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
     { name = "lingbot-map", marker = "extra == 'lingbot'", editable = "external/lingbot-map" },
+    { name = "lpips", marker = "extra == 'lingbot'", specifier = ">=0.1.4,<0.2" },
+    { name = "lpips", marker = "extra == 'mast3r'", specifier = ">=0.1.4,<0.2" },
+    { name = "lpips", marker = "extra == 'vista'", specifier = ">=0.1.4,<0.2" },
     { name = "mast3r", marker = "extra == 'mast3r'", editable = "external/mast3r-slam/thirdparty/mast3r" },
     { name = "mast3r-slam", marker = "extra == 'mast3r'", editable = "external/mast3r-slam" },
     { name = "matplotlib", specifier = ">=3.8,<4" },

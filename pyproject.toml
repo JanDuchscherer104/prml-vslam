@@ -49,6 +49,7 @@ dependencies = [
     "torch==2.5.1",
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
+    "lpips>=0.1.4,<0.2",
     "xformers",
     "MAST3R-SLAM",
     "MAST3R",
@@ -62,6 +63,7 @@ dependencies = [
     "torch==2.5.1",
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
+    "lpips>=0.1.4,<0.2",
     "xformers",
     "pypose>=0.6",
     "einops>=0.6",
@@ -73,6 +75,7 @@ dependencies = [
   lingbot = [
     "torch==2.5.1",
     "torchvision==0.20.1",
+    "lpips>=0.1.4,<0.2",
     "lingbot-map",
     "flashinfer-python",
     "torch-c-dlpack-ext==0.1.5",
@@ -209,6 +212,8 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typin
   module = [
     "cv2",
     "cv2.*",
+    "lpips",
+    "lpips.*",
     "numpy",
     "numpy.*",
     "pydantic",

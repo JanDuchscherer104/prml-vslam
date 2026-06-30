@@ -100,7 +100,8 @@ def render(context: AppContext) -> None:
         with st.spinner("Rendering dense cloud and scoring image quality (this can take minutes)..."):
             try:
                 summary = service.evaluate_run(
-                    run.artifact_root, config=RenderEvalConfig(gallery_every=gallery_every)
+                    run.artifact_root,
+                    config=RenderEvalConfig(gallery_every=gallery_every, compute_lpips=True),
                 ).summary
             except _COMPUTE_ERRORS as exc:
                 st.error(str(exc))
@@ -131,6 +132,9 @@ def _render_comparison(runs: list[DiscoveredRun], summaries: dict[Path, ImageQua
             "Coverage": round(summary.mean_coverage, 3) if summary else None,
             "PSNR": round(summary.stats["image.psnr"].mean, 3) if summary else None,
             "SSIM": round(summary.stats["image.ssim"].mean, 4) if summary else None,
+            "LPIPS": round(summary.stats["image.lpips"].mean, 4)
+            if summary and "image.lpips" in summary.stats
+            else None,
             "L1": round(summary.stats["image.l1"].mean, 4) if summary else None,
         }
         for run in runs
@@ -140,10 +144,13 @@ def _render_comparison(runs: list[DiscoveredRun], summaries: dict[Path, ImageQua
 
 
 def _render_summary(summary: ImageQualitySummary) -> None:
-    headline = st.columns(3, gap="small")
+    has_lpips = "image.lpips" in summary.stats
+    headline = st.columns(4 if has_lpips else 3, gap="small")
     headline[0].metric("PSNR (mean)", f"{summary.stats['image.psnr'].mean:.2f} dB")
     headline[1].metric("SSIM (mean)", f"{summary.stats['image.ssim'].mean:.3f}")
-    headline[2].metric("Coverage", f"{summary.mean_coverage:.0%}")
+    if has_lpips:
+        headline[2].metric("LPIPS (mean ↓)", f"{summary.stats['image.lpips'].mean:.3f}")
+    headline[-1].metric("Coverage", f"{summary.mean_coverage:.0%}")
     st.dataframe(
         [
             {
@@ -159,9 +166,11 @@ def _render_summary(summary: ImageQualitySummary) -> None:
     )
     if summary.frames:
         st.caption("Per-frame quality")
-        chart_cols = st.columns(2, gap="large")
+        chart_cols = st.columns(3 if has_lpips else 2, gap="large")
         chart_cols[0].line_chart({"PSNR (dB)": [frame.psnr for frame in summary.frames]})
         chart_cols[1].line_chart({"SSIM": [frame.ssim for frame in summary.frames]})
+        if has_lpips:
+            chart_cols[2].line_chart({"LPIPS ↓": [frame.lpips for frame in summary.frames]})
 
 
 def _render_gallery(run_root: Path, *, limit: int = _GALLERY_LIMIT) -> None:
