@@ -315,32 +315,27 @@
   )
 ]
 
-// #slide(title: [LingBot-Map: Why Excluded From Sweeps])[
-//   // The exact Record3D LingBot loop-closure-failure screenshot is not present
-//   // in this worktree. Keep the second panel reserved for the predicted-cloud
-//   // view when that screenshot is copied into docs/figures/evidence/.
-//   #grid(
-//     columns: (1.05fr, 0.95fr),
-//     gutter: 0.52cm,
-//     [
-//       #color-block(title: [Runtime modes], spacing: 0.42em)[
-//         - *Standard streaming*: paper benchmark mode; full GCA context @chen2026gct.
-//         - Sweep hardware: standard mode hit *GPU OOM* before full-sequence completion.
-//         - *Windowed streaming*: bounded memory; pose links stay inside the active *1024-frame* context.
-//         - Failure mode: revisits outside the window cannot close loops; drift remains in trajectory and cloud.
-//         - Stable windowed integration arrived after the primary runtime sweeps.
-//       ]
-//     ],
-//     [
-
-//       #figure(
-//         image("../../figures/evidence/tum-cabinet-lingbot.png", height: 50%, fit: "cover"),
-//         caption: [LingBot trajectory and point cloud evidence.],
-//       )
-//       #figure(image("../../figures/evidence/record3d-29-08-lingbot-loop-closure-fail.png", height: 65%)),
-//     ],
-//   )
-// ]
+#slide(title: [LingBot-Map: Why Excluded From Sweeps])[
+  // The exact Record3D LingBot loop-closure-failure screenshot is not present
+  // in this worktree. Keep the second panel reserved for the predicted-cloud
+  // view when that screenshot is copied into docs/figures/evidence/.
+  #grid(
+    columns: (1.0fr, 1.0fr),
+    gutter: 0.52cm,
+    [
+      #figure(
+        image("../../figures/evidence/tum-cabinet-lingbot.png", width: 100%, fit: "cover"),
+        caption: [LingBot trajectory and point cloud, TUM-RGB-D fr3/large-cabinet.],
+      )
+    ],
+    [
+      #figure(
+        image("../../figures/evidence/record3d-29-08-lingbot-loop-closure-fail.png", width: 100%),
+        caption: [LingBot & ARKit trajectory, Record3D 2026-06-03--18-29-08.],
+      )
+    ],
+  )
+]
 
 
 
