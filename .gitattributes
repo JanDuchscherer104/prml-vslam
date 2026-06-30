@@ -23,6 +23,7 @@ LICENSE     text eol=lf
 *.pdf  binary
 *.pptx binary
 *.lock binary
+*.mp4 filter=lfs diff=lfs merge=lfs -text
 # Graphify Large Artifacts (LFS)
 graphify-out/graph.json filter=lfs diff=lfs merge=lfs -text
 graphify-out/graph.html filter=lfs diff=lfs merge=lfs -text
