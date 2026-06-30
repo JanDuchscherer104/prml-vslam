@@ -42,15 +42,22 @@ from prml_vslam.sources.config import (
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
-from prml_vslam.sources.contracts import ReferenceCloudSource, ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudSource,
+    ReferenceSource,
+    SequenceManifest,
+)
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId
 from prml_vslam.sources.datasets.normalization import (
     dataset_service,
-    normalized_profile_for_dataset,
+    normalized_runtime_profile_for_dataset,
     normalized_store_for_service,
 )
-from prml_vslam.sources.datasets.normalized_store import load_timestamps_ns
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry, load_timestamps_ns
+from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -179,6 +186,20 @@ class RunConfig(BaseConfig):
         """Return lenient config warnings captured during TOML load."""
         return list(self._config_warnings)
 
+    @model_validator(mode="after")
+    def apply_dataset_default_baselines(self) -> Self:
+        """Fill omitted trajectory baselines from the selected source backend."""
+        source_backend = self.stages.source.backend
+        if source_backend is None:
+            return self
+
+        baseline = default_trajectory_baseline_for_source(source_backend)
+        if "baseline_source" not in self.stages.align_trajectory.model_fields_set:
+            self.stages.align_trajectory.baseline_source = baseline
+        if "baseline_source" not in self.stages.evaluate_trajectory.evaluation.model_fields_set:
+            self.stages.evaluate_trajectory.evaluation.baseline_source = baseline
+        return self
+
     def compile_plan(
         self,
         path_config: PathConfig | None = None,
@@ -282,15 +303,13 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             sequence_id=sequence_id,
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
-            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["normalize_video_orientation"] = normalize_video_orientation
             payload["metadata"] = {
                 "dataset_id": DatasetId.ADVIO.value,
                 "pose_source": dataset_serving.pose_source.value,
-                "pose_frame_mode": dataset_serving.pose_frame_mode.value,
+                "pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL.value,
             }
         case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode, reference_cloud=reference_cloud):
             payload["sequence_id"] = sequence_id
@@ -343,6 +362,8 @@ def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
 
 
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    if isinstance(source_backend, AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig):
+        return _normalized_source_fps(source_backend, path_config=path_config)
     if source_backend.target_fps is not None:
         return float(source_backend.target_fps)
     native_fps = _source_fps(source_backend, path_config=path_config)
@@ -376,18 +397,18 @@ def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: 
             case _:
                 return None
         service = dataset_service(dataset_id, path_config)
-        profile = normalized_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
-        entry = normalized_store_for_service(dataset_id, path_config).resolve_entry(
+        frame_selection = runtime_frame_selection_for_source_config(source)
+        profile = normalized_runtime_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
+        entry = normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
             profile,
-            frame_selection=FrameSelectionConfig(
-                frame_stride=source_backend.frame_stride,
-                target_fps=source_backend.target_fps,
-            ),
+            frame_selection=frame_selection,
         )
         manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
-        if manifest.timestamps_path is None:
+        timestamps_ns = _normalized_entry_timestamps_ns(entry, manifest)
+        if not timestamps_ns:
             return None
-        return _fps_for_timestamps_ns(load_timestamps_ns(manifest.timestamps_path))
+        stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+        return _fps_for_timestamps_ns(timestamps_ns[::stride])
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None
 
@@ -408,6 +429,18 @@ def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | N
         capture.release()
 
 
+def _normalized_entry_timestamps_ns(entry: NormalizedDatasetEntry, manifest: SequenceManifest) -> list[int]:
+    benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
+        entry.benchmark_inputs_path.read_text(encoding="utf-8")
+    )
+    observation_sequence = benchmark_inputs.default_observation_sequence()
+    if observation_sequence is not None:
+        return [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
+    if manifest.timestamps_path is None:
+        return []
+    return load_timestamps_ns(manifest.timestamps_path)
+
+
 def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
     if len(timestamps_ns) < 2:
         return None
@@ -419,6 +452,15 @@ def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
 
 def _fps_for_duration(*, sample_count: int, duration_s: float) -> float | None:
     return None if duration_s <= 0.0 else (sample_count - 1) / duration_s
+
+
+def default_trajectory_baseline_for_source(source_backend: SourceBackendConfig) -> ReferenceSource:
+    """Return the dataset-owned reference trajectory default for one source."""
+    match source_backend:
+        case Record3DDatasetSourceConfig():
+            return ReferenceSource.ARKIT
+        case _:
+            return ReferenceSource.GROUND_TRUTH
 
 
 def build_run_config(
@@ -436,7 +478,7 @@ def build_run_config(
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
     cloud_alignment_enabled: bool = False,
-    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    trajectory_baseline: ReferenceSource | None = None,
     evaluate_cloud: bool = False,
     ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
@@ -458,7 +500,10 @@ def build_run_config(
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
-    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=trajectory_baseline)
+    resolved_trajectory_baseline = (
+        default_trajectory_baseline_for_source(source_backend) if trajectory_baseline is None else trajectory_baseline
+    )
+    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=resolved_trajectory_baseline)
     dense_only_methods = {MethodId.MAST3R, MethodId.LINGBOT_MAP}
     resolved_emit_sparse_points = method not in dense_only_methods if emit_sparse_points is None else emit_sparse_points
     return RunConfig(
@@ -477,7 +522,7 @@ def build_run_config(
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
             align_trajectory=TrajectoryAlignmentStageConfig(
                 enabled=trajectory_alignment_enabled,
-                baseline_source=trajectory_baseline,
+                baseline_source=resolved_trajectory_baseline,
             ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
@@ -589,4 +634,5 @@ __all__ = [
     "StageBundle",
     "build_backend_spec",
     "build_run_config",
+    "default_trajectory_baseline_for_source",
 ]

@@ -33,7 +33,6 @@ class PlannedSource(BaseData):
     transport: str | None = None
     device_index: int | None = None
     device_address: str = ""
-    normalize_video_orientation: bool = True
     metadata: dict[str, SourceMetadataValue] = Field(default_factory=dict)
 
 

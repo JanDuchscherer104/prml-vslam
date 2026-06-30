@@ -77,7 +77,12 @@ from prml_vslam.pipeline.stages.base.contracts import (
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.summary.spec import SUMMARY_STAGE_SPEC
 from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
-from prml_vslam.sources.config import AdvioSourceConfig, TumRgbdSourceConfig, VideoSourceConfig
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    TumRgbdSourceConfig,
+    VideoSourceConfig,
+)
 from prml_vslam.sources.contracts import (
     PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
@@ -291,7 +296,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -320,7 +325,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -417,6 +422,108 @@ def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_pat
     assert run_config.visualization.export_viewer_rrd is True
 
 
+def test_run_config_defaults_record3d_trajectory_baselines_to_arkit() -> None:
+    run_config = RunConfig.from_toml(
+        """
+experiment_name = "record3d-default"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+    [stages.source.backend]
+    source_id = "record3d_dataset"
+    sequence_id = "2026-06-03--18-17-10"
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+
+[stages.evaluate_trajectory]
+enabled = true
+""".strip()
+    )
+
+    assert run_config.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_config.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
+
+
+def test_run_config_keeps_explicit_record3d_trajectory_baseline_override() -> None:
+    run_config = RunConfig.from_toml(
+        """
+experiment_name = "record3d-explicit"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+    [stages.source.backend]
+    source_id = "record3d_dataset"
+    sequence_id = "2026-06-03--18-17-10"
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+baseline_source = "ground_truth"
+
+[stages.evaluate_trajectory]
+enabled = true
+
+    [stages.evaluate_trajectory.evaluation]
+    baseline_source = "ground_truth"
+""".strip()
+    )
+
+    assert run_config.stages.align_trajectory.baseline_source is ReferenceSource.GROUND_TRUTH
+    assert run_config.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.GROUND_TRUTH
+
+
+def test_run_config_defaults_tum_rgbd_trajectory_baselines_to_ground_truth() -> None:
+    run_config = RunConfig.from_toml(
+        """
+experiment_name = "tum-default"
+output_dir = ".artifacts"
+
+[stages.source]
+enabled = true
+
+    [stages.source.backend]
+    source_id = "tum_rgbd"
+    sequence_id = "freiburg1_xyz"
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+
+[stages.evaluate_trajectory]
+enabled = true
+""".strip()
+    )
+
+    assert run_config.stages.align_trajectory.baseline_source is ReferenceSource.GROUND_TRUTH
+    assert run_config.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.GROUND_TRUTH
+
+
+def test_build_run_config_defaults_record3d_trajectory_baseline_to_arkit(tmp_path: Path) -> None:
+    run_config = build_run_config(
+        experiment_name="record3d-builder",
+        output_dir=tmp_path / ".artifacts",
+        source_backend=Record3DDatasetSourceConfig(sequence_id="2026-06-03--18-17-10"),
+        method=MethodId.VISTA,
+        trajectory_eval_enabled=True,
+        trajectory_alignment_enabled=True,
+    )
+
+    assert run_config.stages.align_trajectory.baseline_source is ReferenceSource.ARKIT
+    assert run_config.stages.evaluate_trajectory.evaluation.baseline_source is ReferenceSource.ARKIT
+
+
 def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
@@ -427,7 +534,7 @@ def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> 
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,
@@ -2429,7 +2536,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,

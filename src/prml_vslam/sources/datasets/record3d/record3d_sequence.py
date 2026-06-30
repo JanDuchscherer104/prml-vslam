@@ -152,11 +152,13 @@ class Record3DSequence(BaseData):
         stride = (frame_selection or FrameSelectionConfig()).stride_for_timestamps_ns(sample.timestamps_ns)
         selected_frames = list(sample.frames[::stride])
         normalized_poses_world_camera = _poses_relative_to_first_pose(sample.poses_world_camera)
+        selected_poses_world_camera = [normalized_poses_world_camera[frame.index] for frame in selected_frames]
+        selected_timestamps_s = [sample.timestamps_ns[frame.index] / 1e9 for frame in selected_frames]
         output.mkdir(parents=True, exist_ok=True)
         trajectory_path = write_tum_trajectory(
             output / "record3d_arkit.tum",
-            normalized_poses_world_camera,
-            [timestamp_ns / 1e9 for timestamp_ns in sample.timestamps_ns],
+            selected_poses_world_camera,
+            selected_timestamps_s,
         )
         trajectory_metadata_path = _write_json(
             output / "record3d_arkit.metadata.json",
@@ -240,9 +242,8 @@ class Record3DSequence(BaseData):
         depth_dir.mkdir(parents=True, exist_ok=True)
         rows: list[ObservationIndexEntry] = []
         for seq, frame in enumerate(selected_frames):
-            rgb = record3d_loading.resize_rgb_to_depth(
-                record3d_loading.decode_rgb_frame(sample.archive_path, frame), sample.metadata
-            )
+            rgb = record3d_loading.decode_rgb_frame(sample.archive_path, frame)
+
             depth_m = record3d_loading.decode_depth_frame_m(
                 sample.archive_path,
                 frame,
@@ -255,7 +256,7 @@ class Record3DSequence(BaseData):
                 dimension_multiple=self.config.rgb_dimension_multiple,
             )
             depth_m = resize_depth_to_rgb_preprocessing(depth_m, preprocessed)
-            intrinsics = scale_intrinsics_for_rgb_preprocessing(sample.depth_intrinsics, preprocessed)
+            intrinsics = scale_intrinsics_for_rgb_preprocessing(sample.rgb_intrinsics, preprocessed)
             rgb_path = rgb_dir / f"{seq:06d}.png"
             depth_path = depth_dir / f"{seq:06d}.png"
             write_preprocessed_rgb_png(rgb_path, preprocessed.rgb)
@@ -295,7 +296,7 @@ class Record3DSequence(BaseData):
             output_dir / "rgb.metadata.json",
             {
                 "raster_space": "display_downscaled",
-                "source_raster_space": "depth",
+                "source_raster_space": "archive_rgb",
                 "rgb_max_width_px": self.config.rgb_max_width_px,
                 "dimension_multiple": self.config.rgb_dimension_multiple,
             },
@@ -416,20 +417,6 @@ class Record3DSequence(BaseData):
         )
 
 
-def _poses_relative_to_first_pose(poses_world_camera: list[FrameTransform]) -> list[FrameTransform]:
-    if not poses_world_camera:
-        raise ValueError("Record3D benchmark materialization requires at least one camera pose.")
-    T_first_world = np.linalg.inv(poses_world_camera[0].as_matrix())
-    return [
-        FrameTransform.from_matrix(
-            T_first_world @ pose_world_camera.as_matrix(),
-            target_frame=pose_world_camera.target_frame,
-            source_frame=pose_world_camera.source_frame,
-        )
-        for pose_world_camera in poses_world_camera
-    ]
-
-
 def _write_depth_png(path: Path, depth_m: np.ndarray) -> None:
     depth = np.asarray(depth_m, dtype=np.float32)
     encoded = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
@@ -442,3 +429,17 @@ def _write_json(path: Path, payload: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path.resolve()
+
+
+def _poses_relative_to_first_pose(poses_world_camera: list[FrameTransform]) -> list[FrameTransform]:
+    if not poses_world_camera:
+        raise ValueError("Record3D benchmark materialization requires at least one camera pose.")
+    first_inv = np.linalg.inv(poses_world_camera[0].as_matrix())
+    return [
+        FrameTransform.from_matrix(
+            first_inv @ pose.as_matrix(),
+            target_frame=pose.target_frame,
+            source_frame=pose.source_frame,
+        )
+        for pose in poses_world_camera
+    ]

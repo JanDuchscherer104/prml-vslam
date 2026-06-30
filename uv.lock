@@ -4,6 +4,12 @@ requires-python = "==3.11.*"
 conflicts = [[
     { package = "prml-vslam", extra = "mast3r" },
     { package = "prml-vslam", extra = "vista" },
+], [
+    { package = "prml-vslam", extra = "lingbot" },
+    { package = "prml-vslam", extra = "mast3r" },
+], [
+    { package = "prml-vslam", extra = "lingbot" },
+    { package = "prml-vslam", extra = "vista" },
 ]]
 
 [manifest]
@@ -11,6 +17,7 @@ constraints = [
     { name = "click", specifier = "==8.3.1" },
     { name = "starlette", specifier = "==1.0.0" },
 ]
+build-constraints = [{ name = "torch", specifier = "==2.5.1" }]
 
 [[manifest.dependency-metadata]]
 name = "curope"
@@ -266,7 +273,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -324,7 +331,7 @@ name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065, upload-time = "2025-11-15T20:45:42.706Z" }
 wheels = [
@@ -406,7 +413,7 @@ name = "cryptography"
 version = "46.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a4/ba/04b1bd4218cbc58dc90ce967106d51582371b898690f3ae0402876cc4f34/cryptography-46.0.6.tar.gz", hash = "sha256:27550628a518c5c6c903d84f637fbecf287f6cb9ced3804838a1295dc1fd0759", size = 750542, upload-time = "2026-03-25T23:34:53.396Z" }
 wheels = [
@@ -509,7 +516,7 @@ wheels = [
 
 [package.optional-dependencies]
 tileiras = [
-    { name = "cuda-toolkit", extra = ["nvcc", "nvvm", "tileiras"] },
+    { name = "cuda-toolkit", extra = ["nvcc", "nvvm", "tileiras"], marker = "extra == 'extra-10-prml-vslam-lingbot' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (extra != 'extra-10-prml-vslam-mast3r' and extra != 'extra-10-prml-vslam-vista')" },
 ]
 
 [[package]]
@@ -522,19 +529,19 @@ wheels = [
 
 [package.optional-dependencies]
 nvcc = [
-    { name = "nvidia-cuda-crt", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-nvcc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "nvidia-cuda-crt", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-nvcc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
 ]
 nvvm = [
-    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
 ]
 tileiras = [
-    { name = "nvidia-cuda-nvcc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-tileiras", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (sys_platform != 'linux' and sys_platform != 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform == 'win32' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "nvidia-cuda-nvcc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-tileiras", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-nvvm", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
 ]
 
 [[package]]
@@ -574,7 +581,7 @@ wheels = [
 [[package]]
 name = "dbow3py"
 version = "0.0.3"
-source = { directory = "external/vista-slam/DBoW3Py" }
+source = { editable = "external/vista-slam/DBoW3Py" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -698,7 +705,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "apache-tvm-ffi" },
     { name = "click" },
-    { name = "cuda-tile", extra = ["tileiras"] },
+    { name = "cuda-tile", extra = ["tileiras"], marker = "extra == 'extra-10-prml-vslam-lingbot' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (extra != 'extra-10-prml-vslam-mast3r' and extra != 'extra-10-prml-vslam-vista')" },
     { name = "einops" },
     { name = "ninja" },
     { name = "numpy" },
@@ -970,7 +977,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -985,7 +992,7 @@ wheels = [
 
 [package.optional-dependencies]
 torch = [
-    { name = "safetensors", extra = ["torch"], marker = "extra == 'extra-10-prml-vslam-mast3r'" },
+    { name = "safetensors", extra = ["torch"], marker = "extra == 'extra-10-prml-vslam-mast3r' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista')" },
     { name = "torch" },
 ]
 
@@ -1073,7 +1080,7 @@ dependencies = [
     { name = "msgpack" },
     { name = "numpy" },
     { name = "pyglm" },
-    { name = "trimesh", extra = ["easy"], marker = "extra == 'extra-10-prml-vslam-mast3r'" },
+    { name = "trimesh", extra = ["easy"], marker = "extra == 'extra-10-prml-vslam-mast3r' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 
 [package.metadata]
@@ -1401,7 +1408,7 @@ dependencies = [
     { name = "asmk" },
     { name = "curope", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "einops" },
-    { name = "huggingface-hub", extra = ["torch"], marker = "extra == 'extra-10-prml-vslam-mast3r'" },
+    { name = "huggingface-hub", extra = ["torch"], marker = "extra == 'extra-10-prml-vslam-mast3r' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista')" },
     { name = "matplotlib" },
     { name = "opencv-python" },
     { name = "pyglet" },
@@ -1497,12 +1504,12 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
-    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
     { name = "sse-starlette" },
     { name = "starlette" },
     { name = "typing-extensions" },
     { name = "typing-inspection" },
-    { name = "uvicorn", marker = "sys_platform != 'emscripten' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "uvicorn", marker = "sys_platform != 'emscripten' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8b/eb/c0cfc62075dc6e1ec1c64d352ae09ac051d9334311ed226f1f425312848a/mcp-1.27.0.tar.gz", hash = "sha256:d3dc35a7eec0d458c1da4976a48f982097ddaab87e278c5511d5a4a56e852b83", size = 607509, upload-time = "2026-04-02T14:48:08.88Z" }
 wheels = [
@@ -1593,7 +1600,7 @@ name = "mypy"
 version = "1.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "librt", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "librt", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
     { name = "mypy-extensions" },
     { name = "pathspec" },
     { name = "typing-extensions" },
@@ -2222,6 +2229,7 @@ lingbot = [
     { name = "flashinfer-python" },
     { name = "lingbot-map" },
     { name = "torch" },
+    { name = "torch-c-dlpack-ext" },
     { name = "torchvision" },
 ]
 mast3r = [
@@ -2266,7 +2274,7 @@ requires-dist = [
     { name = "av", specifier = ">=16,<17" },
     { name = "bibtex-updater", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "curope", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'mast3r'", editable = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope" },
-    { name = "dbow3py", marker = "extra == 'vista'", directory = "external/vista-slam/DBoW3Py" },
+    { name = "dbow3py", marker = "extra == 'vista'", editable = "external/vista-slam/DBoW3Py" },
     { name = "einops", marker = "extra == 'vista'", specifier = ">=0.6" },
     { name = "evo", specifier = ">=1.31,<2" },
     { name = "flashinfer-python", marker = "extra == 'lingbot'" },
@@ -2310,6 +2318,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'lingbot'", specifier = "==2.5.1" },
     { name = "torch", marker = "extra == 'mast3r'", specifier = "==2.5.1" },
     { name = "torch", marker = "extra == 'vista'", specifier = "==2.5.1" },
+    { name = "torch-c-dlpack-ext", marker = "extra == 'lingbot'", specifier = "==0.1.5" },
     { name = "torchaudio", marker = "extra == 'mast3r'", specifier = "==2.5.1" },
     { name = "torchaudio", marker = "extra == 'vista'", specifier = "==2.5.1" },
     { name = "torchvision", marker = "extra == 'lingbot'", specifier = "==0.20.1" },
@@ -2653,7 +2662,7 @@ name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -3216,7 +3225,7 @@ dependencies = [
     { name = "toml" },
     { name = "tornado" },
     { name = "typing-extensions" },
-    { name = "watchdog", marker = "sys_platform != 'darwin' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "watchdog", marker = "sys_platform != 'darwin' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/92/8e/f2b8b4fa8ba65aae251170c54f8ce198fb588fc348301c2b624f8c63efac/streamlit-1.55.0.tar.gz", hash = "sha256:015e512bbd02d000f4047e51118dc086b70e7d9c46b4a11a33c2509731379626", size = 8612008, upload-time = "2026-03-03T22:26:02.149Z" }
 wheels = [
@@ -3328,20 +3337,20 @@ dependencies = [
     { name = "fsspec" },
     { name = "jinja2" },
     { name = "networkx" },
-    { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-cupti-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-nvrtc-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cuda-runtime-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cudnn-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cufft-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-curand-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cusolver-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-cusparse-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nccl-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
-    { name = "nvidia-nvtx-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cuda-cupti-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cudnn-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cufft-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-curand-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cusolver-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cusparse-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-nccl-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-nvtx-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "sympy" },
-    { name = "triton", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista') or (sys_platform != 'linux' and extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "triton", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "typing-extensions" },
 ]
 wheels = [
@@ -3349,6 +3358,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/40/04/bd91593a4ca178ece93ca55f27e2783aa524aaccbfda66831d59a054c31e/torch-2.5.1-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:340ce0432cad0d37f5a31be666896e16788f1adf8ad7be481196b503dad675b9", size = 91919450, upload-time = "2024-10-29T17:37:26.693Z" },
     { url = "https://files.pythonhosted.org/packages/0d/4a/e51420d46cfc90562e85af2fee912237c662ab31140ab179e49bd69401d6/torch-2.5.1-cp311-cp311-win_amd64.whl", hash = "sha256:603c52d2fe06433c18b747d25f5c333f9c1d58615620578c326d66f258686f9a", size = 203098237, upload-time = "2024-10-29T17:36:11.731Z" },
     { url = "https://files.pythonhosted.org/packages/d0/db/5d9cbfbc7968d79c5c09a0bc0bc3735da079f2fd07cc10498a62b320a480/torch-2.5.1-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:31f8c39660962f9ae4eeec995e3049b5492eb7360dd4f07377658ef4d728fa4c", size = 63884466, upload-time = "2024-10-29T17:33:02.899Z" },
+]
+
+[[package]]
+name = "torch-c-dlpack-ext"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/de/921b6491efce5c389a5ef9bbed3d2d6660005840dae488124173180859ab/torch_c_dlpack_ext-0.1.5.tar.gz", hash = "sha256:d06f0357d575d22a168cc77acb9020fc4bae30968ceb6718a055dcbe92bacabe", size = 12913, upload-time = "2026-01-12T11:25:08.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/66/c12a9bb3a5ddc0962c00467891bf1ffdda39a4d4780bf0fbbf54523ff34e/torch_c_dlpack_ext-0.1.5-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:56bd25a2af19280bf8a06aa62cff5510106f43235b9327d8561b3e9a659c4d84", size = 5076782, upload-time = "2026-01-12T11:24:37.868Z" },
+    { url = "https://files.pythonhosted.org/packages/20/e1/64e1e579d107064785549e70758e38a42376ab7e73d86897ed4beab10e74/torch_c_dlpack_ext-0.1.5-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fba674110e1fab0b176bb5a28223e157db65c90767d4ba74abdbee9f537b0e9d", size = 440949, upload-time = "2026-01-12T11:24:39.716Z" },
+    { url = "https://files.pythonhosted.org/packages/64/5c/3e1382a620824f92920ab3fae132d8fb4e85898284c99e0c6a7764e452ce/torch_c_dlpack_ext-0.1.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3448c4f0d64104d0b2e58080a7efa72304a04960c18f338024b80b13cd3eca26", size = 897768, upload-time = "2026-01-12T11:24:41.209Z" },
+    { url = "https://files.pythonhosted.org/packages/54/4f/76ea1006b9038b496d01e916c91efd17cb782abde2491a261cf203f57e30/torch_c_dlpack_ext-0.1.5-cp311-cp311-win_amd64.whl", hash = "sha256:74676474e0afa9a4216c4755ea7cf05e8158be1d168f6bda669ba91097c263f2", size = 1479088, upload-time = "2026-01-12T11:24:42.436Z" },
 ]
 
 [[package]]
@@ -3403,7 +3427,7 @@ name = "tqdm"
 version = "4.67.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-mast3r') or (extra == 'extra-10-prml-vslam-lingbot' and extra == 'extra-10-prml-vslam-vista') or (extra == 'extra-10-prml-vslam-mast3r' and extra == 'extra-10-prml-vslam-vista')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [

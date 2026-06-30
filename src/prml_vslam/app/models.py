@@ -90,7 +90,7 @@ class Record3DStreamSnapshot(PreviewSessionSnapshot):
     """Human-readable source descriptor such as a UDID or Wi-Fi address."""
 
 
-class AdvioPreviewSnapshot(PreviewSessionSnapshot):
+class DatasetPreviewSnapshot(PreviewSessionSnapshot):
     """Latest dataset loop-preview snapshot shared inside the app layer."""
 
     sequence_id: int | str | None = None
@@ -115,7 +115,7 @@ class AdvioPreviewFormData(BaseData):
 
     sequence_id: int
     pose_source: AdvioPoseSource
-    normalize_video_orientation: bool = True
+    profile_key: str
     start_requested: bool = False
     stop_requested: bool = False
 
@@ -147,9 +147,6 @@ class AdvioPageState(BaseData):
 
     preview_pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected camera-pose source for the loop-preview stream."""
-
-    preview_normalize_video_orientation: bool = True
-    """Whether the preview should normalize video display orientation when available."""
 
     preview_is_running: bool = False
     """Whether the current browser session expects an ADVIO preview stream to be active."""
@@ -419,10 +416,10 @@ class PipelinePageState(BaseData):
     """Selected ADVIO sequence id when the source family is `ADVIO`."""
 
     dataset_frame_stride: int = 1
-    """Dataset frame stride used by the bounded pipeline source."""
+    """Dataset frame stride identifying the ADVIO datastore profile."""
 
     dataset_target_fps: float | None = None
-    """Optional target FPS used instead of dataset frame stride."""
+    """Optional target FPS identifying the ADVIO datastore profile."""
 
     mode: PipelineMode = PipelineMode.OFFLINE
     """Selected pipeline mode."""
@@ -505,11 +502,8 @@ class PipelinePageState(BaseData):
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH
     """Selected pose source injected into the ADVIO replay packets."""
 
-    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD
-    """Selected ADVIO pose-frame mode injected into the pipeline request."""
-
-    normalize_video_orientation: bool = True
-    """Whether the replay should normalize video display orientation when available."""
+    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
+    """Effective normalized ADVIO replay pose-frame mode."""
 
     telemetry_visible: bool = True
     """Whether stage telemetry should be rendered in the run console."""
@@ -563,7 +557,7 @@ __all__ = [
     "AppState",
     "ArtifactInspectorPageState",
     "AdvioPageState",
-    "AdvioPreviewSnapshot",
+    "DatasetPreviewSnapshot",
     "MetricsPageState",
     "PipelinePageState",
     "PipelineSourceId",
