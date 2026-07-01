@@ -249,6 +249,8 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
     rel_pose_thres: float = 0.75
     pgo_every: int = 500
     random_seed: int = 43
+    keyframe_detection: Literal["flow", "stride", "flow_stride"] = "flow"
+    stride: Annotated[int, Field(ge=1)] = 3
     device: Literal["auto", "cuda", "cpu"] = "auto"
 
     @property

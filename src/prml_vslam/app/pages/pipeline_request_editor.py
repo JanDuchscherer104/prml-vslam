@@ -27,6 +27,11 @@ if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
 _DEVICE_OPTIONS: tuple[Literal["auto", "cuda", "cpu"], ...] = ("auto", "cuda", "cpu")
+_VISTA_KEYFRAME_DETECTION_OPTIONS: tuple[Literal["flow", "stride", "flow_stride"], ...] = (
+    "flow",
+    "stride",
+    "flow_stride",
+)
 _LINGBOT_MODE_OPTIONS: tuple[Literal["streaming", "windowed"], ...] = ("streaming", "windowed")
 _LINGBOT_MIN_IMAGE_SIZE = 224
 _LINGBOT_MIN_DEPTH_M = 1e-6
@@ -413,6 +418,14 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
             index=_DEVICE_OPTIONS.index(backend.device),
         ),
     )
+    keyframe_detection = cast(
+        Literal["flow", "stride", "flow_stride"],
+        st.selectbox(
+            "Keyframe Detection",
+            options=_VISTA_KEYFRAME_DETECTION_OPTIONS,
+            index=_VISTA_KEYFRAME_DETECTION_OPTIONS.index(backend.keyframe_detection),
+        ),
+    )
     col_a, col_b, col_c = st.columns(3, gap="small")
     with col_a:
         max_view_num = int(st.number_input("Max Views", min_value=1, value=backend.max_view_num))
@@ -433,6 +446,7 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     loop_cand_thresh_neighbor = int(
         st.number_input("Loop Candidate Neighbor Threshold", min_value=0, value=backend.loop_cand_thresh_neighbor)
     )
+    stride = int(st.number_input("Keyframe Stride", min_value=1, value=backend.stride))
     random_seed = int(st.number_input("Random Seed", value=backend.random_seed))
     with st.expander("ViSTA Paths", expanded=False):
         vista_slam_dir = _path_input("ViSTA Directory", backend.vista_slam_dir)
@@ -455,6 +469,8 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         rel_pose_thres=rel_pose_thres,
         pgo_every=pgo_every,
         random_seed=random_seed,
+        keyframe_detection=keyframe_detection,
+        stride=stride,
         device=device,
     )
 

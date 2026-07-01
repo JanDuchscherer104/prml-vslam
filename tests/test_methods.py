@@ -6,6 +6,7 @@ import importlib
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -323,6 +324,7 @@ def test_vista_session_extracts_live_pose_and_pointmap_from_upstream_view(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -413,6 +415,7 @@ def test_vista_session_uses_injected_frame_preprocessor_output(
         slam=slam,
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=fake_preprocessor,
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -487,6 +490,7 @@ def test_vista_session_live_outputs_follow_model_raster_not_source_raster(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=FakePreprocessor(),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -552,6 +556,7 @@ def test_vista_session_projects_near_orthonormal_live_pose_before_quaternion_con
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -603,6 +608,7 @@ def test_vista_session_reports_invalid_live_pose_without_crashing_ingest(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -656,6 +662,7 @@ def test_vista_session_omits_dense_pointmap_when_policy_disables_it(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(emit_dense_points=False),
         console=Console(__name__).child("vista-test"),
@@ -706,6 +713,7 @@ def test_vista_session_warns_when_dense_pointmap_is_missing(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -754,6 +762,7 @@ def test_vista_session_warns_when_dense_pointmap_has_no_valid_points(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -812,6 +821,7 @@ def test_vista_session_accepts_tensor_backed_live_pointmap(
         slam=FakeSlam(),
         flow_tracker=SimpleNamespace(compute_disparity=lambda *args, **kwargs: True),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -892,6 +902,7 @@ def test_vista_session_keyframe_gates_streaming_updates_before_step(
         slam=slam,
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -971,6 +982,7 @@ def test_vista_session_tolerates_unavailable_live_preview_until_pose_graph_popul
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -1042,6 +1054,7 @@ def test_vista_session_close_exports_accepted_keyframe_source_timestamps(
         slam=FakeSlam(),
         flow_tracker=FakeFlowTracker(),
         frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(),
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
@@ -1459,10 +1472,74 @@ def test_vista_pose_normalization_rejects_clearly_invalid_rotations() -> None:
         _frame_transform_from_vista_pose(pose)
 
 
-def test_vista_config_models_ignore_removed_dead_knobs() -> None:
+def test_vista_config_models_validate_keyframe_detection_knobs() -> None:
     config = VistaSlamBackendConfig.model_validate({"stride": 5, "keyframe_detection": "stride"})
-    assert not hasattr(config, "stride")
-    assert not hasattr(config, "keyframe_detection")
+    assert config.stride == 5
+    assert config.keyframe_detection == "stride"
 
     with pytest.raises(ValidationError):
         VistaSlamBackendConfig.model_validate({"device": "tpu"})
+
+    with pytest.raises(ValidationError):
+        VistaSlamBackendConfig.model_validate({"stride": 0})
+
+
+def test_vista_flow_stride_falls_back_after_max_view_num(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
+
+    _install_fake_torch(monkeypatch)
+
+    class FakeFlowTracker:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def compute_disparity(self, image: np.ndarray, visualize: bool = False) -> bool:
+            del image, visualize
+            self.calls += 1
+            return False
+
+    class FakeSlam:
+        def __init__(self) -> None:
+            self.device = "cpu"
+            self.step_calls: list[dict[str, Any]] = []
+
+        def step(self, value: dict[str, Any]) -> None:
+            self.step_calls.append(value)
+
+        def get_view(self, view_index: int, **kwargs: Any) -> SimpleNamespace:
+            del view_index, kwargs
+            return SimpleNamespace(pose=np.eye(4), depth=np.ones((2, 2)), intri=np.eye(3))
+
+        def get_pointmap_vis(self, view_index: int) -> tuple[np.ndarray, np.ndarray]:
+            del view_index
+            return np.zeros((2, 2, 3), dtype=np.uint8), np.ones((2, 2, 3), dtype=np.float32)
+
+    flow_tracker = FakeFlowTracker()
+    slam = FakeSlam()
+    session = VistaSlamRuntime(
+        slam=slam,
+        flow_tracker=flow_tracker,
+        frame_preprocessor=_make_fake_frame_preprocessor(image_rgb=np.zeros((2, 2, 3), dtype=np.uint8)),
+        config=VistaSlamBackendConfig(keyframe_detection="flow_stride", stride=2, max_view_num=0),
+        artifact_root=tmp_path / "vista-stream",
+        output_policy=SlamOutputPolicy(),
+        console=Console(__name__).child("vista-test"),
+    )
+
+    for seq in range(3):
+        session.step(
+            Observation(
+                seq=seq,
+                timestamp_ns=seq,
+                rgb=np.zeros((8, 8, 3), dtype=np.uint8),
+                provenance=ObservationProvenance(source_id="test"),
+            )
+        )
+
+    updates = session.drain_updates()
+    assert flow_tracker.calls == 3
+    assert [update.is_keyframe for update in updates] == [True, False, True]
+    assert len(slam.step_calls) == 2

@@ -44,6 +44,7 @@ class VistaSlamRuntime:
         slam: VistaOnlineSlam,
         flow_tracker: VistaFlowTracker,
         frame_preprocessor: UpstreamVistaFramePreprocessor,
+        config: VistaSlamBackendConfig,
         artifact_root: Path,
         output_policy: SlamOutputPolicy,
         console: Console,
@@ -51,6 +52,7 @@ class VistaSlamRuntime:
         self._slam = slam
         self._flow_tracker = flow_tracker
         self._frame_preprocessor = frame_preprocessor
+        self._cfg = config
         self._artifact_root = artifact_root
         self._output_policy = output_policy
         self._console = console
@@ -84,7 +86,16 @@ class VistaSlamRuntime:
             view_name=f"frame_{self._accepted_keyframe_count:06d}",
         )
         grayscale = prepared_frame.gray_u8
-        is_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+        stride_keyframe = (self._source_frame_count - 1) % self._cfg.stride == 0
+        if self._cfg.keyframe_detection == "stride":
+            is_keyframe = stride_keyframe
+        else:
+            flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+            is_keyframe = flow_keyframe or (
+                self._cfg.keyframe_detection == "flow_stride"
+                and self._accepted_keyframe_count >= self._cfg.max_view_num
+                and stride_keyframe
+            )
         if not is_keyframe:
             self._pending_updates.append(
                 SlamUpdate(
@@ -319,6 +330,7 @@ def create_vista_runtime(
         slam=runtime.slam,
         flow_tracker=runtime.flow_tracker,
         frame_preprocessor=runtime.frame_preprocessor,
+        config=config,
         artifact_root=artifact_root,
         output_policy=output_policy,
         console=console,
