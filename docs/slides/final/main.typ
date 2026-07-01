@@ -570,6 +570,49 @@
 //     sampling, and artifact matrix are frozen; ICP alone is not a leaderboard.
 //   ]
 // ]
+
+// ===========================================================================
+// Valentin Bumeder — Trajectory Evaluation
+// ===========================================================================
+#slide(title: [Trajectory Evaluation — The Alignment Problem])[
+  #grid(
+    columns: (1fr, 1fr),
+    gutter: 0.8cm,
+    [
+      *A monocular camera cannot observe:*
+      - the *scale*,
+      - the *world frame* (translation),
+      - the *orientation* (rotation).
+
+      → Estimate and reference are *never* in the same frame,
+      scale, or orientation.
+
+      → Alignment of *estimate onto the reference*
+
+      #note[
+        *Pipeline:*
+        - associate by timestamp (≤ 10 ms) → $"Sim"(3)$ align → measure.
+        - No alignment ⇒ no metric.
+      ]
+    ],
+    [
+      *Sim(3) alignment (Umeyama @umeyama1991least):*
+      best-fit *slide + spin + resize*.
+
+      $ bold(S)^* = arg min_(bold(S) in "Sim"(3)) sum_i norm(bold(x)_i^"ref" - bold(S) bold(x)_i^"est")^2 $
+      $ bold(S) bold(x) = underbrace(s, "scale") underbrace(bold(R), "rot.") bold(x) + underbrace(bold(t), "transl.") $
+
+      - Recovered scale $s$ is *itself a result*: $s approx 1$ ⇒ metric
+        scale recovered.
+
+      #good-note[
+        *ADVIO (phone, near-planar):* lock $bold(R)$ to *yaw about
+        gravity* — full $"Sim"(3)$ could flip a flat path upside-down.
+      ]
+    ],
+  )
+]
+
 #slide(title: [Trajectory Evaluation — Metrics: APE & RPE])[
   #grid(
     columns: (1fr, 1fr),
