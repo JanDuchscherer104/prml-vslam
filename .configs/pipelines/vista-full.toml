@@ -19,7 +19,7 @@ enabled = true
     source_id   = "tum_rgbd"
     sequence_id = "freiburg3_large_cabinet"
     # source_id   = "record3d_dataset"
-    # sequence_id = "2026-06-03--18-29-08"
+    # sequence_id = "2026-06-03--18-24-27"
     # source_id   = "advio"
     # sequence_id = "advio-20"
     frame_stride = 1
@@ -64,7 +64,7 @@ sampling_interval_ms    = 1000
     # Comparable to MASt3R's internal `FrameTracker` keyframe decision. MASt3R
     # does not expose a stride/flow selector in this repo; keep source sampling
     # shared when comparing effective input cadence.
-    keyframe_detection = "flow_stride"
+    keyframe_detection = "stride"
 
     # Comparable to shared source `frame_stride` plus MASt3R's internal accepted
     # keyframe density. MASt3R has no backend-local stride knob; use the shared
