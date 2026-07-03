@@ -40,11 +40,15 @@ reproducibility variables.
 == LingBot-Map
 // RESPONSIBLIY: JAN (LingBot-Map subsection)
 
-LingBot-Map, through GCT, is a feed-forward streaming reconstruction model rather than a local
-tracker with an explicit graph backend @chen2026gct. Geometric Context Attention maintains anchor
-frames for coordinate and scale grounding, a local pose-reference window for recent dense geometry,
-and compressed trajectory memory for older context. The model predicts poses and dense depth maps
-causally as the stream progresses. The distinguishing detail is that these are not just cache
+// <I revised this section>
+LingBot-Map is an end-to-end optimized feed-forward streaming reconstruction model and does not maintain a traditional SLAM graph backend@chen2026gct. Instead, it employs Geometric Context Attention (GCA) to maintain a local window of recent frames and their dense geometry, while also keeping compressed trajectory memory for older frames, hence allowing the emergence of graph-like behavior through learned attention mechanisms.
+// The model predicts camera poses and dense depth maps causally as the stream progresses, with scale semantics learned from anchor-frame normalization.
+The method employs a DINOv2 backbone to extract image features, which are concatenated with per-frame camera, register, and anchor tokens. These tokens are subsequently processed through an auto-regressive transformer decoder
+The GCA module maintains anchor frames for coordinate and scale grounding, a local pose-reference window for recent dense geometry, and compressed trajectory memory for older context to enable capturing long-range dependencies, hence reducing per-frame context growth by roughly 80$times$ over naïve causal attention.
+// </I revised this section>
+
+
+The model predicts poses and dense depth maps causally as the stream progresses. The distinguishing detail is that these are not just cache
 policies: the paper trains a DINOv2-based transformer with camera, register, and anchor tokens,
 camera-to-world pose supervision, depth supervision, and a relative pose loss inside the local
 window. Its scale semantics are learned from anchor-frame normalization, while its long-range state
