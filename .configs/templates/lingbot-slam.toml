@@ -13,10 +13,6 @@
 # NOTE: emit_sparse_points must be false; LingBot does not expose a separate
 # sparse point-cloud artifact.
 #
-# NOTE: LingBot is trained within ~320 direct-mode views. For sequences with
-# many frames, use frame_stride in the sweep [[datasets]] entry to stay within
-# that range (e.g. frame_stride = 5 keeps ~200 frames from the TUM cabinet).
-#
 # Run one-off (outside a sweep):
 #   uv run --extra lingbot prml-vslam run-config .configs/pipelines/lingbot-full.toml
 
@@ -37,33 +33,101 @@ sampling_interval_ms    = 1000
 
     [stages.slam.backend]
     method_id = "lingbot_map"
+    # max_frames = 1500
 
+    # Operator-managed LingBot-Map checkpoint. The main benchmark assumes the
+    # long/default checkpoint used by upstream demo and benchmark examples.
     checkpoint_path = "external/lingbot-map/checkpoints/lingbot-map.pt"
 
+    # Run real inference on the RTX 3080 Ti. Use "auto" only for exploratory
+    # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
     device = "cuda"
-    mode   = "streaming"
 
-    # 392 is the highest width that fits a 12 GB RTX 3080 Ti on the SDPA path.
-    # Raise to 518 (paper default) if your GPU has more VRAM.
-    image_size           = 392
-    patch_size           = 14
-    checkpoint_pos_embed = "interpolate"
+    # Upstream finite-sequence windowed inference owns long-scene windowing,
+    # overlap alignment, and stitching.
+    mode = "windowed"
 
-    enable_3d_rope  = true
-    max_frame_num   = 1024
+    # 392 is the best full-run trajectory profile found so far on the local
+    # 12 GB RTX 3080 Ti FlashInfer path.
+    image_size = 392
+
+    # DINO/GCT patch size. Keep at 14 so the processed raster remains
+    # patch-grid aligned with upstream.
+    patch_size = 14
+
+    # LingBot's video RoPE is part of the long-range geometric context model.
+    enable_3d_rope = true
+
+    # Windowed inference operates within per-window frame spans; keep upstream
+    # default temporal capacity without sizing FlashInfer caches to all frames.
+    max_frame_num = 1024
+
+    # Number of bidirectional anchor/scale frames. The paper default is 8, but
+    # upstream recommends 2 as the first limited-VRAM adjustment; 8 OOMs on the
+    # local 12 GB RTX 3080 Ti before completing this benchmark.
     num_scale_frames = 2
 
+    # Local pose-reference window size k. Paper and upstream benchmark use 64.
     kv_cache_sliding_window = 64
-    keyframe_interval       = 2
 
-    use_sdpa   = false
-    use_amp    = true
+    # Let upstream bound retained keyframes for the selected sequence length.
+    # This is required for the accepted windowed benchmark profile.
+    keyframe_interval = "auto"
+
+    # Use LingBot's FlashInfer backend. Run from the prml-vslam mamba env so
+    # FlashInfer can see the CUDA compiler and driver stubs.
+    use_sdpa = false
+
+    # Use CUDA autocast. On the RTX 3080 Ti the adapter resolves this to bf16,
+    # matching the paper's default precision.
+    use_amp = true
+
+    # Cast the transformer trunk to the best CUDA inference dtype while keeping
+    # prediction heads in fp32, mirroring upstream memory guidance.
     model_dtype = "auto"
 
-    camera_num_iterations = 4
-    enable_point_head     = false
+    # Required when using the RTX 3080 Ti fit width instead of the checkpoint's
+    # native 518-wide grid.
+    checkpoint_pos_embed = "interpolate"
 
+    # Windowed fallback parameters for long-scene robustness.
+    window_size       = 128
+    overlap_keyframes = 8
+
+    # Camera-head iterative refinement steps. Upstream default is 4; lowering to
+    # 1 is a speed-only tradeoff that costs pose accuracy.
+    camera_num_iterations = 4
+
+    # Upstream benchmark exports point clouds by back-projecting predicted depth;
+    # the maintained checkpoint path is not run with the point head enabled.
+    enable_point_head = false
+
+    # Upstream visibility threshold for depth-confidence filtering.
     confidence_threshold = 0.5
-    point_stride         = 4
-    max_points           = 200000
-    max_depth_m          = 100.0
+
+    # Spatial stride when materializing the durable PLY from dense depth maps.
+    # This affects artifact size/export time only, not model inference.
+    point_stride = 4
+
+    # Cap the persisted PLY for stable Rerun/export size while retaining enough
+    # cabinet geometry for alignment/evaluation inspection.
+    max_points = 200000
+
+    # Reject implausibly far monocular depth before point-cloud export.
+    max_depth_m = 100.0
+
+[visualization]
+connect_live_viewer                         = false
+export_viewer_rrd                           = true
+grpc_url                                    = "rerun+http://127.0.0.1:9876/proxy"
+viewer_blueprint_path                       = ".configs/visualization/vista_blueprint.rbl"
+preserve_native_rerun                       = false
+log_source_rgb                              = false
+log_diagnostic_preview                      = false
+log_camera_image_rgb                        = true
+show_tracking_trajectory                    = true
+trajectory_pose_axis_length                 = 0.0
+point_cloud_decimation_keep_ratio           = 0.05
+reference_point_cloud_decimation_keep_ratio = 0.95
+mesh_decimation_keep_ratio                  = 0.25
+decimation_random_seed                      = 0

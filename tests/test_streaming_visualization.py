@@ -1000,6 +1000,36 @@ def test_rerun_sink_logs_source_rgb_and_tracking_pose(tmp_path: Path, monkeypatc
     assert tracking_axis_lengths["world/slam/live/tracking/camera"] == 0.0
 
 
+def test_live_rerun_sink_caps_tracking_trajectory_line_strip(monkeypatch) -> None:
+    line_strips: list[np.ndarray] = []
+
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: _FakeRecordingStream())
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, **kwargs: line_strips.append(
+            np.asarray(positions_xyz, dtype=np.float32).copy()
+        ),
+    )
+    sink = LiveRerunEventSink(grpc_url="rerun+http://127.0.0.1:9876/proxy")
+    sink._policy.tracking_trajectory_history_window = 2
+
+    for seq in range(3):
+        sink.observe_update(
+            _slam_pose_update(
+                source_seq=seq,
+                pose=FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(seq), ty=0.0, tz=0.0),
+            ),
+            payloads={},
+        )
+
+    assert [len(line_strip) for line_strip in line_strips] == [1, 2, 2]
+    np.testing.assert_allclose(line_strips[-1][:, 0], np.array([1.0, 2.0], dtype=np.float32))
+    sink.close()
+
+
 def test_rerun_sink_keeps_source_rgb_separate_from_model_raster_payloads(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, str, tuple[int, ...], int | None, int | None]] = []
 
@@ -1109,7 +1139,7 @@ def test_rerun_sink_actor_reserves_full_cpu() -> None:
     assert ExportRerunSinkActor._default_options["num_cpus"] == 1.0
 
 
-def test_rerun_event_sink_flushes_live_stream_after_update(monkeypatch) -> None:
+def test_rerun_event_sink_defers_live_stream_flush_until_close(monkeypatch) -> None:
     live_stream = _FakeRecordingStream()
     monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: live_stream)
     monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
@@ -1118,7 +1148,35 @@ def test_rerun_event_sink_flushes_live_stream_after_update(monkeypatch) -> None:
 
     sink.observe_update(StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1))
 
-    assert live_stream.flush_calls == [False]
+    assert live_stream.flush_calls == []
+    sink.close()
+    assert live_stream.flush_calls == [True]
+
+
+def test_rerun_event_sink_observes_live_update_batches_in_order(monkeypatch) -> None:
+    observed: list[int] = []
+
+    class FakePolicy:
+        def observe_update(self, stream, update, *, payloads=None) -> None:
+            del stream, payloads
+            observed.append(update.timestamp_ns)
+
+    live_stream = _FakeRecordingStream()
+    monkeypatch.setattr(rerun_sink_module, "create_recording_stream", lambda **_: live_stream)
+    monkeypatch.setattr(rerun_sink_module, "attach_recording_sinks", lambda *args, **kwargs: None)
+    monkeypatch.setattr(rerun_sink_module, "RerunLoggingPolicy", lambda **_: FakePolicy())
+
+    sink = LiveRerunEventSink(grpc_url="rerun+http://127.0.0.1:9876/proxy")
+
+    sink.observe_updates(
+        [
+            StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1),
+            StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=2),
+        ]
+    )
+
+    assert observed == [1, 2]
+    assert live_stream.flush_calls == []
     sink.close()
 
 
@@ -1156,6 +1214,46 @@ def test_rerun_sink_actor_forwards_stage_runtime_updates_without_payload_resolve
     assert observed["init"]["recording_id"] == "demo"
     assert observed["init"]["show_tracking_trajectory"] is False
     assert observed["update"] == update
+    assert observed["closed"] is True
+
+
+def test_live_rerun_sink_actor_forwards_batched_updates_without_payload_resolver(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeLocalSink:
+        def __init__(self, **kwargs: object) -> None:
+            observed["init"] = kwargs
+
+        def observe_updates(self, updates, *, payload_resolver=None, payloads=None) -> None:
+            del payload_resolver, payloads
+            observed["updates"] = updates
+
+        def close(self) -> None:
+            observed["closed"] = True
+
+    monkeypatch.setattr(rerun_sink_module, "LiveRerunEventSink", FakeLocalSink)
+    monkeypatch.setattr(
+        rerun_sink_module.ray,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sink actor must not call ray.get")),
+    )
+
+    actor_cls = LiveRerunSinkActor.__ray_metadata__.modified_class
+    actor = actor_cls(
+        grpc_url="rerun+http://127.0.0.1:9876/proxy",
+        recording_id="demo",
+        show_tracking_trajectory=False,
+    )
+    updates = [
+        StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=1),
+        StageRuntimeUpdate(stage_key=StageKey.SLAM, timestamp_ns=2),
+    ]
+    actor.observe_updates(updates=updates, payload_resolver=None)
+    actor.close()
+
+    assert observed["init"]["recording_id"] == "demo"
+    assert observed["init"]["show_tracking_trajectory"] is False
+    assert observed["updates"] == updates
     assert observed["closed"] is True
 
 

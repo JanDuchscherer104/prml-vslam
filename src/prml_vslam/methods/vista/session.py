@@ -48,6 +48,8 @@ class VistaSlamRuntime:
         artifact_root: Path,
         output_policy: SlamOutputPolicy,
         console: Console,
+        keyframe_detection: str = "flow",
+        stride: int = 25,
     ) -> None:
         self._slam = slam
         self._flow_tracker = flow_tracker
@@ -56,6 +58,8 @@ class VistaSlamRuntime:
         self._artifact_root = artifact_root
         self._output_policy = output_policy
         self._console = console
+        self._keyframe_detection = keyframe_detection
+        self._stride = stride
         self._source_frame_count = 0
         self._accepted_keyframe_count = 0
         self._accepted_keyframe_timestamps_s: list[float] = []
@@ -65,6 +69,7 @@ class VistaSlamRuntime:
 
     def step(self, frame: Observation) -> None:
         """Feed one frame to OnlineSLAM and buffer incremental telemetry."""
+        source_frame_index = self._source_frame_count
         self._source_frame_count += 1
 
         if frame.rgb is None:
@@ -86,16 +91,7 @@ class VistaSlamRuntime:
             view_name=f"frame_{self._accepted_keyframe_count:06d}",
         )
         grayscale = prepared_frame.gray_u8
-        stride_keyframe = (self._source_frame_count - 1) % self._cfg.stride == 0
-        if self._cfg.keyframe_detection == "stride":
-            is_keyframe = stride_keyframe
-        else:
-            flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
-            is_keyframe = flow_keyframe or (
-                self._cfg.keyframe_detection == "flow_stride"
-                and self._accepted_keyframe_count >= self._cfg.max_view_num
-                and stride_keyframe
-            )
+        is_keyframe = self._is_keyframe(source_frame_index=source_frame_index, grayscale=grayscale)
         if not is_keyframe:
             self._pending_updates.append(
                 SlamUpdate(
@@ -130,6 +126,20 @@ class VistaSlamRuntime:
         update.keyframe_index = self._accepted_keyframe_count
         self._accepted_keyframe_count += 1
         self._pending_updates.append(update)
+
+    def _is_keyframe(self, *, source_frame_index: int, grayscale: np.ndarray) -> bool:
+        """Return whether the current source frame should enter upstream ViSTA."""
+        stride_keyframe = source_frame_index != 0 and (source_frame_index - 1) % self._stride == 0
+        match self._keyframe_detection:
+            case "stride":
+                return stride_keyframe
+            case "flow":
+                return bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+            case "flow_stride":
+                flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+                return flow_keyframe or (self._accepted_keyframe_count >= self._cfg.max_view_num and stride_keyframe)
+            case _:
+                raise RuntimeError(f"Unexpected ViSTA keyframe policy: {self._keyframe_detection}")
 
     def drain_updates(self) -> list[SlamUpdate]:
         """Retrieve and clear any pending incremental SLAM updates."""
@@ -334,6 +344,8 @@ def create_vista_runtime(
         artifact_root=artifact_root,
         output_policy=output_policy,
         console=console,
+        keyframe_detection="flow" if live_mode else config.keyframe_detection,
+        stride=config.stride,
     )
 
 

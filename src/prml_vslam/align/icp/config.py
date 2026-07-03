@@ -24,6 +24,7 @@ from prml_vslam.sources.datasets.normalization import (
     normalized_store_for_service,
 )
 from prml_vslam.utils import PathConfig
+from prml_vslam.utils.portable_paths import rebase_model_paths
 
 
 class CloudAlignmentStageConfig(StageConfig):
@@ -102,8 +103,9 @@ def _source_reference_cloud_available(
             frame_selection=frame_selection,
             prefer_reference_cloud=True,
         )
-        benchmark_inputs = PreparedBenchmarkInputs.model_validate_json(
-            entry.benchmark_inputs_path.read_text(encoding="utf-8")
+        benchmark_inputs = rebase_model_paths(
+            PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+            root=entry.root,
         )
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return False

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from pydantic import ConfigDict, Field
 
@@ -19,23 +20,26 @@ from prml_vslam.utils import BaseData
 class ReconstructionMethodId(StrEnum):
     """Name reconstruction backends supported by package-owned configs."""
 
-    OPEN3D_TSDF = "open3d_tsdf"
+    NKSR = "nksr"
+    POISSON = "poisson"
 
     @property
     def display_name(self) -> str:
         """Return the user-facing method label."""
         match self:
-            case ReconstructionMethodId.OPEN3D_TSDF:
-                return "Open3D TSDF"
+            case ReconstructionMethodId.NKSR:
+                return "Neural Kernel Surface Reconstruction"
+            case ReconstructionMethodId.POISSON:
+                return "Screened Poisson Surface Reconstruction"
 
 
 class ReconstructionMetadata(BaseData):
     """Persist side metadata for one normalized reconstruction output.
 
     PLY geometry alone cannot explain which backend produced the cloud, how
-    many RGB-D observations were fused, or what metric TSDF parameters shaped
-    the result. Keep those values here so later evaluation and visualization
-    can reason about the artifact without inspecting Open3D internals.
+    many source points were processed, or what parameters shaped the result.
+    Keep those values here so later evaluation and visualization can reason
+    about the artifact.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -43,29 +47,14 @@ class ReconstructionMetadata(BaseData):
     method_id: ReconstructionMethodId
     """Reconstruction backend that produced the artifact."""
 
-    observation_count: int
-    """Number of RGB-D observations integrated into the reconstruction."""
-
     point_count: int
-    """Number of extracted points written to the normalized output cloud."""
+    """Number of extracted points/vertices in the output."""
 
     target_frame: str
     """Frame represented by the exported point coordinates."""
 
-    voxel_length_m: float
-    """Open3D TSDF voxel length in meters."""
-
-    sdf_trunc_m: float
-    """Open3D TSDF signed-distance truncation in meters."""
-
-    depth_trunc_m: float
-    """Maximum depth integrated into the TSDF volume in meters."""
-
-    depth_scale: float
-    """Scale factor passed to Open3D when normalizing depth values."""
-
-    integrate_color: bool
-    """Whether the reconstruction fused RGB values alongside geometry."""
+    config_dump: dict[str, Any] = Field(default_factory=dict)
+    """Complete serialized configuration of the backend that produced this."""
 
 
 class ReconstructionArtifacts(BaseData):

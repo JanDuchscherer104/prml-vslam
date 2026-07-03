@@ -14,8 +14,10 @@ import prml_vslam.sources.replay.video as replay_video_module
 from prml_vslam.interfaces import ObservationSequenceIndex
 from prml_vslam.sources.config import AdvioSourceConfig, normalized_profile_for_source_config
 from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
     ReferenceCloudCoordinateStatus,
     ReferenceSource,
+    SequenceManifest,
 )
 from prml_vslam.sources.datasets.advio import (
     AdvioCatalog,
@@ -53,6 +55,7 @@ from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetProfil
 from prml_vslam.sources.replay import PyAvVideoObservationSource, ReplayMode
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_tum_trajectory
+from prml_vslam.utils.portable_paths import rebase_model_paths
 
 
 def _write_video(path: Path, *, num_frames: int = 3, fps: float = 10.0) -> None:
@@ -613,8 +616,14 @@ def test_advio_normalized_entry_replays_display_oriented_observations(
         service=service,
         source_config=source_config,
     )
-    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
-    sequence_manifest = json.loads(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    ).model_dump(mode="json")
+    sequence_manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    ).model_dump(mode="json")
     observation_ref = benchmark_inputs["observation_sequences"][0]
     observation_index = ObservationSequenceIndex.model_validate_json(
         Path(observation_ref["index_path"]).read_text(encoding="utf-8")
@@ -735,7 +744,10 @@ def test_advio_normalized_entry_uses_selected_provider_for_packet_poses(tmp_path
         service=AdvioDatasetService(path_config),
         source_config=source_config,
     )
-    benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    ).model_dump(mode="json")
     observation_ref = benchmark_inputs["observation_sequences"][0]
     observation_index = ObservationSequenceIndex.model_validate_json(
         Path(observation_ref["index_path"]).read_text(encoding="utf-8")
@@ -841,7 +853,10 @@ def test_advio_normalization_target_fps_changes_profile_and_observation_count(tm
         service=service,
         source_config=sampled_config,
     )
-    sampled_inputs = json.loads(sampled_entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    sampled_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(sampled_entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=sampled_entry.root,
+    ).model_dump(mode="json")
     sampled_index = ObservationSequenceIndex.model_validate_json(
         Path(sampled_inputs["observation_sequences"][0]["index_path"]).read_text(encoding="utf-8")
     )

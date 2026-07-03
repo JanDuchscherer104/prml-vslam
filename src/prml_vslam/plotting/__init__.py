@@ -15,7 +15,13 @@ from .artifact_diagnostics import (
     build_native_timing_figure,
     build_view_graph_figure,
 )
-from .metrics import build_error_figure, build_trajectory_figure
+from .metrics import (
+    build_cloud_distance_metrics_figure,
+    build_cloud_point_count_figure,
+    build_cloud_quality_metrics_figure,
+    build_error_figure,
+    build_trajectory_figure,
+)
 from .pipeline import build_evo_ape_colormap_figure, build_stage_telemetry_figure
 from .reconstruction import (
     DEFAULT_MAX_POINTS,
@@ -42,6 +48,9 @@ __all__ = [
     "build_advio_comparison_trajectories",
     "build_bev_trajectory_figure",
     "build_crowd_density_figure",
+    "build_cloud_distance_metrics_figure",
+    "build_cloud_point_count_figure",
+    "build_cloud_quality_metrics_figure",
     "build_error_figure",
     "build_evo_ape_colormap_figure",
     "build_stage_telemetry_figure",

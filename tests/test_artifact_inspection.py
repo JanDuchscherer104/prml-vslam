@@ -72,7 +72,7 @@ def test_inspect_run_artifacts_projects_events_and_typed_metadata(tmp_path: Path
         )
     ]
     reconstruction_metadata = ReconstructionMetadata(
-        method_id=ReconstructionMethodId.OPEN3D_TSDF,
+        method_id=ReconstructionMethodId.POISSON,
         observation_count=2,
         point_count=3,
         target_frame="world",

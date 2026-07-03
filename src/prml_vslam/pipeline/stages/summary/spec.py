@@ -16,6 +16,7 @@ def _build_offline_input(context: PipelineExecutionContext) -> SummaryStageInput
         plan=context.plan,
         run_paths=context.run_paths,
         stage_outcomes=context.results.ordered_outcomes(),
+        stage_runtime_statuses=context.results.ordered_runtime_statuses(),
     )
 
 
@@ -25,7 +26,10 @@ def _failure_fingerprint(context: PipelineExecutionContext) -> FailureFingerprin
             "experiment_name": context.run_config.experiment_name,
             "mode": context.run_config.mode.value,
         },
-        input_payload=context.results.ordered_outcomes(),
+        input_payload={
+            "stage_outcomes": context.results.ordered_outcomes(),
+            "stage_runtime_statuses": context.results.ordered_runtime_statuses(),
+        },
     )
 
 

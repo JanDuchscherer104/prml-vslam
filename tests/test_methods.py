@@ -1478,10 +1478,26 @@ def test_vista_config_models_validate_keyframe_detection_knobs() -> None:
     assert config.keyframe_detection == "stride"
 
     with pytest.raises(ValidationError):
-        VistaSlamBackendConfig.model_validate({"device": "tpu"})
+        VistaSlamBackendConfig.model_validate({"keyframe_detection": "invalid"})
 
     with pytest.raises(ValidationError):
         VistaSlamBackendConfig.model_validate({"stride": 0})
+
+
+def test_vista_stride_keyframe_policy_matches_upstream_offline_indexing() -> None:
+    from prml_vslam.methods.vista.session import VistaSlamRuntime
+
+    session = object.__new__(VistaSlamRuntime)
+    session._keyframe_detection = "stride"
+    session._stride = 3
+    grayscale = np.zeros((4, 4), dtype=np.uint8)
+
+    selected = [
+        session._is_keyframe(source_frame_index=source_frame_index, grayscale=grayscale)
+        for source_frame_index in range(10)
+    ]
+
+    assert selected == [False, True, False, False, True, False, False, True, False, False]
 
 
 def test_vista_flow_stride_falls_back_after_max_view_num(
@@ -1527,6 +1543,8 @@ def test_vista_flow_stride_falls_back_after_max_view_num(
         artifact_root=tmp_path / "vista-stream",
         output_policy=SlamOutputPolicy(),
         console=Console(__name__).child("vista-test"),
+        keyframe_detection="flow_stride",
+        stride=2,
     )
 
     for seq in range(3):
@@ -1541,5 +1559,5 @@ def test_vista_flow_stride_falls_back_after_max_view_num(
 
     updates = session.drain_updates()
     assert flow_tracker.calls == 3
-    assert [update.is_keyframe for update in updates] == [True, False, True]
-    assert len(slam.step_calls) == 2
+    assert [update.is_keyframe for update in updates] == [False, True, False]
+    assert len(slam.step_calls) == 1

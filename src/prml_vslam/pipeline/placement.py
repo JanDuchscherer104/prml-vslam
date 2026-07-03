@@ -6,9 +6,8 @@ resources into the Ray-specific actor options used by the backend runtime.
 
 from __future__ import annotations
 
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
-from prml_vslam.methods.stage.backend_config import BackendConfigValue
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.stages import StageKey
 
@@ -17,11 +16,19 @@ RayActorOptionsValue: TypeAlias = float | int | RayActorResources | None
 RayActorOptions: TypeAlias = dict[str, RayActorOptionsValue]
 
 
+class StageResourceDefaults(Protocol):
+    """Stage backend config surface used by Ray placement."""
+
+    @property
+    def default_resources(self) -> dict[str, float]:
+        """Return backend-default Ray resources keyed by Ray resource name."""
+
+
 def actor_options_for_stage(
     *,
     stage_key: StageKey,
     run_config: RunConfig,
-    backend: BackendConfigValue | None = None,
+    backend: StageResourceDefaults | None = None,
     default_num_cpus: float = 1.0,
     default_num_gpus: float = 0.0,
     restartable: bool = False,
@@ -53,4 +60,10 @@ def actor_options_for_stage(
     }
 
 
-__all__ = ["RayActorOptions", "RayActorOptionsValue", "RayActorResources", "actor_options_for_stage"]
+__all__ = [
+    "RayActorOptions",
+    "RayActorOptionsValue",
+    "RayActorResources",
+    "StageResourceDefaults",
+    "actor_options_for_stage",
+]

@@ -72,6 +72,7 @@ from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig
 from prml_vslam.utils.geometry import load_point_cloud_ply_with_colors, load_tum_trajectory
+from prml_vslam.utils.portable_paths import rebase_model_paths
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,7 +421,10 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
 
     benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
     observation_ref = benchmark_inputs["observation_sequences"][0]
-    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     observations = list(FileObservationSequenceLoader(stored_inputs.observation_sequences[0]).iter_observations())
     observation_index = json.loads(stored_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
     first_depth_path = stored_inputs.observation_sequences[0].payload_root / observation_index["rows"][0]["depth_path"]
@@ -431,8 +435,8 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert entry.stats_long_path == entry.root / "stats_long.csv"
     assert entry.metadata_long_path == entry.root / "metadata_long.csv"
     assert not (tmp_path / ".data" / "record3d" / ".normalized").exists()
-    assert observation_ref["payload_root"] == (entry.root / "observations").as_posix()
-    assert observation_ref["index_path"] == (entry.root / "observations" / "observations.json").as_posix()
+    assert observation_ref["payload_root"] == "observations"
+    assert observation_ref["index_path"] == "observations/observations.json"
     assert not (entry.root / "observations" / "rgb.mp4").exists()
     assert (entry.root / "observations" / "rgb").is_dir()
     assert (entry.root / "observations" / "depth").is_dir()
@@ -445,26 +449,20 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert not (entry.root / "observations" / "0").exists()
     assert not (entry.root / "benchmark" / "reference").exists()
     assert not (entry.root / "benchmark" / "observations").exists()
+    assert benchmark_inputs["reference_trajectories"][0]["path"] == "benchmark/trajectories/arkit.tum"
     assert (
-        benchmark_inputs["reference_trajectories"][0]["path"]
-        == (entry.root / "benchmark" / "trajectories" / "arkit.tum").as_posix()
+        benchmark_inputs["reference_trajectories"][0]["metadata_path"] == "benchmark/trajectories/arkit.metadata.json"
     )
-    assert (
-        benchmark_inputs["reference_trajectories"][0]["metadata_path"]
-        == (entry.root / "benchmark" / "trajectories" / "arkit.metadata.json").as_posix()
-    )
-    trajectory = load_tum_trajectory(Path(benchmark_inputs["reference_trajectories"][0]["path"]))
-    trajectory_metadata = json.loads(Path(benchmark_inputs["reference_trajectories"][0]["metadata_path"]).read_text())
+    trajectory_ref = stored_inputs.reference_trajectories[0]
+    trajectory = load_tum_trajectory(trajectory_ref.path)
+    trajectory_metadata = json.loads(trajectory_ref.metadata_path.read_text())
     np.testing.assert_allclose(trajectory.poses_se3[0], np.eye(4), atol=1e-9)
     assert trajectory_metadata["trajectory_origin"] == "first_pose"
     assert trajectory_metadata["pose_normalization"] == "relative_to_first_pose"
-    assert (
-        benchmark_inputs["reference_clouds"][0]["path"]
-        == (entry.root / "benchmark" / "reference_clouds" / "record3d_lidar.ply").as_posix()
-    )
+    assert benchmark_inputs["reference_clouds"][0]["path"] == "benchmark/reference_clouds/record3d_lidar.ply"
     assert (
         benchmark_inputs["reference_clouds"][0]["metadata_path"]
-        == (entry.root / "benchmark" / "reference_clouds" / "record3d_lidar.metadata.json").as_posix()
+        == "benchmark/reference_clouds/record3d_lidar.metadata.json"
     )
     assert len(observations) == 3
     assert observations[0].rgb is not None
@@ -493,8 +491,9 @@ def test_record3d_normalized_store_persists_replayable_entry(tmp_path: Path) -> 
     assert stats[("observation_sequence", "record3d_dataset", "depth_coverage_ratio")] == "1"
     assert stats[("reference_trajectory", "arkit/aligned", "trajectory_path_length_m")] == "2"
     assert ("reference_trajectory", "arkit/aligned", "ego_motion_class") not in stats
-    cloud_metadata = json.loads(Path(benchmark_inputs["reference_clouds"][0]["metadata_path"]).read_text())
-    points_xyz, _ = load_point_cloud_ply_with_colors(Path(benchmark_inputs["reference_clouds"][0]["path"]))
+    cloud_ref = stored_inputs.reference_clouds[0]
+    cloud_metadata = json.loads(cloud_ref.metadata_path.read_text())
+    points_xyz, _ = load_point_cloud_ply_with_colors(cloud_ref.path)
     assert cloud_metadata["coordinate_origin"] == "first_pose"
     assert cloud_metadata["coordinate_normalization"] == "relative_to_first_pose"
     assert points_xyz[:, 0].min() > -1.0
@@ -822,7 +821,10 @@ def test_normalized_store_preserves_manifest_timestamps_for_video_sources(
     )
 
     entry = store.create_entry_from_source(profile=profile, source=VideoSource())
-    manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+    manifest = rebase_model_paths(
+        SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     timestamps = json.loads(manifest.timestamps_path.read_text(encoding="utf-8"))
 
     assert timestamps == {
@@ -1013,7 +1015,10 @@ def test_normalized_store_does_not_rewrite_opaque_json_strings(tmp_path: Path, m
             ]
         ),
     )
-    stored_inputs = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
     stored_index = json.loads(stored_inputs.observation_sequences[0].index_path.read_text(encoding="utf-8"))
 
     assert stored_inputs.observation_sequences[0].index_path.is_relative_to(entry.root)
@@ -1246,7 +1251,7 @@ def test_record3d_normalized_store_rejects_tampered_observation_paths(tmp_path: 
     profile = fixture.profile
     entry = fixture.entry
     benchmark_inputs = json.loads(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
-    index_path = Path(benchmark_inputs["observation_sequences"][0]["index_path"])
+    index_path = entry.root / benchmark_inputs["observation_sequences"][0]["index_path"]
     observation_index = json.loads(index_path.read_text(encoding="utf-8"))
     observation_index["rows"][0]["depth_path"] = (tmp_path / "outside-depth.npy").as_posix()
     index_path.write_text(json.dumps(observation_index), encoding="utf-8")
