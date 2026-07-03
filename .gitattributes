@@ -30,6 +30,7 @@ graphify-out/graph.html filter=lfs diff=lfs merge=lfs -text
 
 # Pipeline run artifacts (LFS)
 .artifacts/** filter=lfs diff=lfs merge=lfs -text
+.artifacts/**/native/** -filter -diff -merge -text
 .artifacts/**/rgb/** -filter -diff -merge -text
 .artifacts/**/frames/** -filter -diff -merge -text
 .artifacts/**/*.ply -filter -diff -merge -text
