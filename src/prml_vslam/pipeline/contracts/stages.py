@@ -16,6 +16,7 @@ class StageKey(StrEnum):
     CLOUD_ALIGNMENT = "align.cloud"
     CLOUD_EVALUATION = "evaluate.cloud"
     RECONSTRUCTION = "reconstruction"
+    IMAGE_EVALUATION = "evaluate.image"
     SUMMARY = "summary"
 
     @property
@@ -30,6 +31,7 @@ class StageKey(StrEnum):
             StageKey.CLOUD_ALIGNMENT: "Align Dense Cloud",
             StageKey.CLOUD_EVALUATION: "Evaluate Dense Cloud",
             StageKey.RECONSTRUCTION: "Build Reconstruction",
+            StageKey.IMAGE_EVALUATION: "Evaluate Image Quality",
             StageKey.SUMMARY: "Write Run Summary",
         }[self]
 
