@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import time
+from typing import Any, cast
 
 # Ray snapshots this flag at import time. Set it before importing `ray` so the
 # local Streamlit/CLI path does not get rewritten back to `uv run ...`.
@@ -23,6 +24,7 @@ from ray.actor import ActorHandle
 from prml_vslam.pipeline.backend import PipelineBackend, PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.events import RunEvent
+from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.placement import RayActorOptions, actor_options_for_stage
@@ -35,6 +37,7 @@ from prml_vslam.utils import Console, PathConfig
 _DEFAULT_NAMESPACE = "prml_vslam.local"
 _MAX_LOCAL_HEAD_INIT_ATTEMPTS = 5
 RayActorOption = str | float | int | dict[str, float] | None
+RayInitKwargs = dict[str, Any]
 _COORDINATOR_LIFECYCLE_OPTIONS: dict[str, int] = {
     "max_restarts": 0,
     "max_task_retries": 0,
@@ -47,7 +50,11 @@ def _coordinator_actor_options(run_config: RunConfig) -> dict[str, RayActorOptio
         "num_cpus": 1.0,
         "num_gpus": 0.0,
     }
-    if run_config.stages.slam.enabled and run_config.stages.slam.backend is not None:
+    if (
+        run_config.mode is PipelineMode.OFFLINE
+        and run_config.stages.slam.enabled
+        and run_config.stages.slam.backend is not None
+    ):
         options = actor_options_for_stage(
             stage_key=StageKey.SLAM,
             run_config=run_config,
@@ -75,7 +82,7 @@ class RayPipelineBackend(PipelineBackend):
     def __init__(self, *, path_config: PathConfig | None = None, namespace: str | None = None) -> None:
         self._path_config = PathConfig() if path_config is None else path_config
         self._namespace = namespace or os.getenv("PRML_VSLAM_RAY_NAMESPACE", _DEFAULT_NAMESPACE)
-        self._console = Console(__name__).child(self.__class__.__name__).child(self._namespace)
+        self._console = Console(__name__).child(self.__class__.__name__).child(str(self._namespace))
         self._coordinators: dict[str, ActorHandle] = {}
         self._local_head = LocalRayHead(path_config=self._path_config, console=self._console)
         self._reuse_local_head = False
@@ -122,7 +129,7 @@ class RayPipelineBackend(PipelineBackend):
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
         """Fetch the latest projected snapshot from the coordinator actor."""
-        return ray.get(self._coordinator_for(run_id).snapshot.remote())
+        return cast(RunSnapshot, ray.get(self._coordinator_for(run_id).snapshot.remote()))
 
     def get_events(
         self,
@@ -138,7 +145,7 @@ class RayPipelineBackend(PipelineBackend):
         """Resolve one coordinator-owned target transient payload ref."""
         if ref is None:
             return None
-        return ray.get(self._coordinator_for(run_id).read_payload.remote(ref.handle_id))
+        return cast(np.ndarray | None, ray.get(self._coordinator_for(run_id).read_payload.remote(ref.handle_id)))
 
     def shutdown(self, *, preserve_local_head: bool = False) -> None:
         """Detach from Ray and stop any backend-owned shared infrastructure."""
@@ -153,28 +160,31 @@ class RayPipelineBackend(PipelineBackend):
         if not preserve_local_head:
             self._local_head.shutdown()
 
-    def _create_coordinator(self, run_id: str, *, actor_options: dict[str, RayActorOption]):
+    def _create_coordinator(self, run_id: str, *, actor_options: dict[str, RayActorOption]) -> ActorHandle:
         self._shutdown_run(run_id)
-        options = {
+        options: dict[str, Any] = {
             "name": coordinator_actor_name(run_id),
             "namespace": self._namespace,
             **actor_options,
         }
-        if not self._namespace.startswith("pytest-"):
+        if not str(self._namespace).startswith("pytest-"):
             options["lifetime"] = "detached"
-        coordinator = RunCoordinatorActor.options(**options).remote(run_id=run_id, namespace=self._namespace)
+        coordinator_cls = cast(Any, RunCoordinatorActor)
+        coordinator = cast(
+            ActorHandle, coordinator_cls.options(**options).remote(run_id=run_id, namespace=self._namespace)
+        )
         self._coordinators[run_id] = coordinator
         self._console.info("Created coordinator for run '%s' in namespace '%s'.", run_id, self._namespace)
         return coordinator
 
-    def _coordinator_for(self, run_id: str):
+    def _coordinator_for(self, run_id: str) -> ActorHandle:
         coordinator = self._coordinators.get(run_id)
         if coordinator is not None:
             return coordinator
         self._console.debug("Coordinator for run '%s' not cached locally; attempting Ray lookup.", run_id)
         self._ensure_ray()
         try:
-            coordinator = ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace)
+            coordinator = cast(ActorHandle, ray.get_actor(coordinator_actor_name(run_id), namespace=self._namespace))
         except ValueError:
             raise RuntimeError(f"Coordinator for run '{run_id}' is not available.") from None
         self._coordinators[run_id] = coordinator
@@ -211,14 +221,14 @@ class RayPipelineBackend(PipelineBackend):
             return
         address = os.getenv("PRML_VSLAM_RAY_ADDRESS")
         prepare_ray_environment()
-        init_kwargs = {
+        init_kwargs: RayInitKwargs = {
             "namespace": self._namespace,
             "ignore_reinit_error": True,
             "log_to_driver": self._ray_log_to_driver,
             "include_dashboard": False,
             "_skip_env_hook": True,
         }
-        if not self._namespace.startswith("pytest-"):
+        if not str(self._namespace).startswith("pytest-"):
             init_kwargs["runtime_env"] = build_runtime_env(address=address)
             self._console.debug("Prepared Ray runtime environment for namespace '%s'.", self._namespace)
         if address:
@@ -226,7 +236,7 @@ class RayPipelineBackend(PipelineBackend):
             init_kwargs["address"] = address
             ray.init(**init_kwargs)
             return
-        if self._namespace.startswith("pytest-"):
+        if str(self._namespace).startswith("pytest-"):
             self._console.debug("Initializing in-process Ray runtime for pytest namespace '%s'.", self._namespace)
             ray.init(**init_kwargs)
             return
