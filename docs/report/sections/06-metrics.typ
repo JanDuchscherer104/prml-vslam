@@ -92,7 +92,7 @@ $
 
 The final dense-cloud tables use $tau = 0.05 "m"$, so the score reads as surface overlap at a
 5 cm tolerance rather than an unbounded distance average. @fig:pointcloud-f1-metric visualizes this
-thresholded overlap interpretation. Note: 5cm tolerance is quite strict and
+thresholded overlap interpretation. Note: 5cm tolerance is quite strict.
 
 #figure(
   image("../../figures/pointcloud/metric_schematics/pointcloud_f1.svg", width: 100%),

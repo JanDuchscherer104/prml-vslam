@@ -22,7 +22,7 @@
     hm_author("Lukas Röß", email: "lukas.roess@hm.edu"),
     hm_author("Christopher Kirschner"),
     hm_author("Valentin Bumeder", email: "Valentin.Bumeder@hm.edu"),
-    hm_author("Florian Beck"),
+    hm_author("Florian Beck", email: "florian.beck@hm.edu"),
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
