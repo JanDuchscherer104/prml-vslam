@@ -42,8 +42,7 @@ reproducibility variables.
 
 LingBot-Map is an end-to-end optimized streaming reconstruction model and does not maintain a traditional SLAM graph backend. The Geometric Context
 Transformer (GCT) is a causal feed-forward model: at time $t$ it predicts a
-camera-to-world pose and dense depth map from frames observed up to $t$
-@chen2026gct. A DINOv2 backbone encodes each uncalibrated RGB frame, augments it
+camera-to-world pose and dense depth map from a _geometric_ context from frames up to $t$ @chen2026gct. A DINOv2 backbone encodes each uncalibrated RGB frame, augments it
 with one camera token, four register tokens, and one anchor token, and alternates
 per-frame attention with Geometric Context Attention (GCA). GCA gives the
 streaming state three roles: anchor frames set the coordinate frame and
@@ -52,7 +51,7 @@ recent overlap, and trajectory memory preserves only six context tokens per
 older frame to capture necessary invariants.
 
 This learned state is the main distinction that enables learned attention to stand in for a traditional SLAM graph optimization to capture long-term geometric context as it reduces per-frame memory growth by a factor of 80, with memory dropping from 36.06 GB to 13.28 GB and throughput rising
-from 11.87 FPS to 20.29 FPS@chen2026gct.
+from 11.87 FPS to 20.29 FPS @chen2026gct.
 
 Similarly to ViSTA-SLAM and MASt3R-SLAM, LingBot-Map supervises depth,
 absolute camera-to-world pose, and relative poses within the local window, so
