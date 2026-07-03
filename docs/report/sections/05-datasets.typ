@@ -4,14 +4,7 @@
 = Datasets and Source Normalization
 
 We employ three datasets with distinct evidential roles. ADVIO supplies
-deployment-realistic smartphone visual-inertial odometry (VIO) trajectories in common public spaces but lacks dense reference geometry; TUM RGB-D supplies high-quality indoor RGB-D observations with motion-capture trajectory references; and custom our custom Record3D dataset allows end-to-end verification of both tracking and dense reconstruction capabilities against ARKit trajectories and LiDAR-derived point-maps.
-
-Source normalization makes those comparisons depend on methods and source families rather than on
-file layout or viewer conventions. The adapters materialize a common observation contract with RGB
-payloads, timestamps, intrinsics, optional metric depth, optional camera poses, and provenance.
-Byte-affecting choices are encoded in the source profile, while run-local sampling is recorded
-separately. Prepared references remain outside method observations so that ground-truth
-trajectories or depth maps cannot be consumed silently as ordinary inputs.
+deployment-realistic smartphone visual-inertial odometry (VIO) trajectories in common public spaces but lacks dense reference geometry; TUM RGB-D supplies high-quality indoor RGB-D observations with motion-capture trajectory references; and our custom Record3D dataset allows end-to-end verification of both tracking and dense reconstruction capabilities against ARKit trajectories and LiDAR-derived point-maps.
 
 #figure(
   grid(
@@ -19,29 +12,41 @@ trajectories or depth maps cannot be consumed silently as ordinary inputs.
     gutter: 0.45em,
     [
       #image("../../figures/evidence/dataset-gt-advio.png", width: 100%)
-      #par(justify: false)[#text(size: 7.2pt)[ADVIO: fixedpoint-registered pedestrian phone trajectories.]]
+      #par(justify: false)[#text(size: 7.2pt)[ADVIO-01: registered GT, ARKit and ARCore trajectories.]]
     ],
     [
       #image("../../figures/evidence/dataset-gt-tum-rgbd.png", width: 100%)
-      #par(justify: false)[#text(size: 7.2pt)[TUM RGB-D: registered-depth reference cloud and mocap trajectory.]]
+      #par(justify: false)[#text(size: 7.2pt)[TUM RGB-D `fr3/cabinet`: sub-sampled GT cloud and mocap trajectory.]]
     ],
     [
       #image("../../figures/evidence/dataset-gt-record3d.png", width: 100%)
-      #par(justify: false)[#text(size: 7.2pt)[Record3D: iPhone depth-derived cloud and ARKit provider trajectory.]]
+      #par(justify: false)[#text(size: 7.2pt)[Record3D `29-08`: iPhone LiDAR cloud and ARKit trajectory.]]
     ],
   ),
   caption: [Qualitative dataset coverage: trajectory-only ADVIO, controlled RGB-D TUM reference geometry, and target-domain Record3D smartphone RGB-D capture.],
 ) <fig:dataset-qualitative-coverage>
 
+The normalized datastore is the source-stage artifact boundary for the artifact-first pipeline in
+@fig:framework-contracts. ADVIO frames arrive as `frames.mov`, Record3D
+scenes as compressed `.r3d` archives, and TUM RGB-D as image and association files. Reading these
+native layouts inside every method run would make the run directory depend on decoder behavior, timestamp matching, resizing, intrinsics scaling, depth units, pose-frame
+conventions, and reference-cloud sampling; for Record3D it also makes sweeps and replay pay the slow
+archive decode cost repeatedly. The datastore therefore decodes and normalizes each selected source
+profile once into replay-ready artifacts: RGB payloads, timestamps, calibrated intrinsics, optional
+metric depth, optional poses, prepared references, frame labels, alignment metadata, and provenance.
+Each run then materializes only the source artifacts it needs, such as `input/sequence_manifest.json`
+and `benchmark/inputs.json`, into its run directory. This keeps sweeps and real-time replay from
+reopening slow native containers, while keeping ground-truth poses, provider trajectories, depth
+maps, and reference clouds outside the method observation stream.
 
 ADVIO contributes 23 pedestrian smartphone recordings spanning about 4.47 km and 1 h 8 min, with
 19 indoor and 4 outdoor sequences @cortes2018advio. The official assets used here are the iPhone RGB
 video, frame timestamps, calibration metadata, ground-truth poses, manual fixpoints, and optional
-ARKit and ARCore provider pose streams @cortes2018advio @aaltovisionAdvioRepo. ADVIO does not
-publish per-provider transformations into a common fixedpoint frame; those transforms are derived by
-the repository from `fixpoints.csv`. In this report ADVIO is trajectory-only: no source-prepared
-dense reference cloud is published for ADVIO, so dense-cloud metrics require a separately documented
-reference reconstruction.
+ARKit and ARCore provider pose streams @cortes2018advio @aaltovisionAdvioRepo. ADVIO does not publish
+per-provider transformations into a common fixedpoint frame; the repository estimates those
+transforms from `fixpoints.csv` and each provider pose stream. In this report ADVIO is
+trajectory-only: no source-prepared dense reference cloud is published for ADVIO, so dense-cloud
+metrics require a separately documented reference reconstruction.
 
 ADVIO ground-truth, ARCore, and ARKit trajectories do not start in a common provider world, so direct
 provider-world overlays would not be valid trajectory comparisons. The source data and fixpoint
@@ -65,21 +70,11 @@ $
 
 ADVIO fixpoints are manual time-position constraints, consistent with the official fixpoint
 visualization @cortes2018advio @aaltovisionAdvioRepo. For each source
-$s in {"GT", "ARCore", "ARKit"}$, the normalized store keeps only fixpoints within the provider
+$s in {"GT", "ARCore", "ARKit"}$, the normalized store keeps only fixpoints within the GT
 trajectory interval, linearly interpolates RDF trajectory positions at those timestamps, and derives
-one unit-scale rigid registration into the fixedpoint frame:
+one unit-scale rigid registration into the GT frame, whose first pose is the local world-frame anchor.
 
-$
-  (bold(R)_s^*, bold(t)_s^*) =
-  op("arg min", limits: #true)_(bold(R) in "SO"(3), bold(t)) sum_i
-  norm(bold(f)_i - (bold(R) bold(x)_s (t_i) + bold(t)))^2 .
-$
-
-This is the no-scale Kabsch/Procrustes absolute-orientation problem: one global $"SE"(3)$ transform
-per source, scale fixed to 1, and no reflection @umeyama1991least. If the full $"SO"(3)$ fit tilts
-RDF gravity beyond the 15 degree gate, the same objective is solved with $bold(R)$ restricted to yaw
-about RDF gravity. This yaw fallback and the residual RMS/max checks are repository stability
-guards, not an official ADVIO evaluation protocol. Registered trajectories are cropped to the common
+Registered trajectories are cropped to the common
 provider interval and rebased once by the ground-truth pose at the common start time,
 
 $
@@ -95,21 +90,14 @@ $
   (bold(T)^"fix"_"c,GT" (t_0))^(-1) bold(T)^"fix"_"c,s" (t).
 $
 
-The resulting target frame is `advio_fixedpoint_common_start_local`. ARCore and ARKit are benchmark
-candidates only in this registered frame, while post-hoc GT-aligned ARCore/ARKit files are
-diagnostics. The registration is reference-based gauge normalization, not a method input and not a
-trajectory correction: it changes one global frame per source without changing relative motion,
-drift, or local trajectory shape. Repository pose matrices use the `world <- camera` convention, so
-registration left-multiplies pose rotations and maps positions as $bold(p) -> bold(R) bold(p) +
-bold(t)$.
+ARCore and ARKit are benchmark
+candidates only in this registered frame, while post-hoc GT-aligned ARCore/ARKit files are provided as diagnostics.
 
 TUM RGB-D provides synchronized Kinect color and registered depth at 30 Hz and 640x480 resolution,
 camera intrinsics, and 100 Hz motion-capture trajectories @sturm2012benchmark. Its file format
-defines pre-registered RGB/depth images, 16-bit depth PNG values scaled by 5000, and timestamped
-$t_x, t_y, t_z, q_x, q_y, q_z, q_w$ trajectory rows. TUM RGB-D is therefore the controlled indoor
-benchmark anchor, and the normalized adapter can create deterministic metric reference clouds from
-the same selected RGB-D frames used as method input. The final evidence pass uses 19 Freiburg
-sequences selected for the ViSTA-oriented benchmark pass.
+defines pre-registered RGB/depth images, 16-bit depth PNG values scaled by 5000, and timestamped trajectory rows. TUM RGB-D is the controlled indoor
+benchmark reference, and the normalized adapter can create deterministic metric reference clouds from
+the same selected RGB-D frames used as method input.
 
 Record3D supplies the custom smartphone-data path, not a public gold-standard benchmark. The
 current catalog contains eight archived `.r3d` recordings with RGB and metric depth payloads,
@@ -175,16 +163,8 @@ smaller custom smartphone set with depth and ARKit provider poses.
   caption: [Sequence count and duration coverage for the final evidence pass. Durations summarize manifest timestamps.],
 ) <tab:dataset-duration-coverage>
 
-The normalized datastore separates persistent source materialization from run-local sampling.
-Full-frame payloads are prepared once for a dataset, sequence, and source profile; later runs select
-frame stride or target frame rate without rebuilding the source entry. The source profile encodes
-byte-affecting choices such as stored frame selection, RGB resizing, intrinsics scaling, pose-frame
-mode, and reference-cloud sampling. Runtime sampling records selected indices and timestamps against
-the immutable normalized entry, and the metric record must trace every sampled run to that source
-evidence.
-
-The dataset disclosure is an evaluation-corpus disclosure, not a training split description. The
-final evidence pass is configured by `.configs/datasets/benchmark-vslam-datastore.toml`: it includes
+This disclosure describes the evaluation corpus, not a training split. The final evidence pass is
+configured by `.configs/datasets/benchmark-vslam-datastore.toml`: it includes
 all 23 supported ADVIO sequences, eight archived Record3D captures, and 19 selected Freiburg TUM
 RGB-D sequences. Appendix material reports the ADVIO catalog distribution, normalized-store
 coverage, available statistic surfaces, and reference caveats in
