@@ -428,12 +428,7 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
             index=_VISTA_KEYFRAME_DETECTION_OPTIONS.index(backend.keyframe_detection),
         ),
     )
-    keyframe_options = ["stride", "flow"]
-    keyframe_detection = st.selectbox(
-        "Keyframe Detection",
-        options=keyframe_options,
-        index=keyframe_options.index(backend.keyframe_detection),
-    )
+
     col_a, col_b, col_c = st.columns(3, gap="small")
     with col_a:
         max_view_num = int(st.number_input("Max Views", min_value=1, value=backend.max_view_num))
@@ -480,8 +475,6 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         rel_pose_thres=rel_pose_thres,
         pgo_every=pgo_every,
         random_seed=random_seed,
-        keyframe_detection=keyframe_detection,
-        stride=stride,
         device=device,
     )
 

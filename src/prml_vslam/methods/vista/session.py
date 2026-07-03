@@ -137,10 +137,7 @@ class VistaSlamRuntime:
                 return bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
             case "flow_stride":
                 flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
-                return flow_keyframe or (
-                    self._accepted_keyframe_count >= self._cfg.max_view_num
-                    and stride_keyframe
-                )
+                return flow_keyframe or (self._accepted_keyframe_count >= self._cfg.max_view_num and stride_keyframe)
             case _:
                 raise RuntimeError(f"Unexpected ViSTA keyframe policy: {self._keyframe_detection}")
 
