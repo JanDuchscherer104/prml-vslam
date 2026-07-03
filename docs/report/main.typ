@@ -19,7 +19,7 @@
   title: [Uncalibrated Monocular VSLAM for Smartphone Video Benchmarking],
   authors: (
     hm_author("Jan Duchscherer", email: "j.duchscherer@hm.edu"),
-    hm_author("Lukas Röß"),
+    hm_author("Lukas Röß", email: "lukas.roess@hm.edu"),
     hm_author("Christopher Kirschner"),
     hm_author("Valentin Bumeder", email: "Valentin.Bumeder@hm.edu"),
     hm_author("Florian Beck"),
