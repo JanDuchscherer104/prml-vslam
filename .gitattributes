@@ -30,6 +30,7 @@ LICENSE     text eol=lf
 
 # Pipeline run artifacts (LFS)
 
+.artifacts/**/native/** -filter -diff -merge -text
 .artifacts/**/rgb/** -filter -diff -merge -text
 .artifacts/**/frames/** -filter -diff -merge -text
 .artifacts/**/*.ply -filter -diff -merge -text
