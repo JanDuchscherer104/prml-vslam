@@ -28,16 +28,18 @@
   abstract: [
     We describe a reproducible benchmark substrate for off-device uncalibrated monocular visual
     simultaneous localization and mapping (VSLAM) on smartphone video. Recent learned dense SLAM
-    systems can operate with weak calibration assumptions, but their outputs are comparable only
-    when ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
+    systems relax some calibration assumptions, but their outputs are interpretable only when
+    ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
     implementation materializes ADVIO, TUM RGB-D, and Record3D as normalized observation sequences;
-    adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, clouds, transform
-    metadata, and metric inputs. The paper specifies the transform contract: RDF camera frames,
-    ADVIO fixedpoint registration with common-start localization, first-pose-relative RGB-D
-    sources, Sim(3) or gravity-aware trajectory placement, and ICP-based dense-geometry
-    diagnostics. Matched local sweep evidence shows MASt3R-SLAM is more accurate on short indoor
-    TUM RGB-D sequences, ViSTA-SLAM is more robust on long runs, and visual-inertial phone
-    baselines remain substantially stronger than vision-only monocular methods on ADVIO.
+    adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, dense clouds,
+    transform metadata, and metric inputs. The paper specifies an artifact contract with RDF camera
+    frames, ADVIO fixedpoint-common-start registration, first-pose-relative RGB-D sources, Sim(3)
+    and gravity-aware trajectory placement, and ICP-based dense-geometry diagnostics. The resulting
+    local evidence pass reports matched trajectory medians, ADVIO provider baselines, dense-cloud
+    metrics, render diagnostics, and runtime telemetry. These results characterize
+    method-dependent tradeoffs across controlled RGB-D, self-recorded RGB-D, and ADVIO phone-video
+    regimes while remaining a local artifact-scoped comparison rather than a statistically powered
+    leaderboard.
   ],
   index-terms: (
     "VSLAM",
