@@ -26,20 +26,22 @@
   ),
   shared_affiliation: hm_shared_affiliation,
   abstract: [
-    We describe a reproducible benchmark substrate for off-device uncalibrated monocular visual
-    simultaneous localization and mapping (VSLAM) on smartphone video. Recent learned dense SLAM
-    systems relax some calibration assumptions, but their outputs are interpretable only when
-    ingestion, frame conventions, scale, dense geometry, and provenance are explicit. The
-    implementation materializes ADVIO, TUM RGB-D, and Record3D as normalized observation sequences;
-    adapts ViSTA-SLAM, MASt3R-SLAM, and LingBot-Map; and persists trajectories, dense clouds,
-    transform metadata, and metric inputs. The paper specifies an artifact contract with RDF camera
-    frames, ADVIO fixedpoint-common-start registration, first-pose-relative RGB-D sources, Sim(3)
-    and gravity-aware trajectory placement, and ICP-based dense-geometry diagnostics. The resulting
-    local evidence pass reports matched trajectory medians, ADVIO provider baselines, dense-cloud
-    metrics, render diagnostics, and runtime telemetry. These results characterize
-    method-dependent tradeoffs across controlled RGB-D, self-recorded RGB-D, and ADVIO phone-video
-    regimes while remaining a local artifact-scoped comparison rather than a statistically powered
-    leaderboard.
+    We present a benchmark pipeline for monocular visual simultaneous localization and mapping
+    (VSLAM) on ordinary smartphone videos when the camera intrinsics and metric scale are not known in
+    advance. The long-term use case is off-device scene understanding from a caller's video stream.
+    The phone provides the video, while a workstation estimates the camera motion and a dense 3D scene
+    representation. The main difficulty is not only running a SLAM method, but making its output
+    comparable. Modern learned systems use different coordinate frames, scale assumptions, and dense
+    map representations, so a visual overlay alone is not enough evidence.
+
+    Our implementation normalizes ADVIO, TUM RGB-D, and Record3D sequences, runs ViSTA-SLAM,
+    MASt3R-SLAM, and LingBot-Map through common adapters, and records trajectories and point clouds.
+    It also catches transforms, references, and metric inputs. The report describes the resulting artifact contract,
+    including frame conventions, trajectory alignment, cloud placement and ICP diagnostics.
+    A local evidence pass reports trajectory medians, ARCore and ARKit provider baselines
+    on ADVIO, dense-cloud metrics (where reference clouds exist), render diagnostics, and runtime
+    telemetry. These results should be taken as an artifact-scoped comparison and reproducibility
+    framework, not as a statistically sourced leaderboard.
   ],
   index-terms: (
     "VSLAM",
