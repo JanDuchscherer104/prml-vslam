@@ -42,8 +42,7 @@ class NksrBackend:
         # For now, we don't support direct sequence integration if it's too complex.
         # But we could implement it by accumulating points.
         raise NotImplementedError(
-            "NKSR backend does not support direct RGB-D sequence integration. "
-            "Use a point-cloud input source instead."
+            "NKSR backend does not support direct RGB-D sequence integration. Use a point-cloud input source instead."
         )
 
     def run_point_cloud(
@@ -53,12 +52,12 @@ class NksrBackend:
         artifact_root: Path,
     ) -> ReconstructionArtifacts:
         """Run NKSR on a pre-aligned point cloud."""
+        import nksr
         import open3d as o3d
         import torch
-        import nksr
 
         device = torch.device(self._config.device)
-        
+
         # 1. Load point cloud
         pcd = o3d.io.read_point_cloud(str(point_cloud_path))
         if pcd.is_empty():
@@ -95,11 +94,11 @@ class NksrBackend:
         # Or just use the input cloud if it's already aligned.
         # The contract says: "reference_cloud_path: Filesystem path to the normalized world-space reference cloud."
         # Usually this means the point cloud extracted from the reconstruction.
-        
+
         # Load the mesh back to Open3D to extract points or just save it.
         o3d_mesh = o3d.io.read_triangle_mesh(str(mesh_path))
         pcd_reconstructed = o3d_mesh.sample_points_uniformly(number_of_points=len(pcd.points))
-        
+
         reconstructed_cloud_path = artifact_root / "reconstruction_cloud.ply"
         o3d.io.write_point_cloud(str(reconstructed_cloud_path), pcd_reconstructed)
 

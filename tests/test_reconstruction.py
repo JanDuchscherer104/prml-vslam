@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
-    CameraIntrinsics,
     FrameTransform,
     Observation,
     ObservationProvenance,
@@ -24,7 +23,7 @@ from prml_vslam.reconstruction import (
     ReconstructionMethodId,
 )
 from prml_vslam.reconstruction.protocols import OfflineReconstructionBackend
-from prml_vslam.utils.geometry import load_point_cloud_ply, write_point_cloud_ply
+from prml_vslam.utils.geometry import write_point_cloud_ply
 
 
 def _pose_identity() -> FrameTransform:
@@ -93,11 +92,8 @@ def test_poisson_backend_reconstructs_from_aligned_point_cloud(tmp_path: Path) -
     pytest.importorskip("open3d")
     # Use random points to avoid degenerate geometry errors in normal orientation
     points = np.random.rand(100, 3)
-    
-    source_cloud_path = write_point_cloud_ply(
-        tmp_path / "point_cloud_sim3_icp_aligned.ply",
-        points
-    )
+
+    source_cloud_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_icp_aligned.ply", points)
     backend = PoissonBackendConfig(depth=5).setup_target()
 
     artifacts = backend.run_point_cloud(
@@ -118,12 +114,9 @@ def test_poisson_backend_reconstructs_from_aligned_point_cloud(tmp_path: Path) -
 def test_nksr_backend_reconstructs_from_aligned_point_cloud(tmp_path: Path) -> None:
     pytest.importorskip("nksr")
     pytest.importorskip("torch")
-    
+
     points = np.random.rand(100, 3)
-    source_cloud_path = write_point_cloud_ply(
-        tmp_path / "point_cloud_sim3_icp_aligned.ply",
-        points
-    )
+    source_cloud_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_icp_aligned.ply", points)
     backend = NksrBackendConfig(voxel_size=0.1).setup_target()
 
     artifacts = backend.run_point_cloud(
@@ -133,6 +126,6 @@ def test_nksr_backend_reconstructs_from_aligned_point_cloud(tmp_path: Path) -> N
 
     assert artifacts.reference_cloud_path.exists()
     assert artifacts.mesh_path is not None
-    
+
     metadata = json.loads(artifacts.metadata_path.read_text(encoding="utf-8"))
     assert metadata["method_id"] == "nksr"

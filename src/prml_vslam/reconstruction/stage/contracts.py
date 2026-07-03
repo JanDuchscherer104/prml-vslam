@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, TypeAlias, Union
+from typing import Annotated, TypeAlias
 
 from pydantic import Field
 
@@ -15,7 +15,7 @@ from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.utils import BaseConfig, BaseData, RunArtifactPaths
 
 ReconstructionBackend: TypeAlias = Annotated[
-    Union[NksrBackendConfig, PoissonBackendConfig],
+    NksrBackendConfig | PoissonBackendConfig,
     Field(discriminator="method_id"),
 ]
 
