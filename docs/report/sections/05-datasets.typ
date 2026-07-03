@@ -6,6 +6,7 @@
 We employ three datasets with distinct evidential roles. ADVIO supplies
 deployment-realistic smartphone visual-inertial odometry (VIO) trajectories in common public spaces but lacks dense reference geometry; TUM RGB-D supplies high-quality indoor RGB-D observations with motion-capture trajectory references; and our custom Record3D dataset allows end-to-end verification of both tracking and dense reconstruction capabilities against ARKit trajectories and LiDAR-derived point-maps.
 
+
 #figure(
   grid(
     columns: (1fr, 1fr, 1fr),
@@ -23,7 +24,7 @@ deployment-realistic smartphone visual-inertial odometry (VIO) trajectories in c
       #par(justify: false)[#text(size: 7.2pt)[Record3D `29-08`: iPhone LiDAR cloud and ARKit trajectory.]]
     ],
   ),
-  caption: [Qualitative dataset coverage: trajectory-only ADVIO, controlled RGB-D TUM reference geometry, and target-domain Record3D smartphone RGB-D capture.],
+  caption: [Qualitative dataset coverage: trajectory-only ADVIO, controlled RGB-D TUM reference geometry, and target-domain Record3D iPhone RGB-D capture.],
 ) <fig:dataset-qualitative-coverage>
 
 The normalized datastore is the source-stage artifact boundary for the artifact-first pipeline in
@@ -40,13 +41,10 @@ reopening slow native containers, while keeping ground-truth poses, provider tra
 maps, and reference clouds outside the method observation stream.
 
 ADVIO contributes 23 pedestrian smartphone recordings spanning about 4.47 km and 1 h 8 min, with
-19 indoor and 4 outdoor sequences @cortes2018advio. The official assets used here are the iPhone RGB
-video, frame timestamps, calibration metadata, ground-truth poses, manual fixpoints, and optional
-ARKit and ARCore provider pose streams @cortes2018advio @aaltovisionAdvioRepo. ADVIO does not publish
-per-provider transformations into a common fixedpoint frame; the repository estimates those
-transforms from `fixpoints.csv` and each provider pose stream. In this report ADVIO is
-trajectory-only: no source-prepared dense reference cloud is published for ADVIO, so dense-cloud
-metrics require a separately documented reference reconstruction.
+19 indoor and 4 outdoor sequences @cortes2018advio. The supported ADVIO assets used here are the
+iPhone RGB video at 60 fps with exact timestamps and calibrated
+1280x720 intrinsics, a 100 Hz ground-truth pose trajectory constrained by manual fixpoint positions, raw iPhone inertial streams, 60 Hz ARKit poses, and 30 Hz Pixel ARCore
+poses @cortes2018advio @aaltovisionAdvioRepo.
 
 ADVIO ground-truth, ARCore, and ARKit trajectories do not start in a common provider world, so direct
 provider-world overlays would not be valid trajectory comparisons. The source data and fixpoint
@@ -87,38 +85,37 @@ For $t in [t_0, t_1]$, the published pose is
 
 $
   bold(T)^"local"_"c,s" (t) =
-  (bold(T)^"fix"_"c,GT" (t_0))^(-1) bold(T)^"fix"_"c,s" (t).
+  (bold(T)^"fix"_"c,GT" (t_0))^(-1) bold(T)^"fix"_"c,s" (t),
 $
+
+for any of the three sources $s$, such that all poses are first-pose-relative and in the same local world frame.
 
 ARCore and ARKit are benchmark
 candidates only in this registered frame, while post-hoc GT-aligned ARCore/ARKit files are provided as diagnostics.
 
 TUM RGB-D provides synchronized Kinect color and registered depth at 30 Hz and 640x480 resolution,
 camera intrinsics, and 100 Hz motion-capture trajectories @sturm2012benchmark. Its file format
-defines pre-registered RGB/depth images, 16-bit depth PNG values scaled by 5000, and timestamped trajectory rows. TUM RGB-D is the controlled indoor
+defines pre-registered RGB/depth images, 16-bit depth PNG values scaled by 5000, and timestamped trajectory rows. TUM RGB-D represents a controlled
 benchmark reference, and the normalized adapter can create deterministic metric reference clouds from
-the same selected RGB-D frames used as method input.
+the same selected RGB-D frames used as method input to allow for dense-geometry evaluation.
 
-Record3D supplies the custom smartphone-data path, not a public gold-standard benchmark. The
-current catalog contains eight archived `.r3d` recordings with RGB and metric depth payloads,
-confidence values, camera intrinsics, frame timestamps, and ARKit poses @record3d2026. The
-normalized archive path prepares RGB-D observations, an ARKit provider trajectory, and a
-depth-derived reference cloud in `record3d_world`; these are target-domain provider references, not
-laboratory motion-capture ground truth.
+Record3D supplies custom iPhone captures, with RGB and LiDAR depth at 30 Hz, ARKit poses, as well as intrinsics. The eight recorded scenes are short outdoor pedestrian trajectories, of which a few contain dynamic objects and loop closures, while all are captured in planar public spaces.
 
-TUM RGB-D and Record3D use a different normalization from ADVIO because their replay and reference
-geometry are tied to one selected observation stream. RGB and depth payloads are resized together,
-intrinsics are scaled into the stored raster, depth units are normalized to meters, and deterministic
-point-level reference-cloud sampling is applied after selected observations contribute. Their stored
-camera poses are first-pose-relative,
+TUM RGB-D and Record3D employ the same first-pose-relative normalization as ADVIO to normalize the poses of their single observation stream to ensure that the first pose of the first frame is the local world-frame anchor:
 
 $
   bold(T)'_k = (bold(T)_0)^(-1) bold(T)_k,
 $
 
-so the first observation becomes the local world-frame anchor. This matches the TUM RGB-D loading
-convention used by the upstream ViSTA-SLAM dataset adapter, while keeping the raw motion-capture or
-provider world only as provenance @zhang2026vistaslamRepo.
+This matches the TUM RGB-D loading
+convention used by the upstream ViSTA-SLAM dataset adapter, ensuring that the anchor pose of each sequence becomes:
+
+$
+  bold(T)'_0 = (bold(T)_0)^(-1) bold(T)_0 = I_4.
+$
+
+RGB and depth payloads are resized together,
+intrinsics are scaled into the stored raster, depth units are normalized to meters, and reference-clouds are created by back-projecting the depth maps of the selected frames into the local world frame, applying a configured pixel-stride, filtering out-of-range and low-confidence points, followed by a randomized sub-sampling to a maximum point count.
 
 The normalized datastore used for the final evidence pass covers all three source families. The
 coverage summary in @tab:dataset-duration-coverage is derived from the checked-in
