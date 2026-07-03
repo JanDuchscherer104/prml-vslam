@@ -175,6 +175,87 @@ profiles rather than scientific variables.
   caption: [Supplementary datastore modality and frame contracts for representative normalized entries.],
 ) <tab:appendix-vslam-datastore-contracts>
 
+== Dataset Coverage and ADVIO Catalog Disclosure
+
+The supplementary dataset disclosure below keeps catalog composition and normalized-store coverage
+outside the main three-page dataset narrative. The ADVIO catalog charts in
+@fig:appendix-advio-catalog-disclosure document scene metadata over the public smartphone VIO
+corpus, @fig:appendix-dataset-summary-bars summarizes the normalized evidence-pass coverage, and
+@tab:appendix-normalized-stat-surface and @tab:appendix-reference-caveats state which statistics and
+reference semantics are carried by the persisted datastore.
+
+#figure(
+  grid(
+    columns: (1fr, 1fr),
+    gutter: 0.65em,
+    [
+      #image("../../figures/advio/advio-crowd-density.png", width: 100%)
+      #par(justify: false)[#text(size: 7.0pt)[Crowd-density labels from the ADVIO scene catalog.]]
+    ],
+    [
+      #image("../../figures/advio/advio-scene-theaters.png", width: 100%)
+      #par(justify: false)[#text(size: 7.0pt)[Venue and indoor/outdoor labels from the same catalog.]]
+    ],
+  ),
+  caption: [ADVIO catalog metadata over 23 scenes: crowd density None 5, Low 8, Moderate 5, and High 5; venues Mall 10, Office 7, Metro 2, Outdoor 2, and Outdoor urban 2; 19 indoor and 4 outdoor scenes.],
+) <fig:appendix-advio-catalog-disclosure>
+
+#figure(
+  image("../../figures/evidence/dataset-summary-bars.svg", width: 100%),
+  caption: [Normalized datastore coverage generated from `docs/figures/evidence/dataset-summary.csv`, using one preferred normalized profile per sequence.],
+) <fig:appendix-dataset-summary-bars>
+
+#figure(
+  {
+    set text(size: 7.2pt)
+    table(
+      columns: (0.86fr, 2.34fr),
+      align: (left, left),
+      inset: (x: 0.18em, y: 0.18em),
+      column-gutter: 0.32em,
+      toprule(),
+      table.header([Scope], [Persisted normalized statistics]),
+      midrule(),
+      [#text(size: 6.4pt)[#ds-code("sequence")]],
+      ragged([Manifest frame count, manifest duration, and manifest mean FPS.]),
+      [#text(size: 6.4pt)[#ds-code("observation_") \ #ds-code("sequence")]],
+      ragged([Observation frame count, RGB and depth frame counts, depth coverage, observation duration, and observation mean FPS.]),
+      [#text(size: 6.4pt)[#ds-code("reference_") \ #ds-code("trajectory")]],
+      ragged([Reference pose count, duration, path length, speed, angular rate, curvature, and tangent-angle statistics.]),
+      [#text(size: 6.4pt)[#ds-code("candidate_") \ #ds-code("trajectory")]],
+      ragged([Provider or method-candidate pose count, duration, path length, speed, angular rate, curvature, and tangent-angle statistics when present.]),
+      bottomrule(),
+    )
+  },
+  caption: [Compact normalized-statistic surface persisted for materialized dataset entries.],
+) <tab:appendix-normalized-stat-surface>
+
+#figure(
+  {
+    set text(size: 7.2pt)
+    table(
+      columns: (0.72fr, 1.08fr, 1.5fr),
+      align: (left, left, left),
+      inset: (x: 0.16em, y: 0.16em),
+      column-gutter: 0.28em,
+      toprule(),
+      table.header([Dataset], [Reference source], [Limitation for interpretation]),
+      midrule(),
+      [ADVIO],
+      ragged([INS trajectory constrained by manual fixpoints; ARKit and ARCore provider trajectories are baselines.]),
+      ragged([Trajectory-only in this repository; no dense cloud is source-prepared, and provider paths require explicit fixedpoint/common-start registration.]),
+      [TUM RGB-D],
+      ragged([Motion-capture trajectory with registered depth and a source-prepared RGB-D reference cloud.]),
+      ragged([Controlled indoor benchmark; valuable as a research-standard anchor, but not deployment smartphone video.]),
+      [Record3D],
+      ragged([ARKit provider trajectory and depth-derived iPhone RGB-D reference cloud.]),
+      ragged([Provider-quality mobile reference rather than laboratory ground truth, so it validates target-domain ingestion more than absolute accuracy.]),
+      bottomrule(),
+    )
+  },
+  caption: [Reference semantics and caveats that bound dataset-level interpretation.],
+) <tab:appendix-reference-caveats>
+
 == Artifact and Responsibility Map
 
 The artifact map is supplementary context for reproducing or extending the benchmark. The sidecar
