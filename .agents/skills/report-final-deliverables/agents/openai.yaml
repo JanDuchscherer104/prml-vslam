@@ -1,0 +1,4 @@
+interface:
+  display_name: "Report Final Deliverables"
+  short_description: "Report and slide claim discipline"
+  default_prompt: "Use $report-final-deliverables to revise PRML VSLAM report or slide prose with Typst, citation, claim, and benchmark-evidence checks."
