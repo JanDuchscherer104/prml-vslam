@@ -56,15 +56,9 @@ normalization, method execution, trajectory association, and transform visualiza
 but not sufficient for superiority claims. Such claims require a frozen matrix of datasets,
 sequences, sampling policies, method configurations, and metric artifacts.
 
-The final local evidence set is the `benchmark-18` sweep family, and the artifact classes required
-to reproduce or extend these summaries are enumerated in @tab:artifact-map. The raw trajectory
-metric files for these local summaries are not checked into the manuscript source tree.
-@tab:trajectory-results reports matched-scene medians: for each dataset, only sequences completed
-by both MASt3R-SLAM and ViSTA-SLAM are included in the method comparison. Values are Sim(3)-aligned
-RMSE; RPE uses $Delta = 1 "m"$. The table is descriptive because it reports medians without
-confidence intervals or sequence-level ranges. It is therefore a shape-and-drift comparison under
-the shared artifact contract, not an externally reproducible benchmark table or a claim of
-recovered metric scale.
+= Trajectory Evaluation Results
+
+// TODO: Trajectory Evaluation Results by VB.
 
 #figure(
   {
@@ -89,25 +83,7 @@ recovered metric scale.
   caption: [Matched-scene trajectory medians from local `benchmark-18` sweep summaries; raw metric files are not checked into the manuscript source tree.],
 ) <tab:trajectory-results>
 
-The table shows three different regimes. On the six matched TUM RGB-D sequences, MASt3R-SLAM is
-approximately three times lower than ViSTA-SLAM in global translation error and also lower in local
-RPE. On the five matched Record3D sequences, global APE is nearly tied, but MASt3R-SLAM has much
-lower local translation drift. On the four matched ADVIO runs, both vision-only methods fail in a
-rotation-dominated way: APE rotation is 88#sym.degree for MASt3R-SLAM and 112#sym.degree for
-ViSTA-SLAM, and translational RPE is about 4 m per 1 m interval. This rotation evidence is
-qualified by a known gravity-lock gate issue in the local ADVIO evaluation path, so the ADVIO
-orientation values do not isolate method-only rotational accuracy. The final sweep also exposes a
-robustness tradeoff: ViSTA-SLAM completed all 18 selected method runs, whereas MASt3R-SLAM
-completed 15 and failed on the three longest scenes because of the fixed 512-keyframe buffer.
-Length-stratified Record3D summaries further show that MASt3R-SLAM is stronger on shorter scenes,
-whereas its local RPE degrades on the longest scenes and ViSTA-SLAM remains flatter. These details
-support a local robustness interpretation without turning the final sweep into a general
-leaderboard.
 
-ADVIO also provides mobile visual-inertial baselines. @tab:advio-baselines compares registered
-ARCore and ARKit provider trajectories with the two monocular methods on the same four ADVIO
-matched scenes used in @tab:trajectory-results. These provider tracks are baselines and context,
-not privileged method inputs.
 
 #figure(
   {
@@ -130,11 +106,9 @@ not privileged method inputs.
   caption: [Local final-sweep summary of ADVIO registered provider baselines and monocular methods on the same matched scenes; raw metric files are not checked into the manuscript source tree.],
 ) <tab:advio-baselines>
 
-The provider baselines are substantially stronger because they use phone sensor fusion rather than
-only the retrospective RGB stream. ARCore and ARKit are about 1--2 % off over the reported ADVIO
-walks in translation, while the monocular methods lose both orientation and local drift. This does
-not make the provider tracks ground truth; it shows the performance ceiling supplied by mobile VIO
-under the repository's fixedpoint-common-start registration.
+// Point Cloud
+
+= Point Cloud Evaluation Results
 
 Dense-cloud evaluation is available only where a reference cloud exists. @tab:dense-cloud-results
 therefore excludes ADVIO and reports local final-sweep summaries of completed post-ICP Sim(3) cloud
