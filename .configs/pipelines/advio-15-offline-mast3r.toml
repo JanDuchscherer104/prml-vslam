@@ -1,5 +1,5 @@
-# advio-15-offline-mast3r.toml
-experiment_name = "advio-15-offline-mast3r"
+# TUM-RGBD MASt3R offline smoke config.
+experiment_name = "mast3r-offline-freiburg-cabinet"
 mode            = "offline"
 output_dir      = ".artifacts"
 
@@ -7,13 +7,8 @@ output_dir      = ".artifacts"
 enabled = true
 
     [stages.source.backend]
-    source_id   = "advio"
-    sequence_id = "advio-15"
-
-        [stages.source.backend.dataset_serving]
-        pose_source     = "ground_truth"
-        pose_frame_mode = "provider_world"
-
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
 
 [stages.slam]
 enabled = true
@@ -24,6 +19,7 @@ enabled = true
 
     [stages.slam.backend]
     method_id            = "mast3r"
+    max_frames           = 500
     img_size             = 224
     keyframe_buffer_size = 64
 
@@ -31,11 +27,11 @@ enabled = true
 enabled = false
 
 [stages.align_trajectory]
-enabled         = true
+enabled         = false
 baseline_source = "ground_truth"
 
 [stages.evaluate_trajectory]
-enabled = true
+enabled = false
 
     [stages.evaluate_trajectory.evaluation]
     baseline_source = "ground_truth"

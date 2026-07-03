@@ -44,6 +44,7 @@ class VistaSlamRuntime:
         slam: VistaOnlineSlam,
         flow_tracker: VistaFlowTracker,
         frame_preprocessor: UpstreamVistaFramePreprocessor,
+        config: VistaSlamBackendConfig,
         artifact_root: Path,
         output_policy: SlamOutputPolicy,
         console: Console,
@@ -53,6 +54,7 @@ class VistaSlamRuntime:
         self._slam = slam
         self._flow_tracker = flow_tracker
         self._frame_preprocessor = frame_preprocessor
+        self._cfg = config
         self._artifact_root = artifact_root
         self._output_policy = output_policy
         self._console = console
@@ -127,11 +129,18 @@ class VistaSlamRuntime:
 
     def _is_keyframe(self, *, source_frame_index: int, grayscale: np.ndarray) -> bool:
         """Return whether the current source frame should enter upstream ViSTA."""
+        stride_keyframe = source_frame_index != 0 and (source_frame_index - 1) % self._stride == 0
         match self._keyframe_detection:
             case "stride":
-                return source_frame_index != 0 and (source_frame_index - 1) % self._stride == 0
+                return stride_keyframe
             case "flow":
                 return bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+            case "flow_stride":
+                flow_keyframe = bool(self._flow_tracker.compute_disparity(grayscale, visualize=False))
+                return flow_keyframe or (
+                    self._accepted_keyframe_count >= self._cfg.max_view_num
+                    and stride_keyframe
+                )
             case _:
                 raise RuntimeError(f"Unexpected ViSTA keyframe policy: {self._keyframe_detection}")
 
@@ -334,6 +343,7 @@ def create_vista_runtime(
         slam=runtime.slam,
         flow_tracker=runtime.flow_tracker,
         frame_preprocessor=runtime.frame_preprocessor,
+        config=config,
         artifact_root=artifact_root,
         output_policy=output_policy,
         console=console,

@@ -1,0 +1,437 @@
+# LingBot-Map full sweep — all normalized TUM RGB-D, Record3D, and ADVIO sequences.
+#
+# 50 datasets × 1 method = 50 runs.
+#
+# Requires the lingbot extra (conflicts with vista and mast3r — install separately):
+#   mamba activate prml-vslam
+#   export UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX
+#   uv sync --extra dev --extra streaming --extra lingbot
+#
+# Inspect the expanded plan (no execution):
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/full-lingbot-sweep.toml
+#
+# Execute sequentially, stop on first failure:
+#   uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-sweep.toml
+#
+# Execute sequentially, attempt all runs:
+#   uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/full-lingbot-sweep.toml \
+#       --continue-on-failure
+#
+# NOTE on frame strides: LingBot is trained within ~320 direct-mode views.
+# TUM and Record3D sequences use frame_stride=5 (~100–200 processed frames)
+# and ADVIO sequences use frame_stride=10 to stay comfortably within that range.
+
+[sweep]
+name       = "full-lingbot"
+output_dir = ".artifacts/sweeps"
+
+# ── TUM RGB-D ─────────────────────────────────────────────────────────────────
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_360"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk2"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_floor"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_plant"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_room"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_rpy"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_teddy"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_xyz"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_360_hemisphere"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_360_kidnap"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_desk"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_large_with_loop"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_rpy"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg2_xyz"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_cabinet"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_long_office_household"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_teddy"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── ADVIO ─────────────────────────────────────────────────────────────────────
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-01"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-02"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-03"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-04"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-05"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-06"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-07"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-08"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-09"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-10"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-11"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-12"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-13"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-14"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-16"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-17"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-18"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-19"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-20"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-21"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-22"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-23"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Record3D ──────────────────────────────────────────────────────────────────
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-17-10"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-20-22"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-24-27"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-26-32"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-27-25"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-32-27"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-35-44"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Methods ───────────────────────────────────────────────────────────────────
+
+[methods.lingbot_map]
+config_path = ".configs/templates/lingbot-slam.toml"

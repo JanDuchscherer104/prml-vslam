@@ -8,6 +8,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from prml_vslam.interfaces import (
+    ObservationIndexEntry,
+    ObservationProvenance,
+    ObservationSequenceIndex,
+    ObservationSequenceRef,
+)
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline.config import (
     STAGE_SECTION_ORDER,
@@ -22,13 +28,27 @@ from prml_vslam.sources.config import (
     Record3DSourceConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    normalized_runtime_profile_for_source_config,
 )
-from prml_vslam.sources.contracts import PreparedBenchmarkInputs, Record3DTransportId, SequenceManifest
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    Record3DTransportId,
+    ReferenceCloudCoordinateStatus,
+    ReferenceCloudRef,
+    ReferenceCloudSource,
+    ReferenceSource,
+    ReferenceTrajectoryRef,
+    SequenceManifest,
+)
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
-from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.contracts import DatasetId, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalization import normalized_runtime_profile_for_dataset
+from prml_vslam.sources.datasets.normalized_store import normalized_store_for_path_config
+from prml_vslam.sources.datasets.tum_rgbd import TumRgbdDatasetService
 from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import PathConfig, RunArtifactPaths
+from prml_vslam.utils.portable_paths import rebase_model_paths
 from prml_vslam.utils.serialization import write_json
 
 
@@ -83,6 +103,24 @@ def test_stage_config_rejects_negative_resource_values() -> None:
         StageConfig(custom_resources={"custom": -1.0})
 
 
+def test_mast3r_backend_config_validates_supported_img_size() -> None:
+    from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig
+
+    assert Mast3rSlamBackendConfig(img_size=224).img_size == 224
+    assert Mast3rSlamBackendConfig(img_size=512).img_size == 512
+    with pytest.raises(ValidationError):
+        Mast3rSlamBackendConfig(img_size=288)
+
+
+def test_mast3r_backend_config_match_frac_thresh_override() -> None:
+    from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig
+
+    assert Mast3rSlamBackendConfig().match_frac_thresh is None
+    assert Mast3rSlamBackendConfig(match_frac_thresh=0.6).match_frac_thresh == 0.6
+    with pytest.raises(ValidationError):
+        Mast3rSlamBackendConfig(match_frac_thresh=1.5)
+
+
 def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> None:
     assert [key.value for key in StageKey] == [
         "source",
@@ -93,6 +131,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "align.cloud",
         "evaluate.cloud",
         "reconstruction",
+        "evaluate.image",
         "summary",
     ]
     assert list(STAGE_SECTION_ORDER) == [
@@ -102,8 +141,9 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
         (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
         (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
-        (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
         (StageKey.RECONSTRUCTION, "reconstruction"),
+        (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+        (StageKey.IMAGE_EVALUATION, "evaluate_image"),
         (StageKey.SUMMARY, "summary"),
     ]
 
@@ -198,18 +238,22 @@ def test_tum_rgbd_cloud_alignment_plan_does_not_require_local_ci_data(tmp_path: 
         config.compile_plan(path_config, fail_on_unavailable=True)
 
 
-def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp_path: Path) -> None:
+def test_tum_rgbd_cloud_alignment_plan_requires_normalized_reference_cloud_without_reconstruction(
+    tmp_path: Path,
+) -> None:
     data_dir = tmp_path / ".data"
     sequence_dir = data_dir / "tum_rgbd" / "rgbd_dataset_freiburg1_desk"
     (sequence_dir / "rgb").mkdir(parents=True)
+    (sequence_dir / "depth").mkdir()
     (sequence_dir / "rgb.txt").write_text("0.000000 rgb/0.000000.png\n", encoding="utf-8")
+    (sequence_dir / "depth.txt").write_text("0.000000 depth/0.000000.png\n", encoding="utf-8")
     (sequence_dir / "groundtruth.txt").write_text(
         "0.000000 0.0 0.0 0.0 0.0 0.0 0.0 1.0\n",
         encoding="utf-8",
     )
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=data_dir)
     config = build_run_config(
-        experiment_name="tum-rgbd-cloud-alignment-missing-depth",
+        experiment_name="tum-rgbd-cloud-alignment-missing-normalized-reference-cloud",
         output_dir=path_config.artifacts_dir,
         source_backend=TumRgbdSourceConfig(sequence_id="freiburg1_desk"),
         method=MethodId.VISTA,
@@ -226,6 +270,64 @@ def test_tum_rgbd_cloud_alignment_plan_requires_depth_without_reconstruction(tmp
         stage.availability_reason
         == "Cloud alignment requires a source-prepared reference cloud or reference reconstruction."
     )
+
+
+def test_tum_rgbd_cloud_alignment_uses_exact_normalized_reference_cloud_entry(tmp_path: Path) -> None:
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=tmp_path / ".data")
+    source_backend = TumRgbdSourceConfig(sequence_id="freiburg1_desk")
+    service = TumRgbdDatasetService(path_config)
+    profile = normalized_runtime_profile_for_dataset(
+        dataset_id=DatasetId.TUM_RGBD,
+        service=service,
+        source_config=source_backend,
+    )
+    cloud_path = tmp_path / "source-cloud.ply"
+    metadata_path = tmp_path / "source-cloud.metadata.json"
+    cloud_path.write_text(
+        "ply\nformat ascii 1.0\nelement vertex 0\nproperty float x\nproperty float y\nproperty float z\nend_header\n",
+        encoding="utf-8",
+    )
+    write_json(metadata_path, {"source": "tum_rgbd"})
+    entry = normalized_store_for_path_config(DatasetId.TUM_RGBD, path_config).create_entry(
+        profile=profile,
+        sequence_manifest=SequenceManifest(sequence_id="freiburg1_desk", dataset_id=DatasetId.TUM_RGBD),
+        benchmark_inputs=PreparedBenchmarkInputs(
+            reference_clouds=[
+                ReferenceCloudRef(
+                    source=ReferenceCloudSource.TUM_RGBD,
+                    path=cloud_path,
+                    metadata_path=metadata_path,
+                    target_frame="tum_rgbd_world",
+                    native_frame="tum_rgbd_world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ]
+        ),
+    )
+    config = build_run_config(
+        experiment_name="tum-rgbd-cloud-alignment-present-normalized-reference-cloud",
+        output_dir=path_config.artifacts_dir,
+        source_backend=source_backend,
+        method=MethodId.VISTA,
+        trajectory_alignment_enabled=True,
+        cloud_alignment_enabled=True,
+        reference_enabled=False,
+    )
+
+    plan = config.compile_plan(path_config)
+    stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert stage.available is True
+
+    stored_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
+    stored_inputs.reference_clouds[0].metadata_path.unlink()
+    unavailable_plan = config.compile_plan(path_config)
+    unavailable_stage = next(stage for stage in unavailable_plan.stages if stage.key is StageKey.CLOUD_ALIGNMENT)
+
+    assert unavailable_stage.available is False
 
 
 def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> None:
@@ -253,33 +355,7 @@ def test_run_config_uses_stage_config_for_resource_policy(tmp_path: Path) -> Non
     assert config.stages.slam.custom_resources == {"custom_accelerator": 3.0}
 
 
-def test_vista_full_target_toml_parses_through_run_config(tmp_path: Path) -> None:
-    repo_root = _repo_root()
-    config_path = repo_root / ".configs/pipelines/vista-full.toml"
-    path_config = PathConfig(root=repo_root, artifacts_dir=tmp_path / ".artifacts")
-
-    run_config = RunConfig.from_toml(config_path)
-
-    run_config_plan = run_config.compile_plan(path_config)
-
-    assert isinstance(run_config.stages.source.backend, TumRgbdSourceConfig)
-    assert run_config.stages.source.backend.sequence_id == "freiburg3_large_cabinet"
-    assert run_config.stages.source.backend.frame_stride == 3
-    assert run_config.stages.source.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
-    assert run_config_plan.source.source_id == DatasetId.TUM_RGBD.value
-    assert run_config_plan.source.sequence_id == "freiburg3_large_cabinet"
-    assert run_config_plan.source.replay_mode == "fast_as_possible"
-    assert run_config_plan.source.metadata["dataset_id"] == DatasetId.TUM_RGBD.value
-    assert run_config.stages.align_ground.enabled is True
-    assert run_config.stages.reconstruction.enabled is True
-    assert run_config.stages.reconstruction.backend.extract_mesh is True
-    assert run_config.stages.evaluate_trajectory.enabled is True
-    assert run_config.visualization.point_cloud_decimation_keep_ratio == 0.25
-    assert run_config.visualization.mesh_decimation_keep_ratio == 0.25
-    assert run_config.visualization.decimation_random_seed == 0
-
-
-def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) -> None:
+def test_run_plan_expected_fps_ignores_raw_advio_cadence_without_normalized_entry(tmp_path: Path) -> None:
     native_fps = 60.04133960359873
     frames_path = tmp_path / ".data" / "advio" / "advio-20" / "iphone" / "frames.csv"
     frames_path.parent.mkdir(parents=True)
@@ -301,8 +377,81 @@ def test_run_plan_expected_fps_uses_advio_frame_stride_metadata(tmp_path: Path) 
 
     plan = run_config.compile_plan(path_config)
 
-    assert plan.source.expected_fps == pytest.approx(native_fps / 5)
-    assert plan.model_dump(mode="json")["source"]["expected_fps"] == pytest.approx(native_fps / 5)
+    assert plan.source.expected_fps is None
+    assert plan.model_dump(mode="json")["source"]["expected_fps"] is None
+
+
+def test_run_plan_expected_fps_uses_normalized_observation_index_for_runtime_sampling(tmp_path: Path) -> None:
+    class _ObservationIndexSource:
+        label = "advio-15"
+
+        def prepare_sequence_manifest(self, output_dir: Path) -> SequenceManifest:
+            timestamps_path = output_dir / "manifest_timestamps.json"
+            write_json(timestamps_path, {"timestamps_ns": [0, 200_000_000, 400_000_000, 600_000_000]})
+            return SequenceManifest(
+                sequence_id="advio-15",
+                dataset_id=DatasetId.ADVIO,
+                timestamps_path=timestamps_path,
+            )
+
+        def prepare_benchmark_inputs(self, output_dir: Path) -> PreparedBenchmarkInputs:
+            payload_root = output_dir / "observations"
+            payload_root.mkdir(parents=True)
+            rgb_dir = payload_root / "rgb"
+            rgb_dir.mkdir()
+            for seq in range(4):
+                (rgb_dir / f"{seq:06d}.png").write_bytes(b"placeholder")
+            index_path = payload_root / "observations.json"
+            index_path.write_text(
+                ObservationSequenceIndex(
+                    source_id="advio",
+                    sequence_id="advio-15",
+                    observation_count=4,
+                    rows=[
+                        ObservationIndexEntry(
+                            seq=seq,
+                            timestamp_ns=timestamp_ns,
+                            rgb_path=Path(f"rgb/{seq:06d}.png"),
+                            provenance=ObservationProvenance(source_id="advio", source_frame_index=seq),
+                        )
+                        for seq, timestamp_ns in enumerate([0, 66_666_667, 133_333_333, 200_000_000])
+                    ],
+                ).model_dump_json(),
+                encoding="utf-8",
+            )
+            return PreparedBenchmarkInputs(
+                observation_sequences=[
+                    ObservationSequenceRef(
+                        source_id="advio",
+                        sequence_id="advio-15",
+                        index_path=index_path,
+                        payload_root=payload_root,
+                        observation_count=4,
+                    )
+                ]
+            )
+
+    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts", data_dir=tmp_path / ".data")
+    source_backend = AdvioSourceConfig(sequence_id="advio-15", frame_stride=3)
+    profile = normalized_runtime_profile_for_source_config(
+        dataset_id=DatasetId.ADVIO,
+        sequence_id="advio-15",
+        source_config=source_backend,
+    )
+    normalized_store_for_path_config(DatasetId.ADVIO, path_config).create_entry_from_source(
+        profile=profile,
+        source=_ObservationIndexSource(),
+    )
+    run_config = build_run_config(
+        experiment_name="advio-sampled-fps",
+        output_dir=path_config.artifacts_dir,
+        source_backend=source_backend,
+        method=MethodId.VISTA,
+    )
+
+    plan = run_config.compile_plan(path_config)
+
+    assert plan.source.expected_fps == pytest.approx(5.0)
 
 
 def test_run_plan_expected_fps_uses_target_fps_without_native_metadata(tmp_path: Path) -> None:
@@ -344,6 +493,11 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "freiburg1_room",
                 "target_fps": 15.0,
                 "replay_mode": "fast_as_possible",
+                "reference_cloud": {
+                    "depth_stride_px": 4,
+                    "max_points": 5000,
+                    "random_seed": 23,
+                },
             }
         }
     )
@@ -354,7 +508,7 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
                 "sequence_id": "advio-20",
                 "dataset_serving": {
                     "pose_source": "ground_truth",
-                    "pose_frame_mode": "provider_world",
+                    "pose_frame_mode": "fixedpoint_common_start_local",
                 },
             }
         }
@@ -373,10 +527,13 @@ def test_source_stage_config_parses_discriminated_backend_variants() -> None:
     assert isinstance(video.backend, VideoSourceConfig)
     assert isinstance(tum.backend, TumRgbdSourceConfig)
     assert tum.backend.replay_mode is ReplayMode.FAST_AS_POSSIBLE
+    assert isinstance(tum.backend.reference_cloud, ReferenceCloudConfig)
+    assert tum.backend.reference_cloud.depth_stride_px == 4
+    assert tum.backend.reference_cloud.max_points == 5000
+    assert tum.backend.reference_cloud.random_seed == 23
     assert isinstance(advio.backend, AdvioSourceConfig)
     assert isinstance(advio.backend.dataset_serving, AdvioServingConfig)
     assert advio.backend.replay_mode is ReplayMode.REALTIME
-    assert advio.backend.normalize_video_orientation is True
     assert isinstance(record3d.backend, Record3DSourceConfig)
     assert record3d.backend.transport is Record3DTransportId.USB
 
@@ -501,16 +658,66 @@ def test_load_reused_stage_results_reconstructs_source_and_slam_outputs(tmp_path
     write_json(run_paths.benchmark_inputs_path, PreparedBenchmarkInputs())
     run_paths.trajectory_path.parent.mkdir(parents=True)
     run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
-    run_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_paths.point_cloud_path.write_text("ply\n", encoding="utf-8")
+    run_paths.depth_maps_path.write_text("depth\n", encoding="utf-8")
+    run_paths.point_maps_path.write_text("points\n", encoding="utf-8")
+    run_paths.point_cloud_confidences_path.write_text("conf\n", encoding="utf-8")
 
     results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
 
     assert results[StageKey.SOURCE].outcome.artifacts["sequence_manifest"].path == run_paths.sequence_manifest_path
-    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.dense_points_path
+    assert results[StageKey.SLAM].outcome.artifacts["dense_points_ply"].path == run_paths.point_cloud_path
+    assert results[StageKey.SLAM].outcome.artifacts["depth_maps_npz"].path == run_paths.depth_maps_path
+    assert results[StageKey.SLAM].outcome.artifacts["point_maps_npz"].path == run_paths.point_maps_path
+    assert (
+        results[StageKey.SLAM].outcome.artifacts["point_cloud_confidences_npz"].path
+        == run_paths.point_cloud_confidences_path
+    )
     missing_paths = RunArtifactPaths.build(tmp_path / "missing-benchmark")
     write_json(missing_paths.sequence_manifest_path, SequenceManifest(sequence_id="seq"))
     with pytest.raises(FileNotFoundError, match="benchmark inputs"):
         load_reused_stage_results(missing_paths.artifact_root)
+
+
+def test_load_reused_stage_results_rebases_stale_absolute_sidecar_paths(tmp_path: Path) -> None:
+    run_paths = RunArtifactPaths.build(tmp_path / "imported-run")
+    stale_root = Path("/old-machine/artifacts/imported-run")
+    write_json(
+        run_paths.sequence_manifest_path,
+        SequenceManifest(
+            sequence_id="seq",
+            intrinsics_path=stale_root / "input" / "intrinsics.yaml",
+            rotation_metadata_path=stale_root / "input" / "rotation_metadata.json",
+            timestamps_path=stale_root / "input" / "timestamps.json",
+        ),
+    )
+    write_json(
+        run_paths.benchmark_inputs_path,
+        PreparedBenchmarkInputs(
+            reference_trajectories=[
+                ReferenceTrajectoryRef(
+                    source=ReferenceSource.GROUND_TRUTH,
+                    path=stale_root / "benchmark" / "ground_truth.tum",
+                    metadata_path=stale_root / "benchmark" / "ground_truth.metadata.json",
+                    target_frame="world",
+                    coordinate_status=ReferenceCloudCoordinateStatus.ALIGNED,
+                )
+            ]
+        ),
+    )
+    run_paths.trajectory_path.parent.mkdir(parents=True)
+    run_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+
+    results = {result.stage_key: result for result in load_reused_stage_results(run_paths.artifact_root)}
+
+    source_output = results[StageKey.SOURCE].payload
+    assert source_output.sequence_manifest.intrinsics_path == run_paths.input_intrinsics_path
+    assert source_output.sequence_manifest.rotation_metadata_path == run_paths.input_rotation_metadata_path
+    assert source_output.sequence_manifest.timestamps_path == run_paths.input_timestamps_path
+    reference = source_output.benchmark_inputs.trajectory_for_source(ReferenceSource.GROUND_TRUTH)
+    assert reference is not None
+    assert reference.path == run_paths.artifact_root / "benchmark" / "ground_truth.tum"
+    assert reference.metadata_path == run_paths.artifact_root / "benchmark" / "ground_truth.metadata.json"
 
 
 def test_target_generic_stages_toml_parses_into_stage_bundle() -> None:
@@ -587,6 +794,7 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
         "torch==2.5.1",
         "torchvision==0.20.1",
         "torchaudio==2.5.1",
+        "lpips>=0.1.4,<0.2",
         "xformers",
         "MAST3R-SLAM",
         "MAST3R",
@@ -608,6 +816,25 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
     assert any(
         requirement.startswith("pyrealsense2; sys_platform == 'linux'") for requirement in metadata["MAST3R-SLAM"]
     )
+
+
+def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
+    pyproject = tomllib.loads((_repo_root() / "pyproject.toml").read_text(encoding="utf-8"))
+    lingbot_extra = set(pyproject["project"]["optional-dependencies"]["lingbot"])
+
+    assert lingbot_extra == {
+        "torch==2.5.1",
+        "torchvision==0.20.1",
+        "lpips>=0.1.4,<0.2",
+        "lingbot-map",
+        "flashinfer-python",
+        "torch-c-dlpack-ext==0.1.5",
+    }
+    assert pyproject["tool"]["uv"]["sources"]["lingbot-map"] == {
+        "path": "external/lingbot-map",
+        "editable": True,
+        "extra": "lingbot",
+    }
 
 
 def test_run_config_requires_source_backend_during_planning(tmp_path: Path) -> None:

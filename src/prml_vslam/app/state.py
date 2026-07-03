@@ -12,7 +12,7 @@ from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.utils import PathConfig
 
 from .models import AppState
-from .services import AdvioPreviewRuntimeController, Record3DStreamRuntimeController
+from .services import DatasetPreviewRuntimeController, Record3DStreamRuntimeController
 
 RuntimeT = TypeVar("RuntimeT")
 
@@ -25,12 +25,12 @@ class SessionStateStore:
         *,
         state_key: str = "_prml_vslam_app_state",
         record3d_runtime_key: str = "_prml_vslam_record3d_runtime",
-        advio_runtime_key: str = "_prml_vslam_advio_runtime",
+        dataset_preview_runtime_key: str = "_prml_vslam_dataset_preview_runtime",
         run_service_key: str = "_prml_vslam_pipeline_runtime",
     ) -> None:
         self.state_key = state_key
         self.record3d_runtime_key = record3d_runtime_key
-        self.advio_runtime_key = advio_runtime_key
+        self.dataset_preview_runtime_key = dataset_preview_runtime_key
         self.run_service_key = run_service_key
 
     def load(self) -> AppState:
@@ -51,8 +51,8 @@ class SessionStateStore:
             return state
 
     def save(self, state: AppState) -> None:
-        """Persist the JSON-friendly app state."""
-        st.session_state[self.state_key] = state.model_dump(mode="json")
+        """Persist the app state into in-memory session storage."""
+        st.session_state[self.state_key] = state.model_dump(mode="python")
 
     def load_record3d_runtime(self) -> Record3DStreamRuntimeController:
         """Load or create the opaque Record3D runtime controller for this session."""
@@ -62,12 +62,12 @@ class SessionStateStore:
             factory=Record3DStreamRuntimeController,
         )
 
-    def load_advio_runtime(self) -> AdvioPreviewRuntimeController:
-        """Load or create the opaque ADVIO preview runtime controller for this session."""
+    def load_dataset_preview_runtime(self) -> DatasetPreviewRuntimeController:
+        """Load or create the opaque dataset preview runtime controller for this session."""
         return self._load_runtime(
-            session_key=self.advio_runtime_key,
-            runtime_type=AdvioPreviewRuntimeController,
-            factory=AdvioPreviewRuntimeController,
+            session_key=self.dataset_preview_runtime_key,
+            runtime_type=DatasetPreviewRuntimeController,
+            factory=DatasetPreviewRuntimeController,
         )
 
     def load_run_service(self, *, path_config: PathConfig | None = None) -> RunService:

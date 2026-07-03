@@ -41,7 +41,10 @@ class _CappedStreamingSource(StreamingSequenceSource):
     def __init__(self, source: StreamingSequenceSource, *, max_frames: int) -> None:
         self._source = source
         self._max_frames = max_frames
-        self.label = source.label
+
+    @property
+    def label(self) -> str:
+        return self._source.label
 
     def prepare_sequence_manifest(self, output_dir: Path):
         return self._source.prepare_sequence_manifest(output_dir)
@@ -62,8 +65,6 @@ def build_advio_demo_run_config(
     mode: PipelineMode,
     method: MethodId,
     pose_source: AdvioPoseSource = AdvioPoseSource.GROUND_TRUTH,
-    pose_frame_mode: AdvioPoseFrameMode = AdvioPoseFrameMode.PROVIDER_WORLD,
-    normalize_video_orientation: bool = True,
     dataset_frame_stride: int = 1,
     dataset_target_fps: float | None = None,
 ) -> RunConfig:
@@ -78,9 +79,8 @@ def build_advio_demo_run_config(
             target_fps=dataset_target_fps,
             dataset_serving=AdvioServingConfig(
                 pose_source=pose_source,
-                pose_frame_mode=pose_frame_mode,
+                pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
             ),
-            normalize_video_orientation=normalize_video_orientation,
         ),
         method=method,
         connect_live_viewer=True,

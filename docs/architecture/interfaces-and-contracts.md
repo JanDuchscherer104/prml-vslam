@@ -17,7 +17,7 @@ contract split after the offline/streaming refactor.
 - `prml_vslam.methods`
   - method ids, backend-private config, output policy, runtime updates, and
     thin wrapper integration around external SLAM systems
-- `prml_vslam.alignment`
+- `prml_vslam.align`
   - derived alignment contracts and services such as dominant-ground detection
     and viewer-scoped world alignment metadata
 - `prml_vslam.sources`
@@ -88,6 +88,16 @@ scientific artifacts remain TUM trajectories, PLY clouds, manifests, and stage
 summaries. Normalized `.rrd` recordings are viewer/export artifacts, not the
 scientific source of truth. Bulk arrays stay out of persisted/public contracts
 and move through repo-owned opaque handles instead.
+
+Offline dataset sources may use source-owned normalized store entries at
+`.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`. Each entry is keyed by
+dataset id, sequence id, source id, and byte-affecting source settings,
+including normalize-time sampling, RGB preprocessing, and reference-cloud
+sampling. Store entries persist `entry.json`, `sequence_manifest.json`,
+`benchmark_inputs.json`, and the referenced payload directories. Run-local
+downsampling is represented by sidecar index files, including
+`SequenceManifest.source_frame_indices_path`, instead of copying RGB-D frames
+into each artifact root.
 
 Source-stage visualization is represented by neutral `VisualizationItem`
 values. The source stage may request logging of prepared reference trajectories

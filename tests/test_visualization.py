@@ -8,12 +8,14 @@ from types import SimpleNamespace
 import numpy as np
 import open3d as o3d
 import pytest
+from evo.core import metrics
 from pydantic import ValidationError
 
 # Import pipeline first to keep visualization and curated pipeline exports initialized
 # in the same order used by the app.
 import prml_vslam.pipeline  # noqa: F401
-from prml_vslam.eval.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationCase, TrajectoryEvaluationManifest
 from prml_vslam.interfaces import FrameTransform
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.visualization import COLORS_REF, POINTMAP_REF, ROLE_MODEL_POINTMAP
@@ -222,7 +224,7 @@ def test_create_recording_stream_uses_keyed_history_default_blueprint(monkeypatc
     assert len(sent_blueprints) == 1
     layout = sent_blueprints[0].layout
     assert layout.views[0].origin == "world"
-    assert layout.views[0].contents == list(rerun_helpers.DEFAULT_3D_SCENE_CONTENTS)
+    assert layout.views[0].contents == list(rerun_helpers.RERUN_SCENE.default_3d_scene_contents)
     assert "+ world/slam/alignment/**" in layout.views[0].contents
     assert "+ world/alignment/**" not in layout.views[0].contents
     assert "+ world/reference/trajectory/**" in layout.views[0].contents
@@ -438,7 +440,27 @@ def test_log_pointcloud_decimation_ratio_one_keeps_valid_rows_in_order(monkeypat
     )
 
 
-def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(
+def test_rerun_scene_keeps_reference_and_slam_colors_semantic() -> None:
+    scene = rerun_helpers.RERUN_SCENE
+
+    np.testing.assert_array_equal(scene.reference_color("ground_truth"), scene.gt_rgb)
+    np.testing.assert_array_equal(scene.reference_color("gt"), scene.gt_rgb)
+    assert not np.array_equal(scene.reference_color("arkit"), scene.gt_rgb)
+    assert not np.array_equal(scene.reference_color("arcore"), scene.gt_rgb)
+    assert not np.array_equal(scene.reference_color("arkit"), scene.reference_color("arcore"))
+    assert not np.array_equal(scene.slam_raw_rgb, scene.slam_aligned_rgb)
+    assert (
+        scene.reference_trajectory_path("ground_truth", "aligned") == "world/reference/trajectory/ground_truth/aligned"
+    )
+    assert (
+        scene.reference_points_path("tum_rgbd", "source_native")
+        == "world/reference/points/tum_rgbd/source_native/point_cloud"
+    )
+    assert scene.slam_raw_trajectory_path() == "world/slam/trajectory/raw"
+    assert scene.slam_sim3_trajectory_path("advio_gt_world") == "world/aligned/advio_gt_world/slam/sim3/trajectory"
+
+
+def test_rerun_policy_logs_trajectory_artifact_as_line_start_point_and_pose_transforms(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -450,12 +472,22 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(
         ],
         [0.0, 1.0],
     )
-    line_calls: list[tuple[str, bool]] = []
+    line_calls: list[tuple[str, bool, np.ndarray]] = []
+    point_calls: list[tuple[str, bool, np.ndarray, np.ndarray]] = []
     pose_calls: list[tuple[str, float | None, bool, FrameTransform]] = []
     monkeypatch.setattr(
         rerun_helpers,
         "log_line_strip3d",
-        lambda stream, *, entity_path, positions_xyz, static=False, **kwargs: line_calls.append((entity_path, static)),
+        lambda stream, *, entity_path, positions_xyz, color_rgb, static=False, **kwargs: line_calls.append(
+            (entity_path, static, np.asarray(color_rgb, dtype=np.uint8))
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, colors, static=False, **kwargs: point_calls.append(
+            (entity_path, static, np.asarray(points_xyz, dtype=np.float32), np.asarray(colors, dtype=np.uint8))
+        ),
     )
     monkeypatch.setattr(
         rerun_helpers,
@@ -465,6 +497,7 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(
         ),
     )
     policy = RerunLoggingPolicy(
+        log_static_trajectory_end_pose=True,
         trajectory_pose_axis_length=0.25,
     )
     update = StageRuntimeUpdate(
@@ -488,18 +521,162 @@ def test_rerun_policy_logs_trajectory_artifact_as_line_and_pose_transforms(
 
     policy.observe_update(object(), update)
 
-    assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
+    assert [(entity_path, static) for entity_path, static, _ in line_calls] == [
+        ("world/reference/trajectory/ground_truth/aligned", True)
+    ]
+    assert [(entity_path, static) for entity_path, static, *_ in point_calls] == [
+        ("world/reference/trajectory/ground_truth/aligned/start", True)
+    ]
+    np.testing.assert_allclose(point_calls[0][2], np.array([0.0, 0.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(line_calls[0][2], rerun_helpers.RERUN_SCENE.gt_rgb)
+    np.testing.assert_array_equal(point_calls[0][3], rerun_helpers.RERUN_SCENE.gt_rgb.reshape(1, 3))
     assert [call[0] for call in pose_calls] == [
-        "world/reference/trajectory/ground_truth/aligned/start",
+        "world/reference/trajectory/ground_truth/aligned/end",
         "world/reference/trajectory/ground_truth/aligned/poses/000000",
         "world/reference/trajectory/ground_truth/aligned/poses/000001",
     ]
     assert pose_calls[0][1] == rerun_helpers.TRAJECTORY_START_AXIS_LENGTH
     assert pose_calls[0][2] is True
-    assert pose_calls[0][3].tx == 0.0
+    assert pose_calls[0][3].tx == 1.0
     assert all(axis_length == 0.25 and static is True for _, axis_length, static, _ in pose_calls[1:])
     assert pose_calls[2][3].target_frame == "advio_gt_world"
     assert pose_calls[2][3].tx == 1.0
+
+
+def test_rerun_policy_logs_trajectory_evaluation_cases_under_candidate_namespace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    case_paths = [
+        tmp_path / "ape_translation_errors.npz",
+        tmp_path / "ape_rotation_errors.npz",
+        tmp_path / "rpe_translation_errors.npz",
+        tmp_path / "rpe_rotation_errors.npz",
+    ]
+    for path, offset in zip(case_paths[:2], [1.0, 1.2], strict=True):
+        np.savez(
+            path,
+            values=np.array([0.0, 0.1], dtype=np.float64),
+            timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
+            pair_index=np.array([0, 1], dtype=np.int64),
+            reference_positions_xyz=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64),
+            estimate_positions_xyz=np.array([[0.0, 0.0, 0.0], [offset, 0.0, 0.0]], dtype=np.float64),
+        )
+    for path in case_paths[2:]:
+        np.savez(
+            path,
+            values=np.array([0.0, 0.1], dtype=np.float64),
+            timestamps_s=np.array([0.0, 1.0], dtype=np.float64),
+            pair_index=np.array([0, 1], dtype=np.int64),
+        )
+    manifest = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="run",
+        evaluation_cases=[
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="ape",
+                pose_relation=metrics.PoseRelation.translation_part,
+                error_series_path=case_paths[0],
+                matched_pairs=2,
+            ),
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="ape",
+                pose_relation=metrics.PoseRelation.rotation_angle_deg,
+                error_series_path=case_paths[1],
+                matched_pairs=2,
+            ),
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="rpe",
+                pose_relation=metrics.PoseRelation.translation_part,
+                error_series_path=case_paths[2],
+                matched_pairs=2,
+                delta=1.0,
+                delta_unit="meters",
+            ),
+            TrajectoryEvaluationCase(
+                reference_path=tmp_path / "ground_truth.tum",
+                candidate_path=tmp_path / "vista.tum",
+                reference_source="ground_truth",
+                candidate_source="vista",
+                candidate_coordinate_status="raw",
+                metric_family="rpe",
+                pose_relation=metrics.PoseRelation.rotation_angle_deg,
+                error_series_path=case_paths[3],
+                matched_pairs=2,
+                delta=1.0,
+                delta_unit="meters",
+            ),
+        ],
+    )
+    line_calls: list[str] = []
+    point_calls: list[str] = []
+    correspondence_calls: list[str] = []
+    scalar_calls: list[str] = []
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_line_strip3d",
+        lambda stream, *, entity_path, positions_xyz, color_rgb, static=False, **kwargs: line_calls.append(entity_path),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, colors, radii, static=False: point_calls.append(entity_path),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_correspondence_strips3d",
+        lambda stream, *, entity_path, reference_positions_xyz, estimate_positions_xyz, static=False, **kwargs: (
+            correspondence_calls.append(entity_path)
+        ),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_scalar_series",
+        lambda stream, *, entity_path, timestamps_s, values, static=False, **kwargs: scalar_calls.append(entity_path),
+    )
+    policy = RerunLoggingPolicy()
+
+    policy.observe_update(
+        object(),
+        StageRuntimeUpdate(
+            stage_key=StageKey.TRAJECTORY_EVALUATION,
+            timestamp_ns=1,
+            semantic_events=[manifest],
+        ),
+    )
+
+    assert line_calls == [
+        "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/reference/trajectory",
+        "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/estimate/trajectory",
+    ]
+    assert point_calls == [
+        "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/estimate/ape_points",
+    ]
+    assert correspondence_calls == [
+        "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/correspondences",
+    ]
+    assert scalar_calls == [
+        "world/evaluation/trajectory/ground_truth/ape.translation/vista/raw/error/translation_m",
+        "world/evaluation/trajectory/ground_truth/ape.rotation/vista/raw/error/rotation_deg",
+        "world/evaluation/trajectory/ground_truth/rpe.translation.delta_1_meters/vista/raw/error/translation_m",
+        "world/evaluation/trajectory/ground_truth/rpe.rotation.delta_1_meters/vista/raw/error/rotation_deg",
+    ]
 
 
 def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(
@@ -529,7 +706,7 @@ def test_rerun_policy_logs_aligned_slam_artifacts_under_target_frame_namespace(
         lambda stream, *, entity_path, positions_xyz, **kwargs: line_calls.append(entity_path),
     )
     monkeypatch.setattr(rerun_helpers, "log_transform", lambda *args, **kwargs: None)
-    policy = RerunLoggingPolicy()
+    policy = RerunLoggingPolicy(log_static_trajectory_end_pose=True)
     update = StageRuntimeUpdate(
         stage_key=StageKey.TRAJECTORY_ALIGNMENT,
         timestamp_ns=1,
@@ -613,7 +790,7 @@ def test_rerun_policy_logs_sim3_alignment_marker_without_moving_raw_slam_root(mo
         "log_sim3_transform",
         lambda stream, *, entity_path, scale, static, **kwargs: sim3_calls.append((entity_path, scale, static)),
     )
-    policy = RerunLoggingPolicy()
+    policy = RerunLoggingPolicy(log_static_trajectory_end_pose=True)
     alignment = TrajectoryAlignmentArtifact(
         source_frame="vista_slam_world",
         target_frame="advio_gt_world",
@@ -648,6 +825,7 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
         [0.0, 1.0],
     )
     line_calls: list[tuple[str, bool]] = []
+    point_calls: list[str] = []
     pose_calls: list[str] = []
     monkeypatch.setattr(
         rerun_helpers,
@@ -656,10 +834,15 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     )
     monkeypatch.setattr(
         rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, **kwargs: point_calls.append(entity_path),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
         "log_transform",
         lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(entity_path),
     )
-    policy = RerunLoggingPolicy()
+    policy = RerunLoggingPolicy(log_static_trajectory_end_pose=True)
     update = StageRuntimeUpdate(
         stage_key=StageKey.SOURCE,
         timestamp_ns=1,
@@ -682,7 +865,59 @@ def test_rerun_policy_skips_trajectory_pose_transforms_when_axis_length_is_zero(
     policy.observe_update(object(), update)
 
     assert line_calls == [("world/reference/trajectory/ground_truth/aligned", True)]
-    assert pose_calls == ["world/reference/trajectory/ground_truth/aligned/start"]
+    assert point_calls == ["world/reference/trajectory/ground_truth/aligned/start"]
+    assert pose_calls == ["world/reference/trajectory/ground_truth/aligned/end"]
+
+
+def test_rerun_policy_skips_static_trajectory_end_pose_when_export_marker_is_disabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    trajectory_path = write_tum_trajectory(
+        tmp_path / "trajectory.tum",
+        [
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=0.0, ty=0.0, tz=0.0),
+            FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=1.0, ty=2.0, tz=3.0),
+        ],
+        [0.0, 1.0],
+    )
+    point_calls: list[str] = []
+    pose_calls: list[str] = []
+    monkeypatch.setattr(rerun_helpers, "log_line_strip3d", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_points3d",
+        lambda stream, *, entity_path, points_xyz, **kwargs: point_calls.append(entity_path),
+    )
+    monkeypatch.setattr(
+        rerun_helpers,
+        "log_transform",
+        lambda stream, *, entity_path, transform, axis_length=None, static=False: pose_calls.append(entity_path),
+    )
+    policy = RerunLoggingPolicy(log_static_trajectory_end_pose=False)
+    update = StageRuntimeUpdate(
+        stage_key=StageKey.SOURCE,
+        timestamp_ns=1,
+        visualizations=[
+            VisualizationItem(
+                intent=VisualizationIntent.TRAJECTORY,
+                role=ROLE_SOURCE_REFERENCE_TRAJECTORY,
+                artifact_refs={
+                    TRAJECTORY_ARTIFACT: ArtifactRef(path=trajectory_path, kind="tum", fingerprint="trajectory")
+                },
+                metadata={
+                    "reference_source": "ground_truth",
+                    "coordinate_status": "aligned",
+                    "target_frame": "advio_gt_world",
+                },
+            )
+        ],
+    )
+
+    policy.observe_update(object(), update)
+
+    assert point_calls == ["world/reference/trajectory/ground_truth/aligned/start"]
+    assert pose_calls == []
 
 
 def test_rerun_policy_passes_decimation_to_geometry_loggers(tmp_path: Path, monkeypatch) -> None:

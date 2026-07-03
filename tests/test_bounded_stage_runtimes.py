@@ -6,16 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from prml_vslam.alignment.stage import GroundAlignmentRuntime, GroundAlignmentStageInput
-from prml_vslam.eval.contracts import (
-    EvaluationArtifact,
-    MetricStats,
-    TrajectoryEvaluationSemantics,
-)
+from prml_vslam.align.gravity import GroundAlignmentRuntime, GroundAlignmentStageInput
 from prml_vslam.eval.stage_trajectory import (
     TrajectoryEvaluationRuntime,
     TrajectoryEvaluationStageInput,
 )
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import ObservationSequenceRef
 from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
@@ -25,9 +21,9 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus, VisualizationIntent
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryStageInput
 from prml_vslam.reconstruction import ReconstructionArtifacts
 from prml_vslam.reconstruction.config import PoissonBackendConfig
@@ -48,7 +44,7 @@ from prml_vslam.sources.contracts import (
     ReferenceTrajectoryRef,
     SequenceManifest,
 )
-from prml_vslam.utils import RunArtifactPaths
+from prml_vslam.utils import PathConfig, RunArtifactPaths
 
 
 def test_ground_alignment_runtime_returns_stage_result(
@@ -73,7 +69,7 @@ def test_ground_alignment_runtime_returns_stage_result(
             )
 
     monkeypatch.setattr(
-        "prml_vslam.alignment.stage.runtime.GroundAlignmentService",
+        "prml_vslam.align.gravity.runtime.GroundAlignmentService",
         FakeGroundAlignmentService,
     )
 
@@ -101,7 +97,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
         def __init__(self, path_config) -> None:
             self.path_config = path_config
 
-        def compute_pipeline_evaluation(self, **kwargs) -> EvaluationArtifact:
+        def compute_pipeline_evaluation(self, **kwargs) -> TrajectoryEvaluationManifest:
             calls.append(kwargs)
             return artifact
 
@@ -113,6 +109,7 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     result = TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationStageInput(
             artifact_root=plan.artifact_root,
+            path_config=PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts"),
             baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
             method_id=run_config.stages.slam.backend.method_id,
             method_label=run_config.stages.slam.backend.display_name,
@@ -127,7 +124,13 @@ def test_trajectory_evaluation_runtime_returns_eval_payload(
     assert result.payload == artifact
     assert result.outcome.status is StageStatus.COMPLETED
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
-    assert set(result.outcome.artifacts) == {"trajectory_metrics", "reference_tum", "estimate_tum"}
+    assert set(result.outcome.artifacts) == {
+        "candidate_tum:0",
+        "error_series:0",
+        "metrics_long",
+        "reference_tum:0",
+        "trajectory_evaluation_manifest",
+    }
 
 
 def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
@@ -141,9 +144,11 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
     class FakeTrajectoryEvaluationService:
         def __init__(self, path_config) -> None:
             self.path_config = path_config
+            captured["path_config"] = path_config
 
-        def compute_evaluation(self, *, selection):
+        def compute_evaluation(self, *, selection, candidate_trajectories=None):
             captured["selection"] = selection
+            captured["candidate_trajectories"] = candidate_trajectories
             return _evaluation_artifact(tmp_path)
 
     monkeypatch.setattr(
@@ -151,9 +156,12 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
         FakeTrajectoryEvaluationService,
     )
 
+    injected_path_config = PathConfig(root=tmp_path, artifacts_dir=tmp_path / "custom-artifacts")
+
     TrajectoryEvaluationRuntime().run_offline(
         TrajectoryEvaluationStageInput(
             artifact_root=plan.artifact_root,
+            path_config=injected_path_config,
             baseline_source=run_config.stages.evaluate_trajectory.evaluation.baseline_source,
             method_id=run_config.stages.slam.backend.method_id,
             method_label=run_config.stages.slam.backend.display_name,
@@ -176,6 +184,8 @@ def test_trajectory_evaluation_runtime_preserves_reference_frame_metadata(
     assert selection.reference_path == reference_path
     assert selection.target_frame == "benchmark_world"
     assert selection.coordinate_status == "aligned"
+    assert captured["candidate_trajectories"] == []
+    assert captured["path_config"] is injected_path_config
 
 
 def test_reconstruction_runtime_returns_reconstruction_artifacts(
@@ -375,6 +385,21 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
             plan=plan,
             run_paths=run_paths,
             stage_outcomes=[prior_outcome],
+            stage_runtime_statuses=[
+                StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                    progress_message="processed 10 frames, accepted 3 keyframes",
+                    completed_steps=10,
+                    progress_unit="frames",
+                    processed_items=10,
+                    accepted_keyframes=3,
+                    fps=None,
+                    throughput=None,
+                    throughput_unit=None,
+                    latency_ms=None,
+                )
+            ],
         )
     )
 
@@ -383,9 +408,15 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert result.payload is not None
     assert result.payload.stage_status == {StageKey.SLAM: StageStatus.COMPLETED}
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].accepted_keyframes == 3
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].fps is None
     assert runtime.stage_manifests[0].stage_id is StageKey.SLAM
     assert run_paths.summary_path.exists()
     assert run_paths.stage_manifests_path.exists()
+    persisted_summary = RunSummary.model_validate_json(run_paths.summary_path.read_text(encoding="utf-8"))
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].throughput is None
 
 
 def _request_plan_paths(
@@ -423,15 +454,14 @@ def _slam_artifacts(tmp_path: Path) -> SlamArtifacts:
     )
 
 
-def _evaluation_artifact(tmp_path: Path) -> EvaluationArtifact:
-    return EvaluationArtifact(
-        path=tmp_path / "trajectory_metrics.json",
-        title="Trajectory APE (evo)",
-        matched_pairs=1,
-        stats=MetricStats(rmse=0.0, mean=0.0, median=0.0, std=0.0, min=0.0, max=0.0, sse=0.0),
-        reference_path=tmp_path / "reference.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        semantics=TrajectoryEvaluationSemantics(sync_max_diff_s=0.01),
+def _evaluation_artifact(tmp_path: Path) -> TrajectoryEvaluationManifest:
+    return TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="run",
+        reference_trajectories=[tmp_path / "reference.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
+        error_series_paths=[tmp_path / "errors.npz"],
     )
 
 

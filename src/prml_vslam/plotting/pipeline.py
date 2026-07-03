@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Protocol
 
 import numpy as np
 import plotly.graph_objects as go
 
-from prml_vslam.eval.contracts import ErrorSeries, TrajectorySeries
 from prml_vslam.utils.image_utils import normalize_grayscale_image
 
 from .theme import BLUE, GRAY
@@ -17,11 +17,23 @@ TelemetryChartValue = str | int | float
 TelemetryChartRow = dict[str, TelemetryChartValue]
 
 
+class TrajectoryPlotSeries(Protocol):
+    """Trajectory payload needed by pipeline plot builders."""
+
+    positions_xyz: np.ndarray
+
+
+class ErrorPlotSeries(Protocol):
+    """Error-series payload needed by pipeline plot builders."""
+
+    values: np.ndarray
+
+
 def build_evo_ape_colormap_figure(
     *,
-    reference: TrajectorySeries,
-    estimate: TrajectorySeries,
-    error_series: ErrorSeries,
+    reference: TrajectoryPlotSeries,
+    estimate: TrajectoryPlotSeries,
+    error_series: ErrorPlotSeries,
 ) -> go.Figure:
     """Build a 3D trajectory overlay with `evo` APE shown as a color map."""
     matched_pairs = min(len(estimate.positions_xyz), len(error_series.values))

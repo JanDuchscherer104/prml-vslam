@@ -27,6 +27,7 @@ from prml_vslam.methods.vista.artifact_io import (
 from prml_vslam.utils import RunArtifactPaths
 from prml_vslam.utils.geometry import write_point_cloud_ply, write_tum_trajectory
 
+# TODO: should be exposed to config.
 _VISTA_ROTATION_PROJECTION_MAX_FROBENIUS_ERROR = 1e-2
 _VISTA_MODEL_RASTER_SIZE_PX = 224
 _POINT_CLOUD_CONFIDENCES_FILENAME = "point_cloud_confidences.npz"
@@ -125,6 +126,7 @@ def build_vista_artifacts(
         trajectory_tum=artifact_ref(trajectory_path, kind="tum"),
         sparse_points_ply=sparse_points_ref,
         dense_points_ply=dense_points_ref,
+        point_cloud_confidences_npz=confidence_ref,
         extras=extras,
         num_processed_frames=num_processed_frames,
         num_keyframes=len(timestamps_s),

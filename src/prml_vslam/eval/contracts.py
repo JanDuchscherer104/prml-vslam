@@ -1,10 +1,9 @@
-"""Typed evaluation contracts for persisted metrics and review surfaces.
+"""Shared evaluation contracts not owned by trajectory metric manifests.
 
-This module owns the normalized result payloads produced by
-:mod:`prml_vslam.eval.services` and consumed by app or plotting code. It sits
-downstream of :mod:`prml_vslam.pipeline` and :mod:`prml_vslam.sources`: runs
-provide artifact roots and source-prepared references, while this package
-provides the typed metric outputs and selection models used to inspect them.
+Trajectory metric contracts live in :mod:`prml_vslam.eval.trajectory_contracts`
+and trajectory alignment contracts live in
+:mod:`prml_vslam.align.trajectory_sim3.contracts`. Dense-cloud and intrinsics DTOs
+remain here temporarily until those evaluation surfaces get the same split.
 """
 
 from __future__ import annotations
@@ -13,72 +12,67 @@ from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
-from jaxtyping import Float
 from pydantic import Field
 
 from prml_vslam.interfaces.camera import CameraIntrinsics
-from prml_vslam.sources.datasets.contracts import DatasetId
 from prml_vslam.utils import BaseData
 
 
-class TrajectoryMetricId(StrEnum):
-    """Name the trajectory metrics supported or planned through the `evo` seam."""
+class CloudMetricId(StrEnum):
+    """Name dense-cloud metrics persisted by the Open3D evaluation seam."""
 
-    APE_TRANSLATION = "ape.translation"
-    RPE_TRANSLATION = "rpe.translation"
-
-
-class TrajectoryAlignmentMode(StrEnum):
-    """Describe how trajectories are aligned before metric computation."""
-
-    TIMESTAMP_ASSOCIATED_ONLY = "timestamp_associated_only"
-    SE3_UMeyama = "se3_umeyama"
-    SIM3_UMEYAMA = "sim3_umeyama"
+    ACCURACY = "accuracy"
+    COMPLETENESS = "completeness"
+    CHAMFER = "chamfer"
+    F1 = "f1"
+    ICP_RMSE = "icp_rmse"
+    ICP_FITNESS = "icp_fitness"
 
 
-class TrajectoryAlignmentCloudUseStatus(StrEnum):
-    """State whether an alignment may publish a downstream dense cloud."""
+class CloudEstimateKind(StrEnum):
+    """Describe which benchmark cloud artifact one metric row evaluates."""
 
-    NOT_REQUESTED = "not_requested"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-
-
-class TrajectoryAlignmentArtifact(BaseData):
-    """Persist an explicit trajectory alignment used for diagnostics or metrics."""
-
-    source_frame: str
-    target_frame: str
-    alignment_type: TrajectoryAlignmentMode = TrajectoryAlignmentMode.SIM3_UMEYAMA
-    scale: float
-    rotation: list[list[float]]
-    translation: list[float]
-    matched_pairs: int
-    rms_error_m: float
-    reference_source: str
-    sync_max_diff_s: float
-    method_id: str | None = None
-    method_label: str | None = None
-    cloud_input_present: bool = False
-    cloud_use_status: TrajectoryAlignmentCloudUseStatus = TrajectoryAlignmentCloudUseStatus.NOT_REQUESTED
-    cloud_warning_reasons: list[str] = Field(default_factory=list)
-    cloud_rejection_reasons: list[str] = Field(default_factory=list)
-    cloud_gate_min_matched_pairs: int = 20
-    cloud_gate_max_rms_error_m: float = 2.0
-    cloud_gate_max_up_axis_tilt_deg: float = 15.0
-    up_axis_tilt_deg: float | None = None
+    SIM3 = "sim3"
+    SIM3_ICP = "sim3_icp"
+    RECONSTRUCTION = "reconstruction"
 
 
 class MetricStats(BaseData):
     """Capture scalar summary statistics for one evaluated error series."""
 
     rmse: float
+    """Root-mean-square error."""
+
     mean: float
+    """Mean error."""
+
     median: float
+    """Median error."""
+
     std: float
+    """Standard deviation of the error series."""
+
     min: float
+    """Minimum error."""
+
     max: float
+    """Maximum error."""
+
     sse: float
+    """Sum of squared errors."""
+
+    @classmethod
+    def from_evo_statistics(cls, statistics: dict[str, float]) -> MetricStats:
+        """Build stats from ``evo``'s ``metric.get_all_statistics()`` payload."""
+        return cls(
+            rmse=float(statistics["rmse"]),
+            mean=float(statistics["mean"]),
+            median=float(statistics["median"]),
+            std=float(statistics["std"]),
+            min=float(statistics["min"]),
+            max=float(statistics["max"]),
+            sse=float(statistics["sse"]),
+        )
 
     @classmethod
     def from_error_values(cls, error_values: np.ndarray) -> MetricStats:
@@ -93,31 +87,6 @@ class MetricStats(BaseData):
             max=float(np.max(error_values)),
             sse=float(np.sum(squared)),
         )
-
-
-class TrajectorySeries(BaseData):
-    """Carry one trajectory series for persisted review and plotting."""
-
-    name: str
-    positions_xyz: Float[np.ndarray, "num_points 3"]  # noqa: F722
-    timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
-
-
-class ErrorSeries(BaseData):
-    """Carry one scalar error profile aligned with the evaluated timestamps."""
-
-    timestamps_s: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
-    values: Float[np.ndarray, "num_points"]  # noqa: F821, UP037
-
-
-class TrajectoryEvaluationPreview(BaseData):
-    """Hold one in-memory trajectory-evaluation preview before or after persistence."""
-
-    reference: TrajectorySeries
-    estimate: TrajectorySeries
-    error_series: ErrorSeries
-    stats: MetricStats
-    alignment: TrajectoryAlignmentArtifact | None = None
 
 
 class IntrinsicsComparisonDiagnostics(BaseData):
@@ -145,88 +114,6 @@ class IntrinsicsComparisonDiagnostics(BaseData):
     """Per-sample `cy_est - cy_ref` residuals in pixels."""
 
 
-class TrajectoryEvaluationSemantics(BaseData):
-    """Persist the exact metric semantics needed to interpret one result.
-
-    The same numeric error series can mean different things depending on pose
-    relation, trajectory alignment, and timestamp association tolerance. This
-    DTO makes those choices durable alongside the metrics produced through the
-    thin `evo <https://github.com/MichaelGrupp/evo>`_ adapter.
-    """
-
-    metric_id: TrajectoryMetricId = TrajectoryMetricId.APE_TRANSLATION
-    pose_relation: str = "translation_part"
-    alignment_mode: TrajectoryAlignmentMode = TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY
-    sync_max_diff_s: float
-    candidate_next_metrics: list[TrajectoryMetricId] = Field(
-        default_factory=lambda: [TrajectoryMetricId.RPE_TRANSLATION]
-    )
-
-
-class EvaluationArtifact(BaseData):
-    """Represent one loaded or freshly computed trajectory-evaluation artifact.
-
-    This is currently trajectory-specific even though the class name is generic;
-    future dense-cloud stages should specialize rather than overloading this
-    payload. The artifact is app/plotting friendly but still
-    preserves reference and estimate paths plus metric semantics for review.
-    """
-
-    path: Path
-    title: str
-    matched_pairs: int
-    stats: MetricStats
-    reference_path: Path
-    estimate_path: Path
-    alignment_path: Path | None = None
-    aligned_estimate_path: Path | None = None
-    aligned_point_cloud_path: Path | None = None
-    semantics: TrajectoryEvaluationSemantics
-    trajectories: list[TrajectorySeries] = Field(default_factory=list)
-    error_series: ErrorSeries | None = None
-
-    @classmethod
-    def from_payload(
-        cls,
-        *,
-        path: Path,
-        payload: dict[str, object],
-        reference_path: Path,
-        estimate_path: Path,
-        trajectories: tuple[TrajectorySeries, TrajectorySeries],
-    ) -> EvaluationArtifact:
-        """Build the canonical evaluation artifact from one persisted metrics payload."""
-        reference_trajectory, estimate_trajectory = trajectories
-        matched_pairs_payload = payload["matched_pairs"]
-        if not isinstance(matched_pairs_payload, int):
-            raise ValueError(f"Expected integer matched_pairs in evaluation payload, got {matched_pairs_payload!r}.")
-        return cls(
-            path=path,
-            title=str(payload["title"]),
-            matched_pairs=matched_pairs_payload,
-            stats=MetricStats.model_validate(payload["stats"]),
-            semantics=TrajectoryEvaluationSemantics.model_validate(payload["semantics"]),
-            reference_path=reference_path,
-            estimate_path=estimate_path,
-            alignment_path=Path(str(payload["alignment_path"])) if payload.get("alignment_path") is not None else None,
-            aligned_estimate_path=(
-                Path(str(payload["aligned_estimate_path"]))
-                if payload.get("aligned_estimate_path") is not None
-                else None
-            ),
-            aligned_point_cloud_path=(
-                Path(str(payload["aligned_point_cloud_path"]))
-                if payload.get("aligned_point_cloud_path") is not None
-                else None
-            ),
-            trajectories=[reference_trajectory, estimate_trajectory],
-            error_series=ErrorSeries(
-                timestamps_s=np.asarray(payload["error_timestamps_s"], dtype=np.float64),
-                values=np.asarray(payload["error_values"], dtype=np.float64),
-            ),
-        )
-
-
 class DenseCloudEvaluationSelection(BaseData):
     """Describe the resolved dense-cloud inputs for one evaluation action."""
 
@@ -238,6 +125,31 @@ class DenseCloudEvaluationSelection(BaseData):
 
     estimate_cloud_path: Path
     """Estimated dense geometry path."""
+
+    estimate_kind: CloudEstimateKind = CloudEstimateKind.SIM3_ICP
+    """Semantic role of the estimated dense geometry artifact."""
+
+    f1_threshold_m: float = Field(default=0.05, gt=0.0)
+    """Distance threshold used for precision, recall, and F1, in meters."""
+
+
+class DenseCloudEstimateEvaluation(BaseData):
+    """Metrics for one evaluated dense-cloud estimate artifact."""
+
+    estimate_kind: CloudEstimateKind
+    """Semantic role of the evaluated estimate cloud."""
+
+    estimate_cloud_path: Path
+    """Estimated dense geometry path compared against the reference cloud."""
+
+    reference_point_count: int
+    """Number of points loaded from the reference cloud."""
+
+    estimate_point_count: int
+    """Number of points loaded from the estimate cloud."""
+
+    metrics: dict[CloudMetricId, float] = Field(default_factory=dict)
+    """Scalar dense-cloud metrics keyed by canonical metric id."""
 
 
 class CloudAlignmentSelection(BaseData):
@@ -302,110 +214,127 @@ class DenseCloudEvaluationArtifact(BaseData):
     reference_cloud_path: Path
     """Reference dense geometry path."""
 
-    estimate_cloud_path: Path
-    """Estimated dense geometry path."""
+    f1_threshold_m: float = 0.05
+    """Distance threshold used for precision, recall, and F1, in meters."""
 
-    metrics: dict[str, float] = Field(default_factory=dict)
-    """Scalar dense-cloud metrics keyed by metric name."""
+    estimates: list[DenseCloudEstimateEvaluation] = Field(default_factory=list)
+    """Per-estimate metric payloads for Sim3, ICP-refined, or reconstruction clouds."""
 
+    cloud_alignment_path: Path | None = None
+    """Optional point-cloud alignment metadata used to attach ICP diagnostics."""
 
-class BenchmarkReference(BaseData):
-    """Describe one reference trajectory available for benchmark comparison."""
-
-    label: str
-    """Human-readable label shown in the UI, e.g. ``"Ground Truth"`` or ``"ARCore"``."""
-
-    source_key: str
-    """Machine key used to derive result-file names, e.g. ``"ground_truth"`` or ``"arcore"``."""
-
-    path: Path
-    """Absolute path to the aligned TUM reference trajectory."""
-
-
-class DiscoveredRun(BaseData):
-    """Describe one normalized run discovered under the configured artifacts root."""
-
-    artifact_root: Path
-    """Root directory for the selected run."""
-
-    estimate_path: Path
-    """Estimated trajectory path for the run."""
-
-    point_cloud_path: Path | None = None
-    """Estimated point-cloud path for optional aligned overlay materialization."""
-
-    method: str | None = None
-    """Known benchmark method id, when it can be inferred from the path."""
-
-    label: str
-    """Compact user-facing label for selection widgets."""
+    @property
+    def metrics(self) -> dict[str, float]:
+        """Return flattened metric keys for legacy table-style consumers."""
+        return {
+            f"{estimate.estimate_kind.value}.{metric_id.value}": value
+            for estimate in self.estimates
+            for metric_id, value in estimate.metrics.items()
+        }
 
 
-class SelectionSnapshot(BaseData):
-    """Capture the resolved dataset-and-run choice for one metrics render."""
+class ImageQualityMetricId(StrEnum):
+    """Name the image-pair quality metrics computed between two raster-aligned frames."""
 
-    sequence_slug: str
-    """Selected sequence slug."""
-
-    reference_path: Path | None = None
-    """Reference TUM trajectory path when available."""
-
-    target_frame: str | None = None
-    """Target coordinate frame for alignment and metrics."""
-
-    coordinate_status: str | None = None
-    """Native coordinate status of the reference trajectory."""
-
-    reference_source: str | None = None
-    """Reference source key used for persisted alignment provenance."""
-
-    run: DiscoveredRun
-    """Selected artifact run."""
+    L1 = "image.l1"
+    L2 = "image.l2"
+    MSE = "image.mse"
+    PSNR = "image.psnr"
+    SSIM = "image.ssim"
+    LPIPS = "image.lpips"
 
 
-class EvaluationSelection(BaseData):
-    """Bundle dataset, run, and reference choices exposed to review surfaces."""
+class ImageQualityMetrics(BaseData):
+    """Capture image-quality metrics for one ``(reference, generated)`` image pair.
 
-    dataset: DatasetId
-    """Dataset currently selected in the UI."""
+    All pixel-error metrics are computed on a ``[0, 1]`` normalized scale so the
+    numbers are comparable regardless of the source value range. ``psnr`` is in
+    decibels and is ``+inf`` for identical images. ``coverage`` is the fraction
+    of pixels actually scored, which is ``1.0`` unless a mask restricted the
+    comparison (for example to the covered region of a sparse render).
+    """
 
-    dataset_root: Path
-    """Resolved local root for the selected dataset."""
+    l1: float
+    """Mean absolute error (MAE) on the normalized scale."""
 
-    artifacts_root: Path
-    """Configured artifacts root used for run discovery."""
+    l2: float
+    """Root mean squared error (RMSE) on the normalized scale."""
 
-    sequence_slugs: list[str] = Field(default_factory=list)
-    """Local sequence slugs currently available under `dataset_root`."""
+    mse: float
+    """Mean squared error on the normalized scale."""
 
-    sequence_slug: str | None = None
-    """Resolved sequence slug after applying user preferences."""
+    psnr: float
+    """Peak signal-to-noise ratio in dB; ``+inf`` for identical images."""
 
-    runs: list[DiscoveredRun] = Field(default_factory=list)
-    """Discovered runs matching the resolved sequence."""
+    ssim: float
+    """Structural similarity index in ``[-1, 1]`` (``1.0`` for identical images)."""
 
-    selection: SelectionSnapshot | None = None
-    """Resolved selection snapshot when both a sequence and run are available."""
+    lpips: float | None = None
+    """Learned perceptual distance (LPIPS); lower is more similar. ``None`` when not computed.
+
+    Computed on the full image pair (the coverage mask is ignored), so it is only comparable
+    across pairs scored with the same backbone. Optional so older artifacts reload unchanged.
+    """
+
+    coverage: float = 1.0
+    """Fraction of pixels scored after masking (``1.0`` when unmasked)."""
+
+    data_range: float
+    """Source value range used to normalize the inputs (for example ``255`` for uint8)."""
+
+
+class ImageQualitySummary(BaseData):
+    """Aggregate image-quality metrics across a set of compared image pairs."""
+
+    pair_count: int
+    """Number of ``(reference, generated)`` pairs aggregated."""
+
+    mean_coverage: float
+    """Mean per-pair scored-pixel fraction."""
+
+    stats: dict[str, MetricStats] = Field(default_factory=dict)
+    """Across-pair summary statistics keyed by :class:`ImageQualityMetricId` value."""
+
+    frames: list[ImageQualityMetrics] = Field(default_factory=list)
+    """Per-pair metrics in input order, retained for plotting and inspection."""
+
+    @classmethod
+    def from_frames(cls, frames: list[ImageQualityMetrics]) -> ImageQualitySummary:
+        """Summarize per-pair image metrics into across-pair statistics."""
+        if not frames:
+            raise ValueError("Cannot summarize zero image pairs.")
+        field_by_metric = {
+            ImageQualityMetricId.L1: "l1",
+            ImageQualityMetricId.L2: "l2",
+            ImageQualityMetricId.MSE: "mse",
+            ImageQualityMetricId.PSNR: "psnr",
+            ImageQualityMetricId.SSIM: "ssim",
+        }
+        # LPIPS is optional: only summarize it when every frame carries it, so runs scored
+        # without the perceptual backbone keep the original metric set (and stay reloadable).
+        if all(frame.lpips is not None for frame in frames):
+            field_by_metric[ImageQualityMetricId.LPIPS] = "lpips"
+        stats = {
+            metric_id.value: MetricStats.from_error_values(
+                np.asarray([getattr(frame, attribute) for frame in frames], dtype=np.float64)
+            )
+            for metric_id, attribute in field_by_metric.items()
+        }
+        mean_coverage = float(np.mean([frame.coverage for frame in frames]))
+        return cls(pair_count=len(frames), mean_coverage=mean_coverage, stats=stats, frames=list(frames))
 
 
 __all__ = [
-    "BenchmarkReference",
+    "CloudEstimateKind",
     "CloudAlignmentArtifact",
     "CloudAlignmentSelection",
+    "CloudMetricId",
     "DenseCloudEvaluationArtifact",
+    "DenseCloudEstimateEvaluation",
     "DenseCloudEvaluationSelection",
-    "DiscoveredRun",
-    "ErrorSeries",
-    "EvaluationArtifact",
-    "EvaluationSelection",
+    "ImageQualityMetricId",
+    "ImageQualityMetrics",
+    "ImageQualitySummary",
     "IntrinsicsComparisonDiagnostics",
     "MetricStats",
-    "SelectionSnapshot",
-    "TrajectoryAlignmentArtifact",
-    "TrajectoryAlignmentCloudUseStatus",
-    "TrajectoryAlignmentMode",
-    "TrajectoryEvaluationPreview",
-    "TrajectoryEvaluationSemantics",
-    "TrajectoryMetricId",
-    "TrajectorySeries",
 ]

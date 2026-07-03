@@ -25,10 +25,12 @@ Implemented or functional:
 
 - Streamlit workbench pages for Record3D capture, ADVIO datasets, pipeline runs, and metrics review
 - ADVIO local dataset readiness checks, selective downloads, and replay tooling
+- [Custom Record3D dataset](https://zenodo.org/records/20591352) with 8 scenes, captured with an iPhone 17 Pro Max.
 - TOML-backed run planning and persisted pipeline request loading
 - Separate offline and streaming runner paths
-- ViSTA-SLAM wrapper
-- Optional MASt3R-SLAM wrapper for CUDA-capable environments
+- [ViSTA-SLAM](https://github.com/zhangganlin/vista-slam),
+  [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM), and
+  [LingBot-Map](https://github.com/Robbyant/lingbot-map) integration
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
 
@@ -36,7 +38,6 @@ Not yet implemented or limited:
 
 - reference reconstruction stage
 - cloud and efficiency evaluation execution
-- full custom dataset
 
 ## Quick Entry
 
@@ -50,14 +51,25 @@ Launch the Streamlit workbench:
 
 ```bash
 uv sync --extra streaming
-uv run streamlit run streamlit_app.py
+uv run prml-vslam app
 ```
 
-Plan or run a persisted pipeline request:
+For dataset-backed pipelines or sweeps, download the raw datasets and build the
+normalized VSLAM datastore first. The runbook is in
+[SETUP.md#dataset-downloads-and-vslam-datastore](SETUP.md#dataset-downloads-and-vslam-datastore).
+
+Plan or run a persisted pipeline request (after setting up ViSTA-SLAM as per [SETUP.md](SETUP.md)):
 
 ```bash
 uv run prml-vslam plan-run-config .configs/pipelines/advio-15-offline-vista.toml
 uv run prml-vslam run-config .configs/pipelines/advio-15-offline-vista.toml
+```
+
+After completing the LingBot setup, plan or run the LingBot full pipeline:
+
+```bash
+uv run prml-vslam plan-run-config .configs/pipelines/lingbot-full.toml
+uv run prml-vslam run-config .configs/pipelines/lingbot-full.toml
 ```
 
 Each `run-config` invocation writes a timestamped command log under
@@ -73,7 +85,7 @@ pipeline TOML details.
 
 Professional SLAM systems usually require rigid factory calibration. Consumer frameworks like ARCore are stable due to real-time sensor fusion, but often fail when processing raw video retrospectively. In particular, they struggle with global metric consistency and high-fidelity dense mapping when camera intrinsics are unknown.
 
-The system should build on existing monocular dense VSLAM methods such as [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584) or [MASt3R-SLAM](https://arxiv.org/abs/2412.12392), take a smartphone monocular video stream as input, autonomously handle unknown intrinsics, and output a high-precision trajectory together with a dense 3D point cloud.
+The system should build on existing monocular dense VSLAM methods such as [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392), or LingBot-Map, take a smartphone monocular video stream as input, autonomously handle unknown intrinsics, and output a high-precision trajectory together with a dense 3D point cloud.
 
 ## Evaluation
 
@@ -98,4 +110,4 @@ The system should build on existing monocular dense VSLAM methods such as [ViSTA
 - Ground-truth 3D point clouds: [COLMAP](https://colmap.github.io/index.html) + [Meshroom](https://meshroom.org/) or COLMAP + [3DGS](https://learnopencv.com/3d-gaussian-splatting/)
 - Point cloud comparison: [CloudCompare](https://www.cloudcompare.org/), with metrics for example from [Open3D](https://www.open3d.org/)
 - Trajectory comparison: [evo](https://github.com/MichaelGrupp/evo)
-- Papers: [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392)
+- Papers and upstream methods: [ViSTA-SLAM](https://arxiv.org/pdf/2509.01584), [MASt3R-SLAM](https://arxiv.org/abs/2412.12392), and LingBot-Map

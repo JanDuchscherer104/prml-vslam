@@ -11,10 +11,11 @@ from typing import Annotated, Any, Literal, Self, TypeAlias, Union, get_args, ge
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
-from prml_vslam.alignment.stage.config import GroundAlignmentStageConfig
-from prml_vslam.eval.stage_alignment.config import TrajectoryAlignmentStageConfig
+from prml_vslam.align.gravity.config import GroundAlignmentStageConfig
+from prml_vslam.align.icp.config import CloudAlignmentStageConfig
+from prml_vslam.align.trajectory_sim3.config import TrajectoryAlignmentStageConfig
 from prml_vslam.eval.stage_cloud.config import CloudEvaluationStageConfig
-from prml_vslam.eval.stage_cloud_alignment.config import CloudAlignmentStageConfig
+from prml_vslam.eval.stage_image.config import ImageEvaluationStageConfig
 from prml_vslam.eval.stage_trajectory.config import (
     TrajectoryEvaluationPolicy,
     TrajectoryEvaluationStageConfig,
@@ -37,23 +38,30 @@ from prml_vslam.reconstruction.config import NksrBackendConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
     Record3DSourceConfig,
     SourceBackendConfig,
     TumRgbdSourceConfig,
     VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
 )
-from prml_vslam.sources.contracts import ReferenceSource, SequenceManifest
-from prml_vslam.sources.datasets.advio.advio_layout import (
-    resolve_existing_sequence_dir as resolve_existing_advio_sequence_dir,
+from prml_vslam.sources.contracts import (
+    PreparedBenchmarkInputs,
+    ReferenceCloudSource,
+    ReferenceSource,
+    SequenceManifest,
 )
-from prml_vslam.sources.datasets.advio.advio_loading import load_advio_frame_timestamps_ns
-from prml_vslam.sources.datasets.contracts import DatasetId
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_layout import (
-    resolve_existing_sequence_dir as resolve_existing_tum_rgbd_sequence_dir,
+from prml_vslam.sources.datasets.contracts import AdvioPoseFrameMode, DatasetId
+from prml_vslam.sources.datasets.normalization import (
+    dataset_service,
+    normalized_runtime_profile_for_dataset,
+    normalized_store_for_service,
 )
-from prml_vslam.sources.datasets.tum_rgbd.tum_rgbd_loading import load_tum_rgbd_list
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry, load_timestamps_ns
+from prml_vslam.sources.observation_sequence import load_observation_sequence_index
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig, RunArtifactPaths
+from prml_vslam.utils.portable_paths import rebase_model_paths
 from prml_vslam.visualization.contracts import VisualizationConfig
 
 BackendSpec: TypeAlias = BackendConfig
@@ -65,8 +73,9 @@ STAGE_SECTION_ORDER: tuple[tuple[StageKey, str], ...] = (
     (StageKey.TRAJECTORY_ALIGNMENT, "align_trajectory"),
     (StageKey.TRAJECTORY_EVALUATION, "evaluate_trajectory"),
     (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
-    (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
     (StageKey.RECONSTRUCTION, "reconstruction"),
+    (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+    (StageKey.IMAGE_EVALUATION, "evaluate_image"),
     (StageKey.SUMMARY, "summary"),
 )
 
@@ -105,6 +114,11 @@ class StageBundle(BaseConfig):
         default_factory=lambda: CloudEvaluationStageConfig(enabled=False)
     )
     """Dense-cloud evaluation stage section."""
+
+    evaluate_image: ImageEvaluationStageConfig = Field(
+        default_factory=lambda: ImageEvaluationStageConfig(enabled=False)
+    )
+    """Rendered-image evaluation stage section."""
 
     summary: SummaryStageConfig = Field(default_factory=SummaryStageConfig)
     """Summary-projection stage section."""
@@ -179,6 +193,20 @@ class RunConfig(BaseConfig):
     def config_warnings(self) -> list[str]:
         """Return lenient config warnings captured during TOML load."""
         return list(self._config_warnings)
+
+    @model_validator(mode="after")
+    def apply_dataset_default_baselines(self) -> Self:
+        """Fill omitted trajectory baselines from the selected source backend."""
+        source_backend = self.stages.source.backend
+        if source_backend is None:
+            return self
+
+        baseline = default_trajectory_baseline_for_source(source_backend)
+        if "baseline_source" not in self.stages.align_trajectory.model_fields_set:
+            self.stages.align_trajectory.baseline_source = baseline
+        if "baseline_source" not in self.stages.evaluate_trajectory.evaluation.model_fields_set:
+            self.stages.evaluate_trajectory.evaluation.baseline_source = baseline
+        return self
 
     def compile_plan(
         self,
@@ -283,20 +311,43 @@ def _planned_source(source_backend: SourceBackendConfig, *, path_config: PathCon
             sequence_id=sequence_id,
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
-            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["normalize_video_orientation"] = normalize_video_orientation
             payload["metadata"] = {
                 "dataset_id": DatasetId.ADVIO.value,
                 "pose_source": dataset_serving.pose_source.value,
-                "pose_frame_mode": dataset_serving.pose_frame_mode.value,
+                "pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL.value,
             }
-        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode):
+        case TumRgbdSourceConfig(sequence_id=sequence_id, replay_mode=replay_mode, reference_cloud=reference_cloud):
             payload["sequence_id"] = sequence_id
             payload["replay_mode"] = replay_mode.value
-            payload["metadata"] = {"dataset_id": DatasetId.TUM_RGBD.value}
+            payload["metadata"] = {
+                "dataset_id": DatasetId.TUM_RGBD.value,
+                "reference_cloud_source": ReferenceCloudSource.TUM_RGBD.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
+        case Record3DDatasetSourceConfig(
+            sequence_id=sequence_id,
+            replay_mode=replay_mode,
+            materialization=materialization,
+            reference_cloud=reference_cloud,
+        ):
+            payload["sequence_id"] = sequence_id
+            payload["replay_mode"] = replay_mode.value
+            payload["metadata"] = {
+                "dataset_id": DatasetId.RECORD3D.value,
+                "pose_source": ReferenceSource.ARKIT.value,
+                "pose_frame_mode": materialization.pose_frame_mode.value,
+                "reference_cloud_source": ReferenceCloudSource.RECORD3D_LIDAR.value,
+                "reference_cloud_depth_stride_px": reference_cloud.depth_stride_px,
+                "reference_cloud_max_points": reference_cloud.max_points,
+                "reference_cloud_random_seed": reference_cloud.random_seed,
+                "reference_cloud_min_confidence": reference_cloud.min_confidence,
+            }
         case Record3DSourceConfig(transport=transport, device_index=device_index, device_address=device_address):
             payload["transport"] = transport.value
             payload["device_index"] = device_index
@@ -319,25 +370,56 @@ def _planned_reused_source(run_paths: RunArtifactPaths | None) -> PlannedSource:
 
 
 def _expected_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    if isinstance(source_backend, AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig):
+        return _normalized_source_fps(source_backend, path_config=path_config)
     if source_backend.target_fps is not None:
         return float(source_backend.target_fps)
-    native_fps = _native_source_fps(source_backend, path_config=path_config)
+    native_fps = _source_fps(source_backend, path_config=path_config)
     if native_fps is None:
         return None
     return native_fps / source_backend.frame_stride
 
 
-def _native_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+def _source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
     try:
         match source_backend:
             case VideoSourceConfig(video_path=video_path):
                 return _video_native_fps(video_path=video_path, path_config=path_config)
-            case AdvioSourceConfig(sequence_id=sequence_id):
-                return _advio_native_fps(sequence_id=sequence_id, path_config=path_config)
-            case TumRgbdSourceConfig(sequence_id=sequence_id):
-                return _tum_rgbd_native_fps(sequence_id=sequence_id, path_config=path_config)
+            case AdvioSourceConfig() | TumRgbdSourceConfig() | Record3DDatasetSourceConfig():
+                return _normalized_source_fps(source_backend, path_config=path_config)
             case Record3DSourceConfig():
                 return None
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def _normalized_source_fps(source_backend: SourceBackendConfig, *, path_config: PathConfig) -> float | None:
+    try:
+        match source_backend:
+            case AdvioSourceConfig() as source:
+                dataset_id = DatasetId.ADVIO
+            case TumRgbdSourceConfig() as source:
+                dataset_id = DatasetId.TUM_RGBD
+            case Record3DDatasetSourceConfig() as source:
+                dataset_id = DatasetId.RECORD3D
+            case _:
+                return None
+        service = dataset_service(dataset_id, path_config)
+        frame_selection = runtime_frame_selection_for_source_config(source)
+        profile = normalized_runtime_profile_for_dataset(dataset_id=dataset_id, service=service, source_config=source)
+        entry = normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
+            profile,
+            frame_selection=frame_selection,
+        )
+        manifest = rebase_model_paths(
+            SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8")),
+            root=entry.root,
+        )
+        timestamps_ns = _normalized_entry_timestamps_ns(entry, manifest)
+        if not timestamps_ns:
+            return None
+        stride = frame_selection.stride_for_timestamps_ns(timestamps_ns)
+        return _fps_for_timestamps_ns(timestamps_ns[::stride])
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None
 
@@ -358,22 +440,17 @@ def _video_native_fps(*, video_path: Path, path_config: PathConfig) -> float | N
         capture.release()
 
 
-def _advio_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.ADVIO.value)
-    sequence_dir = resolve_existing_advio_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
-        return None
-    timestamps_ns = load_advio_frame_timestamps_ns(sequence_dir / "iphone" / "frames.csv")
-    return _fps_for_timestamps_ns(timestamps_ns)
-
-
-def _tum_rgbd_native_fps(*, sequence_id: str, path_config: PathConfig) -> float | None:
-    dataset_dir = path_config.resolve_dataset_dir(DatasetId.TUM_RGBD.value)
-    sequence_dir = resolve_existing_tum_rgbd_sequence_dir(dataset_dir, sequence_id)
-    if sequence_dir is None:
-        return None
-    timestamps_s = [timestamp_s for timestamp_s, _path in load_tum_rgbd_list(sequence_dir / "rgb.txt")]
-    return _fps_for_timestamps_s(timestamps_s)
+def _normalized_entry_timestamps_ns(entry: NormalizedDatasetEntry, manifest: SequenceManifest) -> list[int]:
+    benchmark_inputs = rebase_model_paths(
+        PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8")),
+        root=entry.root,
+    )
+    observation_sequence = benchmark_inputs.default_observation_sequence()
+    if observation_sequence is not None:
+        return [row.timestamp_ns for row in load_observation_sequence_index(observation_sequence.index_path).rows]
+    if manifest.timestamps_path is None:
+        return []
+    return load_timestamps_ns(manifest.timestamps_path)
 
 
 def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
@@ -385,17 +462,17 @@ def _fps_for_timestamps_ns(timestamps_ns: Sequence[int]) -> float | None:
     )
 
 
-def _fps_for_timestamps_s(timestamps_s: Sequence[float]) -> float | None:
-    if len(timestamps_s) < 2:
-        return None
-    return _fps_for_duration(
-        sample_count=len(timestamps_s),
-        duration_s=float(timestamps_s[-1]) - float(timestamps_s[0]),
-    )
-
-
 def _fps_for_duration(*, sample_count: int, duration_s: float) -> float | None:
     return None if duration_s <= 0.0 else (sample_count - 1) / duration_s
+
+
+def default_trajectory_baseline_for_source(source_backend: SourceBackendConfig) -> ReferenceSource:
+    """Return the dataset-owned reference trajectory default for one source."""
+    match source_backend:
+        case Record3DDatasetSourceConfig():
+            return ReferenceSource.ARKIT
+        case _:
+            return ReferenceSource.GROUND_TRUTH
 
 
 def build_run_config(
@@ -413,8 +490,9 @@ def build_run_config(
     trajectory_eval_enabled: bool = False,
     trajectory_alignment_enabled: bool = False,
     cloud_alignment_enabled: bool = False,
-    trajectory_baseline: ReferenceSource = ReferenceSource.GROUND_TRUTH,
+    trajectory_baseline: ReferenceSource | None = None,
     evaluate_cloud: bool = False,
+    evaluate_image: bool = False,
     ground_alignment_enabled: bool = False,
     connect_live_viewer: bool = False,
     export_viewer_rrd: bool = False,
@@ -435,8 +513,12 @@ def build_run_config(
 ) -> RunConfig:
     """Build one canonical target ``RunConfig`` from common selections."""
     slam_backend = build_slam_backend_config(method=method, max_frames=max_frames, overrides=backend_overrides)
-    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=trajectory_baseline)
-    resolved_emit_sparse_points = method is not MethodId.MAST3R if emit_sparse_points is None else emit_sparse_points
+    resolved_trajectory_baseline = (
+        default_trajectory_baseline_for_source(source_backend) if trajectory_baseline is None else trajectory_baseline
+    )
+    trajectory_policy = TrajectoryEvaluationPolicy(baseline_source=resolved_trajectory_baseline)
+    dense_only_methods = {MethodId.MAST3R, MethodId.LINGBOT_MAP}
+    resolved_emit_sparse_points = method not in dense_only_methods if emit_sparse_points is None else emit_sparse_points
     return RunConfig(
         experiment_name=experiment_name,
         mode=mode,
@@ -451,7 +533,10 @@ def build_run_config(
                 ),
             ),
             align_ground=GroundAlignmentStageConfig(enabled=ground_alignment_enabled),
-            align_trajectory=TrajectoryAlignmentStageConfig(enabled=trajectory_alignment_enabled),
+            align_trajectory=TrajectoryAlignmentStageConfig(
+                enabled=trajectory_alignment_enabled,
+                baseline_source=resolved_trajectory_baseline,
+            ),
             evaluate_trajectory=TrajectoryEvaluationStageConfig(
                 enabled=trajectory_eval_enabled,
                 evaluation=trajectory_policy,
@@ -462,6 +547,7 @@ def build_run_config(
             ),
             align_cloud=CloudAlignmentStageConfig(enabled=cloud_alignment_enabled),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),
+            evaluate_image=ImageEvaluationStageConfig(enabled=evaluate_image),
             summary=SummaryStageConfig(enabled=True),
         ),
         visualization=VisualizationConfig(
@@ -562,4 +648,5 @@ __all__ = [
     "StageBundle",
     "build_backend_spec",
     "build_run_config",
+    "default_trajectory_baseline_for_source",
 ]

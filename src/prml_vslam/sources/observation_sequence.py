@@ -14,11 +14,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from prml_vslam.interfaces import (
-    Observation,
-    ObservationSequenceIndex,
-    ObservationSequenceRef,
-)
+from prml_vslam.interfaces import Observation, ObservationSequenceIndex, ObservationSequenceRef
 
 
 class FileObservationSequenceLoader:

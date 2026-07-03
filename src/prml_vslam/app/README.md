@@ -204,7 +204,7 @@ sequenceDiagram
     Preview transport integrations.
 
 - `prml_vslam.sources.datasets`
-  - Owns ADVIO metadata, local dataset normalization, and selective download semantics.
+  - Owns ADVIO metadata, local dataset normalization, and full-scene download semantics.
   - The app renders dataset summaries and forwards explicit user actions into dataset-owned services.
 
 - `prml_vslam.utils`

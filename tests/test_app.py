@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 
 import numpy as np
+from evo.core import metrics
 
+import prml_vslam.app.pipeline_controls as pipeline_controls
 from prml_vslam.app.bootstrap import _PAGE_SPECS
 from prml_vslam.app.live_session import render_live_action_slot
 from prml_vslam.app.models import (
+    AdvioPageState,
     AppPageId,
     AppState,
     ArtifactInspectorPageState,
+    MetricsPageState,
     PipelinePageState,
     PipelineSourceId,
     PipelineTelemetryMetricId,
     PipelineTelemetryViewMode,
+    Record3DDatasetPageState,
+    Record3DDatasetPoseSource,
 )
 from prml_vslam.app.pipeline_controller import (
     build_pipeline_snapshot_render_model,
@@ -31,9 +36,15 @@ from prml_vslam.app.pipeline_controls import (
     request_support_error,
     sync_pipeline_page_state_from_template,
 )
-from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot, TrajectoryMetricId
-from prml_vslam.eval.services import TrajectoryEvaluationService
-from prml_vslam.interfaces import FrameTransform
+from prml_vslam.eval.contracts import (
+    CloudEstimateKind,
+    CloudMetricId,
+    DenseCloudEstimateEvaluation,
+    DenseCloudEvaluationArtifact,
+)
+from prml_vslam.eval.query import TrajectoryEvaluationQueryService
+from prml_vslam.eval.trajectory_contracts import DiscoveredRun, TrajectoryEvaluationManifest
+from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_backend_spec, build_run_config
@@ -45,10 +56,104 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.contracts import SequenceManifest
 from prml_vslam.sources.datasets.advio import AdvioServingConfig
+from prml_vslam.sources.datasets.contracts import DatasetId
+from prml_vslam.sources.datasets.normalized_query import normalized_query_fingerprint
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import PathConfig
-from prml_vslam.utils.geometry import write_tum_trajectory
+
+
+def test_normalized_store_fingerprint_uses_shared_datastore_root(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path, data_dir=tmp_path / ".data")
+    store_root = path_config.resolve_normalized_datastore_dir("record3d")
+    entry_root = store_root / "synthetic" / "profile"
+    entry_root.mkdir(parents=True)
+    (entry_root / "entry.json").write_text("{}", encoding="utf-8")
+    (entry_root / "sequence_manifest.json").write_text("{}", encoding="utf-8")
+    (entry_root / "stats_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,subject,stat,value,unit\n", encoding="utf-8"
+    )
+    (entry_root / "metadata_long.csv").write_text(
+        "dataset_id,sequence_id,profile_key,source_id,scope,key,value\n", encoding="utf-8"
+    )
+    old_root = path_config.resolve_dataset_dir("record3d") / ".normalized" / "synthetic" / "profile"
+    old_root.mkdir(parents=True)
+    (old_root / "entry.json").write_text("{}", encoding="utf-8")
+    fingerprint = normalized_query_fingerprint(path_config, DatasetId.RECORD3D)
+
+    assert [row[0] for row in fingerprint] == [
+        "synthetic/profile/entry.json",
+        "synthetic/profile/metadata_long.csv",
+        "synthetic/profile/sequence_manifest.json",
+        "synthetic/profile/stats_long.csv",
+    ]
+
+
+def test_metrics_page_state_preserves_persisted_view_fields() -> None:
+    state = MetricsPageState()
+
+    assert state.scope == "sequence"
+    assert state.dataset_primary_metric == "ape/translation_part/rmse"
+
+
+def test_advio_tum_dataset_state_round_trips_without_download_modality_fields() -> None:
+    state = AppState.model_validate(
+        {
+            "advio": {"download_" + "preset": "offline", "selected_" + "modalities": ["iphone_video"]},
+            "tum_rgbd": {"download_" + "preset": "offline", "selected_" + "modalities": ["rgb"]},
+        }
+    )
+
+    dumped = state.model_dump(mode="json")
+
+    assert "download_" + "preset" not in dumped["advio"]
+    assert "selected_" + "modalities" not in dumped["advio"]
+    assert "download_" + "preset" not in dumped["tum_rgbd"]
+    assert "selected_" + "modalities" not in dumped["tum_rgbd"]
+
+
+def test_image_quality_page_is_registered_and_state_round_trips() -> None:
+    from prml_vslam.app.models import ImageQualityPageState
+    from prml_vslam.sources.datasets.contracts import DatasetId
+
+    assert any(
+        page_id is AppPageId.IMAGE_QUALITY and page_module == "image_quality"
+        for page_id, _, page_module, _ in _PAGE_SPECS
+    )
+
+    state = AppState(
+        image_quality=ImageQualityPageState(
+            dataset=DatasetId.ADVIO,
+            sequence_slug="advio-15",
+            run_root=Path(".artifacts/advio-15-offline-vista/vista"),
+            gallery_every=5,
+        )
+    )
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+    assert reloaded.image_quality.sequence_slug == "advio-15"
+    assert reloaded.image_quality.run_root == Path(".artifacts/advio-15-offline-vista/vista")
+    assert reloaded.image_quality.gallery_every == 5
+
+
+def test_session_state_persists_strict_telemetry_history_round_trip() -> None:
+    from pydantic import ValidationError
+
+    status = StageRuntimeStatus(stage_key=StageKey.SOURCE, lifecycle_state=StageStatus.RUNNING)
+    state = AppState(pipeline=PipelinePageState(telemetry_history=[status]))
+
+    # python-mode dump (what SessionStateStore.save now uses) round-trips strict enums.
+    reloaded = AppState.model_validate(state.model_dump(mode="python"))
+    assert reloaded.pipeline.telemetry_history[0].stage_key is StageKey.SOURCE
+    assert reloaded.pipeline.telemetry_history[0].lifecycle_state is StageStatus.RUNNING
+
+    # json-mode dump serializes enums to strings, which strict validation rejects (the bug we fixed).
+    try:
+        AppState.model_validate(state.model_dump(mode="json"))
+        json_round_trips = True
+    except ValidationError:
+        json_round_trips = False
+    assert json_round_trips is False
 
 
 def test_render_live_action_slot_uses_stable_start_and_stop_keys(monkeypatch) -> None:
@@ -183,6 +288,54 @@ def test_artifact_page_is_registered_and_state_round_trips() -> None:
     assert reloaded.artifacts.rerun_validation_max_render_points == 8_000
 
 
+def test_record3d_dataset_state_round_trips_separately_from_live_state() -> None:
+    state = AppState(
+        record3d_dataset=Record3DDatasetPageState(
+            selected_sequence_ids=[1, 3],
+            overwrite_existing=True,
+            explorer_sequence_id="2026-06-03--18-26-32",
+            preview_sequence_id="2026-06-03--18-29-08",
+            preview_pose_source=Record3DDatasetPoseSource.ARKIT,
+            preview_include_depth=False,
+            preview_is_running=True,
+        )
+    )
+    state.record3d.transport = Record3DTransportId.WIFI
+    state.record3d.wifi_device_address = "record3d.local"
+    state.record3d.is_running = True
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.record3d.transport is Record3DTransportId.WIFI
+    assert reloaded.record3d.wifi_device_address == "record3d.local"
+    assert reloaded.record3d.is_running is True
+    assert reloaded.record3d_dataset.selected_sequence_ids == [1, 3]
+    assert reloaded.record3d_dataset.overwrite_existing is True
+    assert reloaded.record3d_dataset.explorer_sequence_id == "2026-06-03--18-26-32"
+    assert reloaded.record3d_dataset.preview_sequence_id == "2026-06-03--18-29-08"
+    assert reloaded.record3d_dataset.preview_pose_source is Record3DDatasetPoseSource.ARKIT
+    assert reloaded.record3d_dataset.preview_include_depth is False
+    assert reloaded.record3d_dataset.preview_is_running is True
+
+
+def test_advio_dataset_explorer_state_uses_normalized_sequence_slug() -> None:
+    state = AppState(
+        advio=AdvioPageState(
+            selected_sequence_ids=[21],
+            overwrite_existing=True,
+            explorer_sequence_id="advio-21",
+            preview_sequence_id=21,
+        )
+    )
+
+    reloaded = AppState.model_validate(state.model_dump(mode="json"))
+
+    assert reloaded.advio.selected_sequence_ids == [21]
+    assert reloaded.advio.overwrite_existing is True
+    assert reloaded.advio.explorer_sequence_id == "advio-21"
+    assert reloaded.advio.preview_sequence_id == 21
+
+
 def test_build_run_config_from_action_derives_backend_kind(tmp_path: Path) -> None:
     context = type(
         "Context",
@@ -292,7 +445,6 @@ def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: 
             },
         ),
         pose_source="ground_truth",
-        normalize_video_orientation=True,
         connect_live_viewer=False,
         export_viewer_rrd=False,
     )
@@ -303,9 +455,8 @@ def test_build_run_config_from_action_accepts_stringified_vista_paths(tmp_path: 
     assert isinstance(run_config, RunConfig)
     assert run_config.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source="ground_truth",
-        pose_frame_mode="provider_world",
+        pose_frame_mode="fixedpoint_common_start_local",
     )
-    assert run_config.stages.source.backend.normalize_video_orientation is True
     assert run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
 
 
@@ -408,7 +559,7 @@ def test_build_run_config_from_action_uses_record3d_frame_timeout(tmp_path: Path
     assert run_config.stages.source.backend.frame_timeout_seconds == 2.5
 
 
-def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path) -> None:
+def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Path, monkeypatch) -> None:
     class _Store:
         def save(self, state: AppState) -> None:
             self.payload = state.model_dump(mode="json")
@@ -433,44 +584,55 @@ def test_sync_pipeline_template_preserves_typed_vista_backend_spec(tmp_path: Pat
         output_dir=context.path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
+            target_fps=15.0,
             dataset_serving={
                 "pose_source": "ground_truth",
                 "pose_frame_mode": "provider_world",
             },
-            normalize_video_orientation=True,
         ),
         method=MethodId.VISTA,
         backend_overrides={
             "vista_slam_dir": Path("external/vista-slam"),
             "checkpoint_path": Path("external/vista-slam/pretrains/frontend_sta_weights.pth"),
             "vocab_path": Path("external/vista-slam/pretrains/ORBvoc.txt"),
+            "keyframe_detection": "flow_stride",
+            "stride": 25,
         },
+    )
+    monkeypatch.setattr(
+        pipeline_controls,
+        "resolve_normalized_advio_sequence_id",
+        lambda **_kwargs: (1, None),
     )
 
     sync_pipeline_page_state_from_template(
         context=context,
         config_path=Path(".configs/pipelines/vista-full.toml"),
         run_config=run_config,
-        statuses=[],
     )
 
     backend_spec = context.state.pipeline.slam_backend_spec
     assert backend_spec is not None
     assert backend_spec.kind == "vista"
     assert backend_spec.vista_slam_dir == Path("external/vista-slam")
+    assert backend_spec.keyframe_detection == "flow_stride"
+    assert backend_spec.stride == 25
     assert context.state.pipeline.pose_source.value == "ground_truth"
-    assert context.state.pipeline.pose_frame_mode.value == "provider_world"
-    assert context.state.pipeline.normalize_video_orientation is True
+    assert context.state.pipeline.pose_frame_mode.value == "fixedpoint_common_start_local"
+    assert context.state.pipeline.dataset_target_fps == 15.0
+    assert context.state.pipeline.dataset_frame_stride == 1
     action = action_from_page_state(context.state.pipeline, Path(".configs/pipelines/vista-full.toml"))
     rebuilt_run_config, error = build_run_config_from_action(context, action)
 
     assert error is None
     assert isinstance(rebuilt_run_config, RunConfig)
     assert rebuilt_run_config.stages.slam.backend.vista_slam_dir == Path("external/vista-slam")
-    assert rebuilt_run_config.stages.source.backend.normalize_video_orientation is True
+    assert rebuilt_run_config.stages.slam.backend.keyframe_detection == "flow_stride"
+    assert rebuilt_run_config.stages.slam.backend.stride == 25
+    assert rebuilt_run_config.stages.source.backend.target_fps == 15.0
 
 
-def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) -> None:
+def test_cloud_evaluation_stage_is_supported_by_request_preview(tmp_path: Path, monkeypatch) -> None:
     path_config = PathConfig(root=Path(__file__).resolve().parents[1], artifacts_dir=tmp_path / ".artifacts")
     run_config = build_run_config(
         experiment_name="placeholder",
@@ -478,17 +640,21 @@ def test_request_support_error_uses_stage_availability_reason(tmp_path: Path) ->
         output_dir=path_config.artifacts_dir,
         source_backend=AdvioSourceConfig(
             sequence_id="advio-01",
-            dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "provider_world"},
+            dataset_serving={"pose_source": "ground_truth", "pose_frame_mode": "fixedpoint_common_start_local"},
         ),
         method=MethodId.VISTA,
         evaluate_cloud=True,
     )
+    monkeypatch.setattr(
+        pipeline_controls,
+        "resolve_normalized_advio_sequence_id",
+        lambda **_kwargs: (1, None),
+    )
     plan = run_config.compile_plan(path_config)
 
-    error = request_support_error(request=run_config, plan=plan, previewable_statuses=[])
+    error = request_support_error(request=run_config, plan=plan, path_config=path_config)
 
-    assert error is not None
-    assert "no runtime is registered yet" in error
+    assert error is None
 
 
 def test_pipeline_snapshot_render_model_shapes_streaming_payloads(tmp_path: Path) -> None:
@@ -884,10 +1050,7 @@ def test_pipeline_snapshot_render_model_shapes_vista_empty_states(tmp_path: Path
     assert "ViSTA-SLAM has not accepted" in model["streaming"]["trajectory_empty_message"]
 
 
-def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_pipeline_snapshot_render_model_links_persisted_trajectory_evaluation_artifact(tmp_path: Path) -> None:
     plan = RunPlan(
         run_id="streaming-demo",
         mode=PipelineMode.STREAMING,
@@ -895,11 +1058,6 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
         source=PlannedSource(source_id="advio", sequence_id="advio-01"),
     )
     snapshot = RunSnapshot(run_id="streaming-demo", state=RunState.RUNNING, plan=plan)
-    calls = {"count": 0}
-
-    def fake_resolve_evo_preview(_snapshot):
-        calls["count"] += 1
-        return None, "preview boom"
 
     class FakeRunService:
         def read_payload(self, ref: TransientPayloadRef | None):
@@ -910,71 +1068,186 @@ def test_pipeline_snapshot_render_model_only_resolves_evo_preview_when_enabled(
             del limit, after_event_id
             return []
 
-    monkeypatch.setattr("prml_vslam.app.pipeline_controller.resolve_evo_preview", fake_resolve_evo_preview)
+    snapshot.artifacts["trajectory_evaluation_manifest"] = ArtifactRef(
+        path=plan.artifact_root / "evaluation" / "trajectory" / "manifest.json",
+        kind="json",
+        fingerprint="manifest",
+    )
 
-    disabled = build_pipeline_snapshot_render_model(
+    model = build_pipeline_snapshot_render_model(
         snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=False
     )
-    enabled = build_pipeline_snapshot_render_model(
-        snapshot, FakeRunService(), method=MethodId.VISTA, show_evo_preview=True
+
+    assert model["streaming"] is not None
+    assert (
+        model["streaming"]["trajectory_evaluation_artifact"]
+        == (plan.artifact_root / "evaluation" / "trajectory" / "manifest.json").as_posix()
     )
 
-    assert disabled["streaming"] is not None
-    assert disabled["streaming"]["evo_error"] is None
-    assert enabled["streaming"] is not None
-    assert enabled["streaming"]["evo_error"] == "preview boom"
-    assert calls["count"] == 1
 
-
-def test_trajectory_evaluation_service_loads_pipeline_generated_artifact(tmp_path: Path) -> None:
-    reference_path = write_tum_trajectory(
-        tmp_path / "reference.tum",
-        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i), ty=0.0, tz=0.0) for i in range(4)],
-        timestamps=[0.0, 1.0, 2.0, 3.0],
-    )
-    estimate_path = write_tum_trajectory(
-        tmp_path / "estimate.tum",
-        poses=[FrameTransform(qx=0.0, qy=0.0, qz=0.0, qw=1.0, tx=float(i) + 0.05, ty=0.0, tz=0.0) for i in range(4)],
-        timestamps=[0.0, 1.0, 2.0, 3.0],
-    )
+def test_trajectory_evaluation_query_loads_pipeline_manifest(tmp_path: Path) -> None:
     artifact_root = tmp_path / "run"
-    metrics_path = artifact_root / "evaluation" / "trajectory_metrics.json"
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "title": "Trajectory APE (evo)",
-        "matched_pairs": 4,
-        "stats": {
-            "rmse": 0.05,
-            "mean": 0.05,
-            "median": 0.05,
-            "std": 0.0,
-            "min": 0.05,
-            "max": 0.05,
-            "sse": 0.01,
-        },
-        "error_timestamps_s": [0.0, 1.0, 2.0, 3.0],
-        "error_values": [0.05, 0.05, 0.05, 0.05],
-        "semantics": {
-            "metric_id": TrajectoryMetricId.APE_TRANSLATION,
-            "pose_relation": "translation_part",
-            "alignment_mode": "timestamp_associated_only",
-            "sync_max_diff_s": 0.01,
-        },
-    }
-    metrics_path.write_text(json.dumps(payload), encoding="utf-8")
-
-    service = TrajectoryEvaluationService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
-    selection = SelectionSnapshot(
-        sequence_slug="test-sequence",
-        reference_path=reference_path,
-        run=DiscoveredRun(artifact_root=artifact_root, estimate_path=estimate_path, label="test"),
+    manifest_path = artifact_root / "evaluation" / "trajectory" / "manifest.json"
+    metrics_long_path = artifact_root / "evaluation" / "trajectory" / "metrics_long.csv"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        TrajectoryEvaluationManifest(
+            artifact_root=artifact_root,
+            sequence_id="test-sequence",
+            run_id="run",
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    metrics_long_path.write_text(
+        "\n".join(
+            [
+                "run_id,sequence_id,reference_source,estimate_source,metric_family,pose_relation,statistic,value,unit,matched_pairs,delta,delta_unit,error_series_path",
+                "run,test-sequence,ground_truth,vslam,ape,translation part,rmse,0.05,m,4,,,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    loaded = service.load_run_evaluation(
+        DiscoveredRun(
+            artifact_root=artifact_root,
+            estimate_path=artifact_root / "slam" / "trajectory.tum",
+            label="test",
+        )
     )
 
-    artifact = service.load_evaluation(selection=selection)
+    assert loaded.manifest is not None
+    assert len(loaded.metric_rows) == 1
+    assert loaded.metric_rows[0].statistic == "rmse"
+    assert loaded.metric_rows[0].value == 0.05
+    assert loaded.metric_rows[0].pose_relation is metrics.PoseRelation.translation_part
 
-    assert artifact is not None
-    assert artifact.path == metrics_path
-    assert artifact.semantics.metric_id is TrajectoryMetricId.APE_TRANSLATION
-    assert artifact.matched_pairs == 4
-    assert artifact.stats.rmse == 0.05
-    assert len(artifact.trajectories) == 2
+
+def test_trajectory_evaluation_query_loads_cloud_metrics_artifact(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    cloud_metrics_path = artifact_root / "evaluation" / "cloud_metrics.json"
+    cloud_metrics_path.parent.mkdir(parents=True)
+    cloud_metrics_path.write_text(
+        DenseCloudEvaluationArtifact(
+            path=cloud_metrics_path,
+            title="Dense Cloud Evaluation (Open3D)",
+            reference_cloud_path=artifact_root / "reference" / "reference_cloud.ply",
+            f1_threshold_m=0.05,
+            estimates=[
+                DenseCloudEstimateEvaluation(
+                    estimate_kind=CloudEstimateKind.SIM3_ICP,
+                    estimate_cloud_path=artifact_root / "align" / "cloud_icp.ply",
+                    reference_point_count=100,
+                    estimate_point_count=80,
+                    metrics={
+                        CloudMetricId.ACCURACY: 0.02,
+                        CloudMetricId.COMPLETENESS: 0.03,
+                        CloudMetricId.CHAMFER: 0.05,
+                        CloudMetricId.F1: 0.75,
+                        CloudMetricId.ICP_RMSE: 0.01,
+                        CloudMetricId.ICP_FITNESS: 0.9,
+                    },
+                )
+            ],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_cloud_evaluation(runs[0])
+
+    assert loaded.artifact is not None
+    assert loaded.load_error is None
+    rows = {row.metric_id: row for row in loaded.metric_rows}
+    assert rows[CloudMetricId.ACCURACY.value].unit == "m"
+    assert rows[CloudMetricId.F1.value].threshold_m == 0.05
+    assert rows[CloudMetricId.ICP_FITNESS.value].unit == "ratio"
+    assert rows["reference_point_count"].value == 100.0
+    assert rows["estimate_point_count"].value == 80.0
+    assert rows[CloudMetricId.CHAMFER.value].context["Sequence"] == "freiburg3_large_cabinet"
+    assert rows[CloudMetricId.CHAMFER.value].context["Method"] == MethodId.VISTA.value
+
+
+def test_trajectory_evaluation_query_discovers_runs_by_sequence_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    assert len(runs) == 1
+    assert runs[0].artifact_root == artifact_root
+    assert runs[0].estimate_path == artifact_root / "slam" / "trajectory.tum"
+    assert runs[0].method == MethodId.VISTA.value
+
+
+def test_trajectory_evaluation_query_excludes_mismatched_dataset(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.ADVIO),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    assert service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD) == []
+
+
+def test_trajectory_evaluation_query_excludes_runs_without_sequence_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    (artifact_root / "slam").mkdir(parents=True)
+    (artifact_root / "slam" / "trajectory.tum").write_text("", encoding="utf-8")
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+
+    assert service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD) == []
+
+
+def test_trajectory_evaluation_query_reports_missing_canonical_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_evaluation(runs[0])
+
+    assert loaded.manifest is None
+    assert loaded.metric_rows == []
+    assert loaded.load_error is None
+
+
+def test_trajectory_evaluation_query_ignores_legacy_metrics_json(tmp_path: Path) -> None:
+    artifact_root = tmp_path / "vista-tum-cabinet-full" / "vista"
+    _write_discoverable_run(
+        artifact_root,
+        SequenceManifest(sequence_id="freiburg3_large_cabinet", dataset_id=DatasetId.TUM_RGBD),
+    )
+    legacy_path = artifact_root / "evaluation" / "trajectory_metrics.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text('{"rmse": 0.1}', encoding="utf-8")
+    service = TrajectoryEvaluationQueryService(PathConfig(root=tmp_path, artifacts_dir=tmp_path))
+    runs = service.discover_runs("freiburg3_large_cabinet", dataset=DatasetId.TUM_RGBD)
+
+    loaded = service.load_run_evaluation(runs[0])
+
+    assert loaded.manifest is None
+    assert loaded.metric_rows == []
+
+
+def _write_discoverable_run(artifact_root: Path, sequence_manifest: SequenceManifest) -> None:
+    trajectory_path = artifact_root / "slam" / "trajectory.tum"
+    manifest_path = artifact_root / "input" / "sequence_manifest.json"
+    trajectory_path.parent.mkdir(parents=True)
+    manifest_path.parent.mkdir(parents=True)
+    trajectory_path.write_text("", encoding="utf-8")
+    manifest_path.write_text(sequence_manifest.model_dump_json(), encoding="utf-8")

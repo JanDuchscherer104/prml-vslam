@@ -1,0 +1,60 @@
+# ViSTA-SLAM method template for the sweep runner.
+#
+# IMPORTANT: [stages.slam] and [visualization] are read by the sweeper.  Source,
+# alignment, evaluation, and reconstruction sections are controlled by the sweep.
+# Dataset selection, baseline policy, and downstream stage enablement are
+# controlled by the [[datasets]] entries in the sweep TOML.
+#
+# Run one-off (outside a sweep):
+#   uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
+
+[stages.slam]
+enabled  = true
+num_gpus = 1.0
+affinity = "gpu-node"
+
+emit_progress           = true
+emit_queue_metrics      = true
+emit_latency_metrics    = true
+emit_throughput_metrics = true
+sampling_interval_ms    = 1000
+
+    [stages.slam.outputs]
+    emit_dense_points  = true
+    emit_sparse_points = false
+
+    [stages.slam.backend]
+    method_id   = "vista"
+    max_view_num = 400
+    keyframe_detection = "stride"
+    stride = 3
+
+    flow_thres                  = 25.0
+    neighbor_edge_num           = 3
+    loop_edge_num               = 2
+    loop_dist_min               = 40
+    loop_nms                    = 40
+    loop_cand_thresh_neighbor   = 5
+    point_conf_thres            = 4.2
+    rel_pose_thres              = 0.75
+    pgo_every                   = 500
+    random_seed = 43
+
+[visualization]
+connect_live_viewer = false
+export_viewer_rrd   = true
+grpc_url            = "rerun+http://127.0.0.1:9876/proxy"
+
+viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
+preserve_native_rerun = true
+
+log_source_rgb         = false
+log_diagnostic_preview = false
+log_camera_image_rgb   = false
+
+show_tracking_trajectory  = true
+trajectory_pose_axis_length = 0.0
+
+point_cloud_decimation_keep_ratio = 0.05
+mesh_decimation_keep_ratio        = 0.05
+decimation_random_seed            = 0

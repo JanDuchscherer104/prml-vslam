@@ -1,0 +1,83 @@
+# LingBot-Map sweep across five sequences (2 TUM RGB-D + 2 ADVIO + 1 Record3D).
+#
+# Requires the lingbot extra (conflicts with vista and mast3r — install separately):
+#   mamba activate prml-vslam
+#   export UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX
+#   uv sync --extra dev --extra streaming --extra lingbot
+#
+# Inspect the expanded plan (no execution):
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/example-lingbot-sweep.toml
+#
+# Execute sequentially, stop on first failure:
+#   uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/example-lingbot-sweep.toml
+#
+# Execute sequentially, attempt all runs:
+#   uv run --extra lingbot prml-vslam run-sweep-config .configs/sweeps/example-lingbot-sweep.toml \
+#       --continue-on-failure
+#
+# NOTE on frame strides: LingBot is trained within ~320 direct-mode views.
+# TUM and Record3D sequences use frame_stride=5 (~100–200 processed frames)
+# and ADVIO sequences use frame_stride=10 to stay comfortably within that range.
+#
+# Expanded run IDs (in execution order):
+#   example-lingbot-tum_rgbd-freiburg3_large_cabinet-lingbot_map
+#   example-lingbot-tum_rgbd-freiburg1_desk-lingbot_map
+#   example-lingbot-advio-advio-15-lingbot_map
+#   example-lingbot-advio-advio-01-lingbot_map
+#   example-lingbot-record3d_dataset-2026-06-03--18-29-08-lingbot_map
+
+[sweep]
+name       = "example-lingbot"
+output_dir = ".artifacts/sweeps"
+
+# ── Dataset 1: TUM RGB-D fr3/large_cabinet ───────────────────────────────────
+# stride 5 → ~200 frames, within LingBot's ~320-view training range.
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg3_large_cabinet"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 2: TUM RGB-D fr1/desk ────────────────────────────────────────────
+# stride 5 → ~120 frames.
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk"
+frame_stride        = 5
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 3: ADVIO 15 ──────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-15"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 4: ADVIO 01 ──────────────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-01"
+frame_stride        = 10
+baseline_source     = "ground_truth"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Dataset 5: Record3D 18-29-08 ─────────────────────────────────────────────
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 5
+baseline_source     = "arkit"
+align_trajectory    = true
+evaluate_trajectory = true
+
+# ── Methods ──────────────────────────────────────────────────────────────────
+[methods.lingbot_map]
+config_path = ".configs/templates/lingbot-slam.toml"

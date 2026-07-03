@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+import pandas as pd
 import pytest
 from evo.core.trajectory import PoseTrajectory3D
 
-from prml_vslam.eval.contracts import ErrorSeries, IntrinsicsComparisonDiagnostics, TrajectorySeries
+from prml_vslam.eval.contracts import (
+    CloudEstimateKind,
+    CloudMetricId,
+    DenseCloudEstimateEvaluation,
+    DenseCloudEvaluationArtifact,
+    IntrinsicsComparisonDiagnostics,
+)
 from prml_vslam.interfaces import CameraIntrinsics
 from prml_vslam.methods.vista.diagnostics import VistaNativeSlamDiagnostics, VistaViewGraphDiagnostics
 from prml_vslam.plotting.advio import build_advio_comparison_trajectories
@@ -18,15 +27,37 @@ from prml_vslam.plotting.artifact_diagnostics import (
     build_native_timing_figure,
     build_view_graph_figure,
 )
-from prml_vslam.plotting.metrics import build_trajectory_figure
+from prml_vslam.plotting.datasets import build_reference_cloud_scene_figure, build_trajectory_metric_figure
+from prml_vslam.plotting.metrics import (
+    build_cloud_accuracy_completeness_xy_figure,
+    build_cloud_distance_metrics_figure,
+    build_cloud_icp_impact_figure,
+    build_cloud_point_count_figure,
+    build_cloud_quality_metrics_figure,
+    build_trajectory_figure,
+)
 from prml_vslam.plotting.pipeline import build_evo_ape_colormap_figure, pointmap_preview_image
 from prml_vslam.plotting.record3d import build_live_trajectory_figure
 from prml_vslam.plotting.trajectories import build_bev_trajectory_figure, build_height_profile_figure
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode
+from prml_vslam.utils.geometry import write_point_cloud_ply
 
 
-def _trajectory_series(name: str) -> TrajectorySeries:
-    return TrajectorySeries(
+@dataclass(slots=True)
+class _TrajectorySeries:
+    name: str
+    positions_xyz: np.ndarray
+    timestamps_s: np.ndarray
+
+
+@dataclass(slots=True)
+class _ErrorSeries:
+    timestamps_s: np.ndarray
+    values: np.ndarray
+
+
+def _trajectory_series(name: str) -> _TrajectorySeries:
+    return _TrajectorySeries(
         name=name,
         positions_xyz=np.asarray([[0.0, 0.0, 0.0], [1.0, 0.5, 0.25]], dtype=np.float64),
         timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
@@ -91,10 +122,62 @@ def test_metrics_trajectory_figure_uses_standard_xy_axes() -> None:
     assert figure.layout.yaxis.scaleanchor == "x"
 
 
+def test_cloud_metric_figures_expose_distance_quality_and_count_traces(tmp_path) -> None:
+    artifact = DenseCloudEvaluationArtifact(
+        path=tmp_path / "cloud_metrics.json",
+        title="Dense Cloud Evaluation (Open3D)",
+        reference_cloud_path=tmp_path / "reference.ply",
+        f1_threshold_m=0.05,
+        estimates=[
+            DenseCloudEstimateEvaluation(
+                estimate_kind=CloudEstimateKind.SIM3,
+                estimate_cloud_path=tmp_path / "sim3.ply",
+                reference_point_count=10,
+                estimate_point_count=20,
+                metrics={
+                    CloudMetricId.ACCURACY: 0.1,
+                    CloudMetricId.COMPLETENESS: 0.2,
+                    CloudMetricId.CHAMFER: 0.3,
+                    CloudMetricId.F1: 0.4,
+                },
+            ),
+            DenseCloudEstimateEvaluation(
+                estimate_kind=CloudEstimateKind.SIM3_ICP,
+                estimate_cloud_path=tmp_path / "icp.ply",
+                reference_point_count=10,
+                estimate_point_count=18,
+                metrics={
+                    CloudMetricId.ACCURACY: 0.05,
+                    CloudMetricId.COMPLETENESS: 0.15,
+                    CloudMetricId.CHAMFER: 0.2,
+                    CloudMetricId.F1: 0.8,
+                    CloudMetricId.ICP_FITNESS: 0.9,
+                },
+            ),
+        ],
+    )
+
+    distance = build_cloud_distance_metrics_figure(artifact)
+    quality = build_cloud_quality_metrics_figure(artifact)
+    counts = build_cloud_point_count_figure(artifact)
+    impact = build_cloud_icp_impact_figure(artifact)
+    xy = build_cloud_accuracy_completeness_xy_figure(artifact)
+
+    assert [trace.name for trace in distance.data] == ["Accuracy", "Completeness", "Chamfer"]
+    assert [trace.name for trace in quality.data] == ["F1 @ 0.05 m", "ICP fitness"]
+    assert [trace.name for trace in counts.data] == ["Estimate points", "Reference points"]
+    assert list(impact.data[0].x) == ["Accuracy", "Completeness", "Chamfer", "F1"]
+    assert list(impact.data[0].y) == pytest.approx([0.05, 0.05, 0.1, 0.4])
+    assert [trace.name for trace in xy.data] == ["Sim3", "Sim3 + ICP"]
+    assert xy.layout.annotations[0].text == "ICP"
+    assert distance.layout.barmode == "group"
+    assert quality.layout.yaxis.range == (0.0, 1.0)
+
+
 def test_pipeline_evo_figure_uses_shared_3d_layout() -> None:
     reference = _trajectory_series("Reference")
     estimate = _trajectory_series("Estimate")
-    error_series = ErrorSeries(
+    error_series = _ErrorSeries(
         timestamps_s=np.asarray([0.0, 1.0], dtype=np.float64),
         values=np.asarray([0.1, 0.2], dtype=np.float64),
     )
@@ -135,6 +218,74 @@ def test_advio_plotting_supports_dataset_specific_axes() -> None:
     assert np.array_equal(np.asarray(bev.data[0].y), np.asarray([2.0, 3.0, 4.0]))
     assert height.layout.yaxis.title.text == "Y (m)"
     assert np.array_equal(np.asarray(height.data[0].y), np.asarray([1.0, 2.0, 3.0]))
+
+
+def test_dataset_trajectory_metric_figure_uses_scene_subject_labels() -> None:
+    frame = pd.DataFrame.from_records(
+        [
+            {
+                "sequence_id": "scene-a",
+                "subject": "ground_truth/source_native",
+                "trajectory_mean_speed_m_s": "0.4",
+                "trajectory_mean_curvature_rad_m": "0.12",
+            },
+            {
+                "sequence_id": "scene-a",
+                "subject": "arkit/aligned",
+                "trajectory_mean_speed_m_s": "0.7",
+                "trajectory_mean_curvature_rad_m": "0.18",
+            },
+            {
+                "sequence_id": "scene-b",
+                "subject": "arkit/aligned",
+                "trajectory_mean_speed_m_s": "1.1",
+                "trajectory_mean_curvature_rad_m": "0.35",
+            },
+        ]
+    )
+
+    speed = build_trajectory_metric_figure(
+        frame,
+        value_column="trajectory_mean_speed_m_s",
+        title="Mean Speed per Scene",
+        yaxis_title="Mean Speed (m/s)",
+    )
+    curvature = build_trajectory_metric_figure(
+        frame,
+        value_column="trajectory_mean_curvature_rad_m",
+        title="Mean Curvature per Scene",
+        yaxis_title="Mean Curvature (rad/m)",
+    )
+
+    assert [trace.name for trace in speed.data] == ["ground_truth/source_native", "arkit/aligned"]
+    assert list(speed.data[0].x) == ["scene-a"]
+    assert list(speed.data[1].x) == ["scene-a", "scene-b"]
+    assert list(speed.data[0].y) == [0.4]
+    assert list(speed.data[1].y) == [0.7, 1.1]
+    assert speed.data[0].marker.color != speed.data[1].marker.color
+    assert speed.layout.barmode == "group"
+    assert speed.layout.showlegend is True
+    assert [trace.name for trace in curvature.data] == [trace.name for trace in speed.data]
+    assert list(curvature.data[0].y) == [0.12]
+    assert list(curvature.data[1].y) == [0.18, 0.35]
+
+
+def test_reference_cloud_scene_figure_samples_cloud_and_overlays_trajectory(tmp_path) -> None:
+    cloud_path = write_point_cloud_ply(
+        tmp_path / "cloud.ply",
+        np.asarray([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], dtype=np.float64),
+    )
+    trajectory = _pose_trajectory([(0.0, 0.0, 0.0), (2.0, 0.0, 1.0)])
+
+    figure = build_reference_cloud_scene_figure(
+        clouds=[("Reference cloud", cloud_path)],
+        trajectories=[("Ground truth", trajectory)],
+        max_points=2,
+        random_seed=1,
+    )
+
+    assert [trace.name for trace in figure.data] == ["Reference cloud (2/3)", "Ground truth"]
+    assert figure.layout.scene.aspectmode == "data"
 
 
 def test_advio_comparison_trajectories_rebase_provider_tracks() -> None:

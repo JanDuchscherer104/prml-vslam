@@ -204,7 +204,6 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `ReferenceCloudSource` | `sources.contracts` | Keep source-prepared reference-cloud source enum. | sources | Reference-cloud tests. |
 | `ReferenceCloudCoordinateStatus` | `sources.contracts` | Keep coordinate-status enum for prepared reference clouds. | sources | Reference-cloud metadata tests. |
 | `TrajectoryMetricId` | `eval.contracts` | Keep eval-owned metric identifier enum. | eval | Eval service tests. |
-| `TrajectoryAlignmentMode` | `eval.contracts` | Keep eval-owned metric alignment enum. | eval | Eval service tests. |
 | `TrajectoryEvaluator` | `eval.protocols` | Keep eval-owned protocol seam. | eval | Eval service/protocol tests. |
 | `DenseCloudEvaluator` | `eval.protocols` | Keep eval-owned future dense-cloud protocol. | eval | Future dense-cloud eval tests. |
 | `EfficiencyEvaluator` | `eval.protocols` | Keep eval-owned future efficiency protocol. | eval | Future efficiency eval tests. |
@@ -246,8 +245,8 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `AdvioCalibration` | `datasets.advio.advio_loading` | Keep dataset-local calibration DTO. | datasets | ADVIO loading tests. |
 | `AdvioEnvironment` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
 | `AdvioPeopleLevel` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
-| `AdvioModality` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO tests. |
-| `AdvioDownloadPreset` | `datasets.advio.advio_models` | Keep dataset-local enum. | datasets | ADVIO download tests. |
+| `AdvioModality` | removed | Remove partial download modality surface; downloads are full-scene only. | datasets | ADVIO download tests. |
+| `AdvioDownloadPreset` | removed | Remove partial download preset surface; downloads are full-scene only. | datasets | ADVIO download tests. |
 | `AdvioUpstreamMetadata` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
 | `AdvioSceneMetadata` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
 | `AdvioCatalog` | `datasets.advio.advio_models` | Keep dataset-local catalog DTO. | datasets | ADVIO catalog tests. |
@@ -260,8 +259,8 @@ and ownership records only; they do not authorize DTO movement or deletion.
 | `TumRgbdFrameAssociation` | `datasets.tum_rgbd.tum_rgbd_loading` | Keep dataset-local association DTO. | datasets | TUM RGB-D loading tests. |
 | `TumRgbdOfflineSample` | `datasets.tum_rgbd.tum_rgbd_loading` | Keep dataset-local sample DTO. | datasets | TUM RGB-D loading tests. |
 | `TumRgbdPoseSource` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D tests. |
-| `TumRgbdModality` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D tests. |
-| `TumRgbdDownloadPreset` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local enum. | datasets | TUM RGB-D download tests. |
+| `TumRgbdModality` | removed | Remove partial download modality surface; downloads are full-scene only. | datasets | TUM RGB-D download tests. |
+| `TumRgbdDownloadPreset` | removed | Remove partial download preset surface; downloads are full-scene only. | datasets | TUM RGB-D download tests. |
 | `TumRgbdSceneMetadata` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local catalog DTO. | datasets | TUM RGB-D catalog tests. |
 | `TumRgbdCatalog` | `datasets.tum_rgbd.tum_rgbd_models` | Keep dataset-local catalog DTO. | datasets | TUM RGB-D catalog tests. |
 | `TumRgbdSequencePaths` | `datasets.tum_rgbd.tum_rgbd_sequence` | Keep dataset-local path DTO. | datasets | TUM RGB-D sequence tests. |

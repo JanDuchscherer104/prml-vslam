@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import numpy as np
-import yaml
+import yaml  # type: ignore[import-untyped]
 from numpy.typing import NDArray
 from pydantic import ConfigDict, Field
 
@@ -98,25 +98,45 @@ class CameraIntrinsics(BaseData):
     def from_column_major_flat_k(
         cls,
         values: Sequence[float],
-        **kwargs: int | str | Sequence[float] | None,
+        *,
+        width_px: int | None = None,
+        height_px: int | None = None,
+        distortion_model: str | None = None,
+        distortion_coefficients: Sequence[float] = (),
     ) -> Self:
         """Build the shared DTO from a flat 9-value column-major payload."""
         if len(values) != 9:
             raise ValueError(f"Expected 9 values for a flat intrinsic matrix, got {len(values)}.")
         matrix = np.asarray(values, dtype=np.float64).reshape((3, 3), order="F")
-        return cls.from_matrix(matrix, **kwargs)
+        return cls.from_matrix(
+            matrix,
+            width_px=width_px,
+            height_px=height_px,
+            distortion_model=distortion_model,
+            distortion_coefficients=distortion_coefficients,
+        )
 
     @classmethod
     def from_row_major_flat_k(
         cls,
         values: Sequence[float],
-        **kwargs: int | str | Sequence[float] | None,
+        *,
+        width_px: int | None = None,
+        height_px: int | None = None,
+        distortion_model: str | None = None,
+        distortion_coefficients: Sequence[float] = (),
     ) -> Self:
         """Build the shared DTO from a flat 9-value row-major payload."""
         if len(values) != 9:
             raise ValueError(f"Expected 9 values for a flat intrinsic matrix, got {len(values)}.")
         matrix = np.asarray(values, dtype=np.float64).reshape((3, 3))
-        return cls.from_matrix(matrix, **kwargs)
+        return cls.from_matrix(
+            matrix,
+            width_px=width_px,
+            height_px=height_px,
+            distortion_model=distortion_model,
+            distortion_coefficients=distortion_coefficients,
+        )
 
 
 class CameraIntrinsicsSample(BaseData):
@@ -200,7 +220,7 @@ class CameraIntrinsicsSeries(BaseData):
                     index=index,
                     keyframe_index=keyframe_values[index],
                     timestamp_ns=timestamp_values[index],
-                    view_name="" if view_name_values[index] is None else view_name_values[index],
+                    view_name="" if view_name_values[index] is None else str(view_name_values[index]),
                     intrinsics=CameraIntrinsics.from_matrix(matrix, width_px=width_px, height_px=height_px),
                 )
                 for index, matrix in enumerate(matrix_stack)
@@ -242,7 +262,7 @@ def load_camera_intrinsics_yaml(path: Path) -> CameraIntrinsics:
         raise ValueError(f"Expected four pinhole intrinsics values in '{path}', got {len(values)}.")
     fx, fy, cx, cy = values
     distortion = camera.get("distortion", {})
-    distortion_model = distortion.get("type") if isinstance(distortion, dict) else None
+    distortion_model = cast(str | None, distortion.get("type")) if isinstance(distortion, dict) else None
     distortion_parameters = distortion.get("parameters", {}) if isinstance(distortion, dict) else {}
     distortion_data = distortion_parameters.get("data", ()) if isinstance(distortion_parameters, dict) else ()
     return CameraIntrinsics(
@@ -255,6 +275,33 @@ def load_camera_intrinsics_yaml(path: Path) -> CameraIntrinsics:
         distortion_model=distortion_model,
         distortion_coefficients=tuple(float(value) for value in distortion_data),
     )
+
+
+def write_camera_intrinsics_yaml(intrinsics: CameraIntrinsics, target_path: Path) -> Path:
+    """Write the repository's canonical single-camera intrinsics YAML schema."""
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    distortion = ", ".join(f"{value:.8g}" for value in intrinsics.distortion_coefficients)
+    rows = [
+        "cameras:",
+        "- camera:",
+        f"    image_height: {intrinsics.height_px or 0}",
+        f"    image_width: {intrinsics.width_px or 0}",
+        "    type: pinhole",
+        "    intrinsics:",
+        f"      data: [{intrinsics.fx:.8g}, {intrinsics.fy:.8g}, {intrinsics.cx:.8g}, {intrinsics.cy:.8g}]",
+        "    distortion:",
+        f"      type: {intrinsics.distortion_model or 'none'}",
+        "      parameters:",
+        f"        data: [{distortion}]",
+        "    T_cam_imu:",
+        "      data:",
+        "      - [1.0, 0.0, 0.0, 0.0]",
+        "      - [0.0, 1.0, 0.0, 0.0]",
+        "      - [0.0, 0.0, 1.0, 0.0]",
+        "      - [0.0, 0.0, 0.0, 1.0]",
+    ]
+    target_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return target_path.resolve()
 
 
 def scale_camera_intrinsics(

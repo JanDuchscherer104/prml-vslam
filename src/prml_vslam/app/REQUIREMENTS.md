@@ -14,7 +14,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 - The `Pipeline` page may run offline ADVIO requests plus bounded Record3D live flows through pipeline-owned services, and it renders latest or rolling live stage telemetry from `StageRuntimeStatus`.
 - The `Pipeline` page currently renders an explicit `evo` APE preview when both reference and estimate TUM trajectories are available for the bounded demo result.
 - The `Artifacts` page inspects persisted method-level run roots and keeps heavy trajectory, PLY, and Rerun artifact loading behind explicit user actions.
-- The `Metrics` page keeps evaluation explicit and renders persisted `evo` trajectory results.
+- The `Metrics` page keeps evaluation explicit and renders persisted `evo` trajectory results plus persisted dense-cloud evaluation metrics when available.
 
 ## Target State
 
@@ -53,7 +53,7 @@ Use this file for current app behavior, target app constraints, and package-loca
 ## Validation
 
 - Selecting `USB` or `Wi-Fi Preview` and starting a stream shows transport status, received frames, frame rate, intrinsics, RGB, depth, and confidence when available.
-- Switching to `Metrics` renders a matching persisted `evo` result without recomputing it.
+- Switching to `Metrics` renders matching persisted `evo` trajectory results and dense-cloud metric artifacts without recomputing them.
 - Switching to `Artifacts` can inspect typed run metadata, canonical paths, stage output paths, and small raw metadata without loading heavy geometry or `.rrd` files.
 - Switching to `Pipeline` shows the direct `RunConfig` workflow, a generated `RunPlan` preview, a stage-status overview, latest or rolling live telemetry, and an `evo` APE preview when the required trajectories are available.
 - On live pages, only one of `Start` or `Stop` is visible in the shared action slot at a time.

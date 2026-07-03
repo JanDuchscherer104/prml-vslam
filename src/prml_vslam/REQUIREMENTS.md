@@ -8,7 +8,7 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Current State
 
-- The repository has stable top-level package slices: `alignment`, `app`,
+- The repository has stable top-level package slices: `align`, `app`,
   `eval`, `interfaces`, `methods`, `pipeline`, `plotting`, `reconstruction`,
   `sources`, `utils`, and `visualization`.
 - This file is the current canonical location for top-level module ownership and cross-package contract placement rules.
@@ -24,9 +24,9 @@ Use this file for package-root ownership rules and cross-package contract constr
 
 ## Responsibilities
 
-- `alignment`
+- `align`
   - owns derived alignment logic that interprets normalized SLAM artifacts without mutating them
-  - examples include dominant-ground detection, viewer-scoped ground alignment metadata, and future gravity/reference-assisted alignment helpers
+  - examples include dominant-ground detection, Sim(3) trajectory alignment, and ICP point-cloud alignment
   - does not own backend execution, benchmark metric computation, or Rerun logging
 - `app`
   - owns Streamlit pages, typed page state (`prml_vslam.app.models`), UI composition, and launch surfaces
@@ -48,9 +48,23 @@ Use this file for package-root ownership rules and cross-package contract constr
     dataset catalogs, replay adapters, Record3D transports, sequence
     materialization, source-stage outputs, and prepared reference identifiers
     and DTOs such as `PreparedBenchmarkInputs`
-  - preserves the currently supported dataset modalities and dataset-specific
-    auxiliary/reference assets, including ADVIO provider trajectories and TUM
-    RGB-D reference-cloud preparation
+  - owns reusable normalized dataset stores under
+    `.data/vslam-datastore/<dataset>/<sequence>/<profile-key>/`; store entries
+    persist source-selected replay payloads once plus source-owned long-form
+    Core/Motion statistics and metadata tables; normalize-time `frame_stride`,
+    `target_fps`, RGB preprocessing, and reference-cloud sampling are
+    byte-affecting source profile settings, while runtime-only downsampling is
+    applied by readers through lightweight selected-index sidecars
+  - keeps normalized entry layout canonical: the common single RGB-D observation
+    sequence lives at `<entry>/observations/`, and Record3D depth stays benchmark
+    observation material without duplicating matching RGB payloads
+  - preserves full-scene dataset fetches and dataset-specific auxiliary/reference
+    assets, including ADVIO provider trajectories and TUM RGB-D reference-cloud
+    preparation
+  - publishes ADVIO normalized datastore entries only in RDF fixedpoint/common-start
+    frames: raw ADVIO pose/fixpoint CSV sidecars are not persisted, accepted
+    ARCore/ARKit fixedpoint-registered trajectories are benchmark candidates,
+    and post-normalization aligned AR overlays are reference-only diagnostics
 - `visualization`
   - owns viewer policy, preserved native viewer artifacts, and the repo-owned Rerun integration layer
   - may decimate geometry sent to Rerun observer sinks for viewer performance;
@@ -88,8 +102,13 @@ Use this file for package-root ownership rules and cross-package contract constr
   require world-to-camera matrices.
 - Unstructured point clouds, raster-aligned pointmaps, and metric depth maps
   are distinct shared geometry contracts.
+- Normalized SLAM dense-geometry runs may expose first-class artifact refs for
+  `depth_maps_npz`, `point_maps_npz`, and `point_cloud_confidences_npz` when a
+  backend materializes those processed-raster arrays. These artifacts must
+  record raster space, frame order, timestamps, frame semantics, and filtering
+  policy in side metadata instead of relying on filenames alone.
 - ADVIO does not prepare point-cloud benchmark references and does not expose
-  legacy auxiliary device streams as supported modalities or pose providers.
+  legacy auxiliary device streams as supported source data or pose providers.
 - Repository-prepared TUM RGB-D reference clouds must be built from the same
   persisted RGB-D observation index consumed by the method input path. Any point
   budget or Rerun decimation must happen after all method frames have
@@ -119,6 +138,11 @@ Use this file for package-root ownership rules and cross-package contract constr
   but the pipeline must not interpret backend-native arrays directly.
 - Persisted diagnostic or benchmark comparisons belong in `eval`; app pages and
   plotting helpers may render them but must not define their semantics.
+- Dense-cloud benchmark metrics are persisted eval artifacts computed from full
+  benchmark PLY clouds with Open3D. The standard point-cloud comparison uses
+  Sim(3)-aligned and Sim(3)+ICP-aligned estimates, records directed accuracy,
+  completeness, summed Chamfer distance, F1 at the configured metric threshold,
+  and attaches ICP fitness/RMSE when alignment metadata exists.
 - Record3D live pipeline requests must use a transport-aware typed source contract instead of encoding USB or Wi-Fi details into ad hoc `source_id` strings alone.
 - `PathConfig` remains the single owner of repo-owned path semantics.
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import tarfile
 from pathlib import Path
 
+from prml_vslam.sources.datasets.contracts import DatasetDownloadResult, LocalSceneStatus
 from prml_vslam.sources.datasets.download_helpers import (
-    modalities_present,
     normalize_archive_member,
     relative_sequence_path,
 )
@@ -12,18 +12,14 @@ from prml_vslam.sources.datasets.fetch import DatasetFetchHelper
 from prml_vslam.utils import Console
 
 from .tum_rgbd_layout import (
-    archive_member_matches,
-    local_modalities,
+    offline_ready,
+    replay_ready,
     resolve_existing_sequence_dir,
     scene_for_sequence_id,
 )
 from .tum_rgbd_models import (
     TumRgbdCatalog,
-    TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
-    TumRgbdDownloadResult,
-    TumRgbdLocalSceneStatus,
-    TumRgbdModality,
     TumRgbdSceneMetadata,
 )
 
@@ -42,25 +38,26 @@ class TumRgbdDownloadManager:
     def scene(self, sequence_id: str) -> TumRgbdSceneMetadata:
         return scene_for_sequence_id(self.catalog, sequence_id)
 
-    def local_scene_statuses(self) -> list[TumRgbdLocalSceneStatus]:
-        return [
-            TumRgbdLocalSceneStatus(
-                scene=scene,
-                sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
-                local_modalities=(modalities := self._local_modalities(scene)),
-                archive_path=self._existing_archive_path(scene),
-                replay_ready=modalities_present(modalities, TumRgbdDownloadPreset.STREAMING.modalities),
-                offline_ready=modalities_present(modalities, TumRgbdDownloadPreset.OFFLINE.modalities),
+    def local_scene_statuses(self) -> list[LocalSceneStatus[TumRgbdSceneMetadata]]:
+        statuses: list[LocalSceneStatus[TumRgbdSceneMetadata]] = []
+        for scene in self.catalog.scenes:
+            statuses.append(
+                LocalSceneStatus[TumRgbdSceneMetadata](
+                    scene=scene,
+                    sequence_dir=resolve_existing_sequence_dir(self.dataset_root, scene.sequence_id),
+                    archive_path=self._existing_archive_path(scene),
+                    replay_ready=replay_ready(self.dataset_root, scene),
+                    offline_ready=offline_ready(self.dataset_root, scene),
+                )
             )
-            for scene in self.catalog.scenes
-        ]
+        return statuses
 
-    def download(self, request: TumRgbdDownloadRequest) -> TumRgbdDownloadResult:
+    def download(self, request: TumRgbdDownloadRequest) -> DatasetDownloadResult[str]:
+        """Download selected TUM RGB-D scenes and extract complete scene payloads."""
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         self.archive_root.mkdir(parents=True, exist_ok=True)
 
         sequence_ids = request.sequence_ids or [scene.sequence_id for scene in self.catalog.scenes]
-        modalities = request.resolved_modalities()
         downloaded_archive_count = 0
         reused_archive_count = 0
         written_paths: set[Path] = set()
@@ -71,24 +68,19 @@ class TumRgbdDownloadManager:
             downloaded_archive_count += int(downloaded)
             reused_archive_count += int(not downloaded)
             written_paths.update(
-                self._extract_modalities(
+                self._extract_full_scene(
                     scene=scene,
                     archive_path=archive_path,
-                    modalities=modalities,
                     overwrite=request.overwrite,
                 )
             )
 
-        return TumRgbdDownloadResult(
+        return DatasetDownloadResult[str](
             sequence_ids=sequence_ids,
-            modalities=list(modalities),
             downloaded_archive_count=downloaded_archive_count,
             reused_archive_count=reused_archive_count,
             written_path_count=len(written_paths),
         )
-
-    def _local_modalities(self, scene: TumRgbdSceneMetadata) -> list[TumRgbdModality]:
-        return local_modalities(self.dataset_root, scene)
 
     def _ensure_archive(self, scene: TumRgbdSceneMetadata, *, overwrite: bool) -> tuple[Path, bool]:
         archive_path = self.archive_root / f"{scene.folder_name}.tgz"
@@ -99,12 +91,11 @@ class TumRgbdDownloadManager:
         archive_path = self.archive_root / f"{scene.folder_name}.tgz"
         return archive_path if archive_path.exists() else None
 
-    def _extract_modalities(
+    def _extract_full_scene(
         self,
         *,
         scene: TumRgbdSceneMetadata,
         archive_path: Path,
-        modalities: tuple[TumRgbdModality, ...],
         overwrite: bool,
     ) -> set[Path]:
         written_paths: set[Path] = set()
@@ -117,7 +108,7 @@ class TumRgbdDownloadManager:
                 if normalized is None:
                     continue
                 relative_path = relative_sequence_path(normalized, scene.folder_name)
-                if relative_path is None or not archive_member_matches(relative_path, modalities):
+                if relative_path is None or not relative_path.parts:
                     continue
                 matched_members += 1
                 target_path = self.dataset_root / Path(*normalized)
@@ -126,8 +117,7 @@ class TumRgbdDownloadManager:
                 written_paths.add(target_path)
 
         if matched_members == 0:
-            requested = ", ".join(modality.value for modality in modalities)
-            msg = f"Archive {archive_path} did not contain any members for requested modalities: {requested}"
+            msg = f"Archive {archive_path} did not contain any members for scene {scene.sequence_id}."
             raise ValueError(msg)
         return written_paths
 
