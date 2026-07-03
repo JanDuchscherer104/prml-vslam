@@ -82,6 +82,8 @@
   set page(
     columns: 2,
     paper: paper-size,
+    numbering: "1",
+    number-align: center,
     // The margins depend on the paper size.
     margin: if paper-size == "a4" {
       (x: 41.5pt, top: 80.51pt, bottom: 89.51pt)
@@ -203,11 +205,12 @@
     scope: "parent",
     clearance: 30pt,
     {
-      show std.title: set align(center)
-      show std.title: set par(leading: 0.5em)
-      show std.title: set text(size: 24pt, weight: "regular")
-      show std.title: set block(below: 8.35mm)
-      std.title()
+      block(below: 8.35mm)[
+        #set align(center)
+        #set par(leading: 0.5em)
+        #set text(size: 24pt, weight: "regular")
+        #title
+      ]
 
       // Display the authors list.
       set par(leading: 0.6em)
