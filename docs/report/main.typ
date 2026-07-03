@@ -49,6 +49,9 @@
     "dense reconstruction",
   ),
   bibliography: bibliography("../references.bib"),
+  body-appendix: [
+    #include "sections/10-appendix-workpackages.typ"
+  ],
   figure-supplement: [Fig.],
   paper-size: "a4",
 )
@@ -62,4 +65,3 @@
 #include "sections/07-experiments.typ"
 #include "sections/08-discussion.typ"
 #include "sections/09-conclusion.typ"
-#include "sections/10-appendix-workpackages.typ"

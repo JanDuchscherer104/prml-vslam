@@ -1,3 +1,7 @@
+// Adapted from
+// - https://github.com/typst/templates/tree/main/charged-ieee
+// - https://typst.app/universe/package/charged-ieee/
+
 // This function gets your whole document as its `body` and formats
 // it as an article in the style of the IEEE.
 #let ieee(
@@ -19,6 +23,8 @@
   paper-size: "a4",
   // The result of a call to the `bibliography` function or `none`.
   bibliography: none,
+  // Content rendered after the bibliography, such as appendices.
+  body-appendix: none,
   // How figures are referred to from within the text.
   // Use "Figure" instead of "Fig." for computer-related publications.
   figure-supplement: [Fig.],
@@ -192,17 +198,16 @@
   // spanning all columns (hence floating at the scope of the
   // columns' parent, which is the page).
   place(
-    top,
+    top + center,
     float: true,
     scope: "parent",
     clearance: 30pt,
     {
-      {
-        set align(center)
-        set par(leading: 0.5em)
-        set text(size: 24pt)
-        block(below: 8.35mm, title)
-      }
+      show std.title: set align(center)
+      show std.title: set par(leading: 0.5em)
+      show std.title: set text(size: 24pt, weight: "regular")
+      show std.title: set block(below: 8.35mm)
+      std.title()
 
       // Display the authors list.
       set par(leading: 0.6em)
@@ -263,4 +268,9 @@
 
   // Display bibliography.
   bibliography
+
+  // Display appendix content after the references.
+  if body-appendix != none {
+    body-appendix
+  }
 }
