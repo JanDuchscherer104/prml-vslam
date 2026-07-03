@@ -9,6 +9,11 @@ This section details the state-of-the-art dense monocular SLAM systems chosen fo
 
 ViSTA-SLAM is an intrinsics-free dense monocular SLAM system that relies on symmetric two-view association @zhang2026vistaslam. Instead of regressing geometry into a single reference frame, the model utilizes a Symmetric Two-view Association (STA) frontend for local geometry extraction and a pose graph backend for global optimization.
 
+#figure(
+  image("/docs/figures/papers/figure-2-vista-architecture.png", width: 100%),
+  caption: [The symmetric two-view association architecture of ViSTA-SLAM. A shared Vision Transformer encoder extracts features which are then processed by a single symmetric decoder to predict local point clouds and relative poses @zhang2026vistaslam.],
+) <fig:vista_architecture>
+
 The method employs a shared Vision Transformer encoder to extract features from uncalibrated RGB image pairs. These features pass through a symmetric decoder that predicts local point clouds for each view alongside their relative pose. This formulation reduces the parameter count compared to asymmetric baselines and enables real-time inference. The frontend trains by optimizing pointmap regression, geometric consistency, and relative pose alignment. The relative pose loss enforces cycle consistency along the $op("SE")(3)$ manifold:
 
 $
