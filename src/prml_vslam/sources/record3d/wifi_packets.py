@@ -130,6 +130,7 @@ def record3d_wifi_observation_from_video_frame(
         raise RuntimeError("Record3D Wi-Fi composite frames must contain both depth and RGB halves.")
 
     half_width = composite_frame.shape[1] // 2
+    rgb = np.ascontiguousarray(composite_frame[:, -half_width:, :])
     if timestamp_ns is None:
         timestamp_ns = time.time_ns()
 
@@ -138,7 +139,7 @@ def record3d_wifi_observation_from_video_frame(
         timestamp_ns=timestamp_ns,
         source_frame_index=seq,
         arrival_timestamp_s=timestamp_ns / 1e9,
-        rgb=composite_frame[:, -half_width:, :],
+        rgb=rgb,
         intrinsics=metadata.intrinsics,
         confidence=None,
         provenance=ObservationProvenance(
