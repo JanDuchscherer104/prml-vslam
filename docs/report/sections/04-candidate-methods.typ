@@ -7,9 +7,9 @@ This section details the state-of-the-art dense monocular SLAM systems chosen fo
 == ViSTA-SLAM
 // RESPONSIBLIY: Lukas (ViSTA-SLAM subsection)
 
-ViSTA-SLAM operates as an intrinsics-free dense monocular SLAM system using symmetric two-view association @zhang2026vistaslam. The architecture splits into a frontend for local geometry extraction and a pose graph backend for global optimization.
+ViSTA-SLAM is an intrinsics-free dense monocular SLAM system that relies on symmetric two-view association @zhang2026vistaslam. Instead of regressing geometry into a single reference frame, the model utilizes a Symmetric Two-view Association (STA) frontend for local geometry extraction and a pose graph backend for global optimization.
 
-The Symmetric Two-view Association (STA) frontend processes uncalibrated RGB image pairs via a shared Vision Transformer encoder. Unlike asymmetric models that regress geometry into a single reference frame, STA predicts local point clouds for each view alongside their relative pose. This symmetric formulation reduces the overall parameter count compared to asymmetric baselines, enabling efficient real-time inference. The frontend optimizes pointmap regression, geometric consistency, and relative pose alignment. The relative pose loss incorporates cycle consistency along the $op("SE")(3)$ manifold:
+The method employs a shared Vision Transformer encoder to extract features from uncalibrated RGB image pairs. These features pass through a symmetric decoder that predicts local point clouds for each view alongside their relative pose. This formulation reduces the parameter count compared to asymmetric baselines and enables real-time inference. The frontend trains by optimizing pointmap regression, geometric consistency, and relative pose alignment. The relative pose loss enforces cycle consistency along the $op("SE")(3)$ manifold:
 
 $
   L_("pose") & = w_(i j) ( L_R (bold(R)_(i j), hat(bold(R))_(i j)) \
@@ -17,11 +17,11 @@ $
              & quad - alpha log(w_(i j))
 $
 
-The backend mitigates trajectory drift through $op("Sim")(3)$ pose graph optimization. Graph nodes encode absolute camera poses and independent scale factors. The graph connects these nodes using pose edges from single forward passes and scale edges across different passes of the same view. The system minimizes the residual error in the Lie algebra $frak(s)frak(i)frak(m)(3)$ via the Levenberg-Marquardt algorithm:
+The backend optimizes absolute camera poses and independent scale factors as graph nodes as the image stream progresses. The pose graph connects these nodes using pose edges from single forward passes and scale edges across repeated passes of the same view. The system mitigates trajectory drift by minimizing the residual error in the Lie algebra $frak(s)frak(i)frak(m)(3)$ via the Levenberg-Marquardt algorithm:
 
 $ min_({bold(v)_i^j}) sum_(bold(e)_(i j)) norm(log_("Sim"(3)) (bold(e)_(i j) dot (bold(v)_i^j)^(-1) dot bold(v)_j^i))_(bold(Omega)_(i j))^2 $
 
-This representation matches raw smartphone video constraints. It removes the requirement for known intrinsics while supplying dense 3D geometry. Pairwise learned pointmaps present a specific evaluation risk: the network can generate plausible local geometry that retains correlated scale or shape distortions. This requires benchmark adapters to validate both trajectory alignment and dense cloud placement to verify metric consistency.
+This design makes pairwise geometry consistency part of the learned state. The system handles raw smartphone video by removing the requirement for known intrinsics while supplying dense 3D geometry. Pairwise learned pointmaps present an evaluation risk: the network can generate plausible local geometry that retains correlated scale or shape distortions. The adapter treats ViSTA-SLAM as a dual trajectory and dense-cloud exporter, requiring validation of both trajectory alignment and dense cloud placement to verify metric consistency.
 
 == MASt3R-SLAM
 // RESPONSIBLIY: Christopher (MASt3R-SLAM subsection)
