@@ -1,4 +1,4 @@
-#import "@preview/booktabs:0.0.4": toprule, midrule, bottomrule
+git#import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
 
 = Alignment and Evaluation Protocol
 
@@ -128,9 +128,9 @@ $
 $
 
 This constraint matters for near-planar phone trajectories: arbitrary roll or pitch can improve an
-overlay while violating gravity semantics. For ADVIO candidates, fixedpoint-common-start
-publication already places GT, ARCore, and ARKit in one target frame; post-hoc GT-aligned provider
-trajectories are diagnostic references, not candidates.
+overlay while violating gravity semantics. For ADVIO candidates, the benchmark's
+fixedpoint-common-start export already places GT, ARCore, and ARKit in one target frame; post-hoc
+GT-aligned provider trajectories are diagnostic references, not candidates.
 
 Point-cloud registration is a placement diagnostic after global trajectory alignment, not a
 trajectory metric substitute. Given a Sim(3)-placed method cloud $P$ and a reference cloud $Q$,
@@ -210,26 +210,28 @@ The final dense-cloud tables use $tau = 0.05 "m"$, so the score reads as surface
     column-gutter: 0.38em,
     toprule(),
     table.header([Protocol item], [Required choice], [Why it affects interpretation]),
-    midrule(),
-    [Trajectory association],
-    [Timestamp tolerance and selected reference source.],
+    midrule(), [Trajectory association], [Timestamp tolerance and selected reference source.],
     [Controls which poses enter the error computation.],
     [Similarity alignment],
     [SE(3), Sim(3), or gravity-aware scale-yaw-translation alignment.],
+
     [Determines whether scale recovery or shape agreement is being measured.],
     [ADVIO publication],
     [Raw-to-RDF, fixedpoint registration, common-start local frame, and diagnostic-only GT alignments.],
+
     [Prevents provider-local frames or oracle alignments from entering candidate metrics.],
     [Reference-cloud sampling],
     [Depth stride, validity mask, maximum point count, and random seed.],
+
     [Keeps dense geometry reproducible without changing the selected source frames.],
     [Point-cloud placement],
     [Reference cloud, initialization, ICP threshold, and inlier statistics.],
+
     [Separates global trajectory placement from local dense-geometry refinement.],
     [Metric reporting],
     [Metric definition, units, pose relation, and artifact path.],
-    [Makes numerical values reproducible from persisted artifacts.],
-    bottomrule(),
+
+    [Makes numerical values reproducible from persisted artifacts.], bottomrule(),
   ),
   caption: [Protocol fields that must accompany trajectory and dense-geometry metrics.],
 ) <tab:alignment-protocol>

@@ -22,6 +22,12 @@ reference cloud is absent for a dense-geometry metric, or if sampling, resizing,
 change without metadata. These exclusions prevent stale datastore entries and rendered previews from
 becoming evidence.
 
+The metric stages therefore consume normalized artifacts rather than dataset-native files or
+preview outputs. Trajectory metrics are admissible only when the candidate and reference
+trajectories share the selected target frame and pass timestamp association. Dense-geometry metrics
+are admissible only after global placement and after the reference-cloud sampling policy,
+intrinsics, pose provenance, ICP threshold, and inlier statistics are recorded with the artifact.
+
 #figure(
   table(
     columns: (0.72fr, 1.45fr, 1.6fr),
@@ -50,11 +56,15 @@ normalization, method execution, trajectory association, and transform visualiza
 but not sufficient for superiority claims. Such claims require a frozen matrix of datasets,
 sequences, sampling policies, method configurations, and metric artifacts.
 
-The final local evidence set is the `benchmark-18` sweep family. @tab:trajectory-results reports
-matched-scene medians: for each dataset, only sequences completed by both MASt3R-SLAM and
-ViSTA-SLAM are included in the method comparison. Values are Sim(3)-aligned RMSE; RPE uses
-$Delta = 1 "m"$. This makes the table a shape-and-drift comparison under the shared artifact
-contract, not a claim of recovered metric scale.
+The final local evidence set is the `benchmark-18` sweep family, and the artifact classes required
+to reproduce or extend these summaries are enumerated in @tab:artifact-map. The raw trajectory
+metric files for these local summaries are not checked into the manuscript source tree.
+@tab:trajectory-results reports matched-scene medians: for each dataset, only sequences completed
+by both MASt3R-SLAM and ViSTA-SLAM are included in the method comparison. Values are Sim(3)-aligned
+RMSE; RPE uses $Delta = 1 "m"$. The table is descriptive because it reports medians without
+confidence intervals or sequence-level ranges. It is therefore a shape-and-drift comparison under
+the shared artifact contract, not an externally reproducible benchmark table or a claim of
+recovered metric scale.
 
 #figure(
   {
@@ -76,7 +86,7 @@ contract, not a claim of recovered metric scale.
       bottomrule(),
     )
   },
-  caption: [Matched-scene trajectory medians from the final `benchmark-18` sweep artifacts.],
+  caption: [Matched-scene trajectory medians from local `benchmark-18` sweep summaries; raw metric files are not checked into the manuscript source tree.],
 ) <tab:trajectory-results>
 
 The table shows three different regimes. On the six matched TUM RGB-D sequences, MASt3R-SLAM is
@@ -84,9 +94,15 @@ approximately three times lower than ViSTA-SLAM in global translation error and 
 RPE. On the five matched Record3D sequences, global APE is nearly tied, but MASt3R-SLAM has much
 lower local translation drift. On the four matched ADVIO runs, both vision-only methods fail in a
 rotation-dominated way: APE rotation is 88#sym.degree for MASt3R-SLAM and 112#sym.degree for
-ViSTA-SLAM, and translational RPE is about 4 m per 1 m interval. The final sweep also exposes a
+ViSTA-SLAM, and translational RPE is about 4 m per 1 m interval. This rotation evidence is
+qualified by a known gravity-lock gate issue in the local ADVIO evaluation path, so the ADVIO
+orientation values do not isolate method-only rotational accuracy. The final sweep also exposes a
 robustness tradeoff: ViSTA-SLAM completed all 18 selected method runs, whereas MASt3R-SLAM
 completed 15 and failed on the three longest scenes because of the fixed 512-keyframe buffer.
+Length-stratified Record3D summaries further show that MASt3R-SLAM is stronger on shorter scenes,
+whereas its local RPE degrades on the longest scenes and ViSTA-SLAM remains flatter. These details
+support a local robustness interpretation without turning the final sweep into a general
+leaderboard.
 
 ADVIO also provides mobile visual-inertial baselines. @tab:advio-baselines compares registered
 ARCore and ARKit provider trajectories with the two monocular methods on the same four ADVIO
@@ -111,7 +127,7 @@ not privileged method inputs.
       bottomrule(),
     )
   },
-  caption: [ADVIO registered provider baselines and monocular methods on the same matched scenes.],
+  caption: [Local final-sweep summary of ADVIO registered provider baselines and monocular methods on the same matched scenes; raw metric files are not checked into the manuscript source tree.],
 ) <tab:advio-baselines>
 
 The provider baselines are substantially stronger because they use phone sensor fusion rather than
@@ -121,9 +137,9 @@ not make the provider tracks ground truth; it shows the performance ceiling supp
 under the repository's fixedpoint-common-start registration.
 
 Dense-cloud evaluation is available only where a reference cloud exists. @tab:dense-cloud-results
-therefore excludes ADVIO and reports completed post-ICP Sim(3) cloud metrics for TUM RGB-D and
-Record3D. Chamfer is lower-is-better and F1 is computed at the 5 cm tolerance defined in
-@tab:alignment-protocol and the metric equations above.
+therefore excludes ADVIO and reports local final-sweep summaries of completed post-ICP Sim(3) cloud
+metrics for TUM RGB-D and Record3D. Chamfer is lower-is-better and F1 is computed at the 5 cm
+tolerance defined in @tab:alignment-protocol and the metric equations above.
 
 #figure(
   {
@@ -145,21 +161,22 @@ Record3D. Chamfer is lower-is-better and F1 is computed at the 5 cm tolerance de
       bottomrule(),
     )
   },
-  caption: [Median dense-cloud metrics from completed final-sweep cloud artifacts.],
+  caption: [Median dense-cloud metrics from local final-sweep cloud summaries; raw metric files are not checked into the manuscript source tree.],
 ) <tab:dense-cloud-results>
 
 The dense-cloud table reinforces the dataset distinction. TUM RGB-D gives the cleanest reference
 surface and the strongest overlap scores, with MASt3R-SLAM highest at $F_1 = 0.850$. LingBot-Map is
-only included for the six TUM RGB-D cloud runs, where its $F_1 = 0.686$ sits between MASt3R-SLAM and
-ViSTA-SLAM. Record3D is harder: both methods produce lower overlap against the ARKit/LiDAR-derived
-provider reference, and MASt3R-SLAM is better but still far from the TUM regime. ADVIO is
+included only for the six TUM RGB-D cloud runs, where its $F_1 = 0.686$ sits between MASt3R-SLAM
+and ViSTA-SLAM; the table is therefore also the dense-geometry inclusion record. Record3D is
+harder: both methods produce lower overlap against an ARKit/LiDAR-derived provider reference rather
+than laboratory ground truth, and MASt3R-SLAM is better but still far from the TUM regime. ADVIO is
 trajectory-only in this evidence set because no benchmark-store dense reference cloud is available.
 
-The final deck also includes render-based image diagnostics on ADVIO `advio-15`. The renderer
-projects the dense cloud from estimated poses into the image plane and scores only filled pixels, so
-the metrics in @tab:render-diagnostics must be read with coverage. They are useful for comparing
-two methods on the same sequence, but they are not a substitute for trajectory or dense-cloud
-geometry metrics.
+The local evidence set also includes render-based image diagnostics on ADVIO `advio-15`. The raw
+render metric files are not checked into the manuscript source tree. The renderer projects the dense
+cloud from estimated poses into the image plane and scores only filled pixels, so the metrics in
+@tab:render-diagnostics must be read with coverage. They are useful for comparing two methods on
+the same sequence, but they are not a substitute for trajectory or dense-cloud geometry metrics.
 
 #figure(
   {
@@ -177,13 +194,16 @@ geometry metrics.
       bottomrule(),
     )
   },
-  caption: [Render-based image diagnostics on ADVIO `advio-15`; scores average over filled pixels.],
+  caption: [Local render-based image diagnostics on ADVIO `advio-15`; scores average over filled pixels and raw metric files are not checked into the manuscript source tree.],
 ) <tab:render-diagnostics>
 
 Local telemetry in @tab:runtime-telemetry gives the efficiency context for the same implementation
-family. The streaming rates were measured on a single NVIDIA RTX 3080 GPU, AMD Ryzen 7 5700X CPU,
-and 32 GB RAM. ViSTA-SLAM is faster in streaming FPS, while MASt3R-SLAM has competitive stage
-latency on TUM but much lower accepted-keyframe throughput there. The table keeps these numbers
+family. The raw telemetry rows are not checked into the manuscript source tree. The streaming rates
+were measured on a single NVIDIA RTX 3080 GPU, AMD Ryzen 7 5700X CPU, and 32 GB RAM. ViSTA-SLAM is
+faster in streaming FPS, while MASt3R-SLAM has competitive stage latency on TUM but much lower
+accepted-keyframe throughput there. In the table, key-FPS denotes accepted-keyframe throughput. For
+MASt3R-SLAM on ADVIO, the local sweep retained latency and accepted-keyframe throughput but no
+comparable streaming-FPS row, so stream FPS is reported as n/a. The table keeps these numbers
 separate from accuracy because they come from runtime telemetry, not the trajectory metric record.
 
 #figure(
@@ -205,5 +225,5 @@ separate from accuracy because they come from runtime telemetry, not the traject
       bottomrule(),
     )
   },
-  caption: [Local runtime telemetry for the final implementation on one workstation.],
+  caption: [Local runtime telemetry for the final implementation on one workstation; raw telemetry rows are not checked into the manuscript source tree.],
 ) <tab:runtime-telemetry>
