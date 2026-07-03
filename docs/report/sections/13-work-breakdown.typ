@@ -18,4 +18,4 @@ The software implementation distributed pipeline infrastructure, model adapters 
 - *Jan Duchscherer:* Developed the configurable pipeline framework, Rerun Viewer integration and Streamlit application. Implemented all three datasets and iPhone live streaming, recorded the custom dataset, implemented RANSAC ground-plan detection and ICP point cloud alignment, as well as the LingBot-Map adapter.
 - *Lukas Röß:* Developed the method integration infrastructure, integrated ViSTA-SLAM, implemented the NKSR/Poisson 3D mesh reconstruction and briefly supported video source integrations.
 - *Christopher Kirschner:* Adapted the MASt3R-SLAM model for the benchmark and implemented the render-based image-quality evaluation stage, including the point-cloud-to-image projection that renders the reconstruction into image space and the per-frame image-quality metrics.
-- *Florian Beck:* Implemented the point cloud evaluation and fixed the sweeper implementation.
+- *Florian Beck:* Implemented the point cloud evaluation, fixed the sweeper implementation and tuned/executed the final sweep runs.
