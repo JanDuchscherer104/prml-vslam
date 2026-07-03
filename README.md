@@ -4,9 +4,8 @@ This repository addresses an off-device monocular VSLAM pipeline for smartphone 
 
 The rendered [final report](docs/report/main.typ) and [update-meeting slides](docs/slides/update-meetings/) are available on the [GitHub Pages](https://janduchscherer104.github.io/prml-vslam/).
 
-https://github.com/JanDuchscherer104/prml-vslam/raw/main/docs/figures/evidence/tum-rgbd-loop.mp4
-
-https://github.com/JanDuchscherer104/prml-vslam/raw/main/docs/figures/evidence/teddy-vista-loop.mp4
+[![Watch the video](docs/figures/evidence/tum-rgbd-loop.jpg)](docs/figures/evidence/tum-rgbd-loop.mp4)
+[![Watch the video](docs/figures/evidence/teddy-vista-loop.jpg)](docs/figures/evidence/teddy-vista-loop.mp4)
 
 ## Documentation Map
 
