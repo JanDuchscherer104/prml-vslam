@@ -76,7 +76,7 @@
     - #ds-code-strong("vslam-datastore/") \ --  norm. \ data samples #datastore_group
       - #ds-code-strong("advio/<seq>/<profile>/") #datastore_group
         - meta-data, statistics \ & manifest  #datastore_leaf
-        - #ds-code-strong("observations/") \ --  RGB fames #datastore_group
+        - #ds-code-strong("observations/") \ --  RGB frames #datastore_group
           - #ds-code("rgb/*.png") #datastore_array
           - #ds-code("observations.json") \ --  per frame payload & metadata #datastore_leaf
         - #ds-code-strong("trajectories/") \  #datastore_group
@@ -177,35 +177,40 @@ profiles rather than scientific variables.
 
 == Artifact and Responsibility Map
 
-The artifact map is supplementary context for reproducing or extending the benchmark.
+The artifact map is supplementary context for reproducing or extending the benchmark. The sidecar
+fields listed here are the minimum provenance surface needed to interpret the local result tables.
 
 #figure(
-  table(
-    columns: (0.76fr, 1.55fr, 1.45fr),
-    align: (left, left, left),
-    inset: (x: 0.24em, y: 0.21em),
-    column-gutter: 0.38em,
-    toprule(),
-    table.header([Area], [Artifact or contract], [Scientific role]),
-    midrule(), [Source data], [Manifest, observations, timestamps, intrinsics, and prepared references.],
-    [Separates method inputs from evaluation references.],
-    [Method execution],
-    [Configuration, trajectory, dense cloud, and native extras.],
-
-    [Preserves comparable outputs and native diagnostics.],
-    [Trajectory alignment],
-    [Alignment metadata, aligned trajectory, reference source, and association policy.],
-
-    [Documents the transformation used before trajectory metrics are interpreted.],
-    [Dense geometry],
-    [Reference, Sim(3)-placed, and ICP-refined clouds plus placement metadata.],
-
-    [Separates cloud placement from dense-quality scoring.],
-    [Visualization],
-    [Neutral visualization items and recordings.],
-
-    [Debugs persisted artifacts.], [Reporting], [Experiment matrix, metric tables, limitations, and recommendations.],
-    [Turns validated runs into scientific claims.], bottomrule(),
-  ),
+  {
+    set text(size: 7.6pt)
+    table(
+      columns: (0.78fr, 1.62fr, 1.4fr),
+      align: (left, left, left),
+      inset: (x: 0.18em, y: 0.18em),
+      column-gutter: 0.32em,
+      toprule(),
+      table.header([Area], [Artifact or contract], [Scientific role]),
+      midrule(),
+      [Source data],
+      ragged([Manifest, observations, timestamps, intrinsics, and prepared references.]),
+      ragged([Separates method inputs from evaluation references.]),
+      [Method execution],
+      ragged([Configuration, trajectory, dense cloud, and native extras.]),
+      ragged([Preserves comparable outputs and native diagnostics.]),
+      [Trajectory alignment],
+      ragged([Trajectory artifact plus sidecar metadata: `target_frame`, `native_frame`, pose/source provenance, origin or normalization, reference source, association policy, alignment mode, and scale policy.]),
+      ragged([Documents the transformation used before trajectory metrics are interpreted.]),
+      [Dense geometry],
+      ragged([Reference-cloud artifact plus sidecar metadata: target frame, depth units, intrinsics and pose provenance, stride, confidence gate, random seed, sampled point counts, ICP threshold, and inlier statistics.]),
+      ragged([Separates cloud placement from dense-quality scoring.]),
+      [Visualization],
+      ragged([Neutral visualization items and recordings.]),
+      ragged([Debugs persisted artifacts.]),
+      [Reporting],
+      ragged([Experiment matrix, metric tables, limitations, and recommendations.]),
+      ragged([Turns validated runs into scientific claims.]),
+      bottomrule(),
+    )
+  },
   caption: [Supplementary artifact map for reproducing and extending the benchmark framework.],
 ) <tab:artifact-map>

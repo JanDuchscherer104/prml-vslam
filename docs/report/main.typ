@@ -60,7 +60,7 @@
 
 #include "sections/01-introduction.typ"
 #include "sections/02-related-work.typ"
-#include "sections/03-challenge-and-scope.typ"
+#include "sections/03-benchmark-framework.typ"
 #include "sections/04-candidate-methods.typ"
 #include "sections/05-datasets.typ"
 #include "sections/06-metrics.typ"
