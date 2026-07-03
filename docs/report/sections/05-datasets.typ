@@ -117,12 +117,7 @@ $
 RGB and depth payloads are resized together,
 intrinsics are scaled into the stored raster, depth units are normalized to meters, and reference-clouds are created by back-projecting the depth maps of the selected frames into the local world frame, applying a configured pixel-stride, filtering out-of-range and low-confidence points, followed by a randomized sub-sampling to a maximum point count.
 
-The normalized datastore used for the final evidence pass covers all three source families. The
-coverage summary in @tab:dataset-duration-coverage is derived from the checked-in
-`docs/figures/evidence/dataset-summary.csv` artifact and current normalized `stats_long.csv`
-entries. ADVIO dominates total duration because it contains longer pedestrian phone trajectories;
-TUM RGB-D supplies short controlled RGB-D scenes with full depth coverage; and Record3D supplies a
-smaller custom smartphone set with depth and ARKit provider poses.
+The normalized datastore used for the final evidence pass covers all three source datasets, standardized to 30 Hz, with all reference clouds being unprojected with a stride of 3 pixels and subsampled to a maximum of 500k points. The resulting coverage is summarized in @tab:dataset-duration-coverage.
 
 #figure(
   [
@@ -156,14 +151,12 @@ smaller custom smartphone set with depth and ARKit provider poses.
       bottomrule(),
     )
   ],
-  placement: auto,
-  caption: [Sequence count and duration coverage for the final evidence pass. Durations summarize manifest timestamps.],
+  caption: [Sequence count and duration coverage for the normalized datastore],
 ) <tab:dataset-duration-coverage>
 
-This disclosure describes the evaluation corpus, not a training split. The final evidence pass is
-configured by `.configs/datasets/benchmark-vslam-datastore.toml`: it includes
-all 23 supported ADVIO sequences, eight archived Record3D captures, and 19 selected Freiburg TUM
-RGB-D sequences. Appendix material reports the ADVIO catalog distribution, normalized-store
-coverage, available statistic surfaces, and reference caveats in
-@fig:appendix-advio-catalog-disclosure, @fig:appendix-dataset-summary-bars,
-@tab:appendix-normalized-stat-surface, and @tab:appendix-reference-caveats.
+Appendix material reports the layout of the normalized store.
+
+// Appendix material reports the ADVIO catalog distribution, normalized-store
+// coverage, available statistic surfaces, and reference caveats in
+// @fig:appendix-advio-catalog-disclosure, @fig:appendix-dataset-summary-bars,
+// @tab:appendix-normalized-stat-surface, and @tab:appendix-reference-caveats.
