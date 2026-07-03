@@ -145,7 +145,12 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
         stage_key=StageKey.SLAM,
         payload=SlamStageOutput(artifacts=slam_artifacts),
         outcome=_completed_outcome(StageKey.SLAM),
-        final_runtime_status=StageRuntimeStatus(stage_key=StageKey.SLAM, lifecycle_state=StageStatus.COMPLETED),
+        final_runtime_status=StageRuntimeStatus(
+            stage_key=StageKey.SLAM,
+            lifecycle_state=StageStatus.COMPLETED,
+            processed_items=7,
+            accepted_keyframes=2,
+        ),
     )
 
     store.put(ingest_result)
@@ -157,6 +162,10 @@ def test_result_store_reads_target_source_and_slam_payloads() -> None:
     assert store.require_slam_artifacts() == slam_artifacts
     assert store.require_slam_output() == SlamStageOutput(artifacts=slam_artifacts)
     assert [outcome.stage_key for outcome in store.ordered_outcomes()] == [StageKey.SOURCE, StageKey.SLAM]
+    runtime_statuses = store.ordered_runtime_statuses()
+    assert [status.stage_key for status in runtime_statuses] == [StageKey.SOURCE, StageKey.SLAM]
+    assert runtime_statuses[1].processed_items == 7
+    assert runtime_statuses[1].accepted_keyframes == 2
 
 
 def test_result_store_reads_target_source_output_payload() -> None:

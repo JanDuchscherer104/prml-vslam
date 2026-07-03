@@ -19,14 +19,21 @@ from prml_vslam.align.trajectory_sim3.stage_contracts import TrajectoryAlignment
 from prml_vslam.eval.contracts import (
     CloudAlignmentArtifact,
     CloudAlignmentSelection,
+    CloudEstimateKind,
+    CloudMetricId,
+    DenseCloudEvaluationArtifact,
     MetricStats,
 )
+from prml_vslam.eval.query import TrajectoryEvaluationQueryService
 from prml_vslam.eval.services import (
     AlignmentUnsupportedError,
+    DenseCloudEvaluationService,
     TrajectoryEvaluationService,
     compute_trajectory_ape_preview,
     compute_trajectory_rpe_preview,
 )
+from prml_vslam.eval.stage_cloud.contracts import CloudEvaluationEstimateInput, CloudEvaluationStageInput
+from prml_vslam.eval.stage_cloud.runtime import CloudEvaluationRuntime
 from prml_vslam.eval.trajectory_contracts import (
     DiscoveredRun,
     SelectionSnapshot,
@@ -416,6 +423,26 @@ def test_advio_pipeline_evaluation_requires_explicit_target_frame(tmp_path: Path
         )
 
 
+def test_trajectory_evaluation_service_discovers_runs_by_sequence_manifest(tmp_path: Path) -> None:
+    artifact_root = tmp_path / ".artifacts" / "manifest-named-run" / "vista"
+    trajectory_path = artifact_root / "slam" / "trajectory.tum"
+    trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    trajectory_path.write_text("", encoding="utf-8")
+    manifest_path = artifact_root / "input" / "sequence_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        SequenceManifest(sequence_id="freiburg1_room", dataset_id=DatasetId.TUM_RGBD).model_dump_json(),
+        encoding="utf-8",
+    )
+
+    runs = TrajectoryEvaluationQueryService(
+        PathConfig(root=tmp_path, artifacts_dir=tmp_path / ".artifacts")
+    ).discover_runs("freiburg1_room")
+
+    assert [run.artifact_root for run in runs] == [artifact_root]
+    assert runs[0].estimate_path == trajectory_path
+
+
 # ---------------------------------------------------------------------------
 # compute_trajectory_alignment
 # ---------------------------------------------------------------------------
@@ -642,6 +669,73 @@ def test_cloud_alignment_runtime_consumes_sim3_aligned_cloud_only(tmp_path: Path
     assert alignment_result.outcome.artifacts["icp_aligned_point_cloud_ply"].path != sim3_path
 
 
+def test_dense_cloud_evaluation_service_computes_open3d_metrics(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    reference_points = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        dtype=np.float64,
+    )
+    offset = np.array([0.01, 0.0, 0.0], dtype=np.float64)
+    reference_path = write_point_cloud_ply(tmp_path / "reference.ply", reference_points)
+    sim3_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_aligned.ply", reference_points + offset)
+
+    artifact = DenseCloudEvaluationService().compute_dense_evaluations(
+        artifact_root=tmp_path / "run",
+        reference_cloud_path=reference_path,
+        estimates=[(CloudEstimateKind.SIM3, sim3_path)],
+        f1_threshold_m=0.05,
+    )
+
+    assert artifact.path == tmp_path / "run" / "evaluation" / "cloud_metrics.json"
+    assert artifact.path.exists()
+    assert artifact.f1_threshold_m == pytest.approx(0.05)
+    assert len(artifact.estimates) == 1
+    estimate = artifact.estimates[0]
+    assert estimate.estimate_kind is CloudEstimateKind.SIM3
+    assert estimate.metrics[CloudMetricId.ACCURACY] == pytest.approx(0.01, abs=1e-6)
+    assert estimate.metrics[CloudMetricId.COMPLETENESS] == pytest.approx(0.01, abs=1e-6)
+    assert estimate.metrics[CloudMetricId.CHAMFER] == pytest.approx(0.02, abs=1e-6)
+    assert estimate.metrics[CloudMetricId.F1] == pytest.approx(1.0)
+    loaded = DenseCloudEvaluationArtifact.model_validate_json(artifact.path.read_text(encoding="utf-8"))
+    assert loaded.estimates[0].metrics[CloudMetricId.F1] == pytest.approx(1.0)
+
+
+def test_cloud_evaluation_runtime_publishes_metrics_and_cloud_artifacts(tmp_path: Path) -> None:
+    pytest.importorskip("open3d")
+    reference_points = np.array(
+        [[0.0, 0.0, 0.0], [0.8, 0.1, 0.0], [0.0, 1.1, 0.2], [0.2, 0.0, 1.2]],
+        dtype=np.float64,
+    )
+    reference_path = write_point_cloud_ply(tmp_path / "reference.ply", reference_points)
+    sim3_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_aligned.ply", reference_points + 0.01)
+    icp_path = write_point_cloud_ply(tmp_path / "point_cloud_sim3_icp_aligned.ply", reference_points)
+
+    result = CloudEvaluationRuntime().run_offline(
+        CloudEvaluationStageInput(
+            artifact_root=tmp_path / "run",
+            reference_cloud=ArtifactRef(path=reference_path, kind="ply", fingerprint="ref"),
+            estimates=[
+                CloudEvaluationEstimateInput(
+                    estimate_kind=CloudEstimateKind.SIM3,
+                    cloud=ArtifactRef(path=sim3_path, kind="ply", fingerprint="sim3"),
+                ),
+                CloudEvaluationEstimateInput(
+                    estimate_kind=CloudEstimateKind.SIM3_ICP,
+                    cloud=ArtifactRef(path=icp_path, kind="ply", fingerprint="icp"),
+                ),
+            ],
+        )
+    )
+
+    assert result.stage_key is StageKey.CLOUD_EVALUATION
+    assert isinstance(result.payload, DenseCloudEvaluationArtifact)
+    assert result.payload.path.exists()
+    assert "cloud_metrics" in result.outcome.artifacts
+    assert "sim3_point_cloud_ply" in result.outcome.artifacts
+    assert "sim3_icp_point_cloud_ply" in result.outcome.artifacts
+    assert result.outcome.metrics["sim3_icp.f1"] == pytest.approx(1.0)
+
+
 def test_compute_trajectory_alignment_raises_on_missing_reference(tmp_path: Path) -> None:
     estimate_path = write_tum_trajectory(
         tmp_path / "estimate.tum",
@@ -754,8 +848,8 @@ def test_cloud_alignment_stage_spec_is_well_formed() -> None:
     assert CLOUD_ALIGNMENT_STAGE_SPEC.build_offline_input is not None
     assert CLOUD_ALIGNMENT_STAGE_SPEC.failure_fingerprint is not None
     assert CLOUD_EVALUATION_STAGE_SPEC.stage_key is StageKey.CLOUD_EVALUATION
-    assert CLOUD_EVALUATION_STAGE_SPEC.build_offline_input is None
-    assert CLOUD_EVALUATION_STAGE_SPEC.failure_fingerprint is None
+    assert CLOUD_EVALUATION_STAGE_SPEC.build_offline_input is not None
+    assert CLOUD_EVALUATION_STAGE_SPEC.failure_fingerprint is not None
 
 
 def test_stage_bundle_align_trajectory_defaults_disabled(tmp_path: Path) -> None:

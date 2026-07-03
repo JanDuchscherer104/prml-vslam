@@ -125,23 +125,24 @@ def test_record3d_wifi_signaling_client_falls_back_to_send_answer_endpoint(monke
 
 
 def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
+    depth_half = np.array(
+        [
+            [[255, 0, 0], [0, 255, 0]],
+            [[0, 0, 255], [255, 0, 0]],
+        ],
+        dtype=np.uint8,
+    )
+    rgb_half = np.array(
+        [
+            [[1, 2, 3], [4, 5, 6]],
+            [[7, 8, 9], [10, 11, 12]],
+        ],
+        dtype=np.uint8,
+    )
+
     class FakeVideoFrame:
         def to_ndarray(self, *, format: str) -> np.ndarray:
             assert format == "rgb24"
-            depth_half = np.array(
-                [
-                    [[255, 0, 0], [0, 255, 0]],
-                    [[0, 0, 255], [255, 0, 0]],
-                ],
-                dtype=np.uint8,
-            )
-            rgb_half = np.array(
-                [
-                    [[1, 2, 3], [4, 5, 6]],
-                    [[7, 8, 9], [10, 11, 12]],
-                ],
-                dtype=np.uint8,
-            )
             return np.concatenate([depth_half, rgb_half], axis=1)
 
     metadata = Record3DWiFiMetadata.from_api_payload(
@@ -153,6 +154,8 @@ def test_record3d_wifi_packet_decoder_emits_shared_contract() -> None:
     assert isinstance(packet, Observation)
     assert packet.provenance.transport == Record3DTransportId.WIFI.value
     assert packet.rgb.shape == (2, 2, 3)
+    assert packet.rgb.flags.c_contiguous
+    np.testing.assert_array_equal(packet.rgb, rgb_half)
     assert packet.depth_m is None
     assert packet.confidence is None
     assert packet.intrinsics is not None

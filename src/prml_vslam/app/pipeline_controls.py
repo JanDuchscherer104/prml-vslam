@@ -38,6 +38,7 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.RECONSTRUCTION,
         StageKey.CLOUD_ALIGNMENT,
+        StageKey.CLOUD_EVALUATION,
         StageKey.IMAGE_EVALUATION,
         StageKey.SUMMARY,
     }

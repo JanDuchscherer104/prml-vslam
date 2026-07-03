@@ -246,6 +246,8 @@ class VistaSlamBackendConfig(SlamBackendConfig, FactoryConfig["VistaSlamBackend"
     checkpoint_path: Path = Path("external/vista-slam/pretrains/frontend_sta_weights.pth")
     vocab_path: Path = Path("external/vista-slam/pretrains/ORBvoc.txt")
     max_view_num: int = 400
+    keyframe_detection: Literal["flow", "stride"] = "flow"
+    stride: int = Field(default=25, ge=1)
     flow_thres: float = 5.0
     neighbor_edge_num: int = 3
     loop_edge_num: int = 3
@@ -405,7 +407,8 @@ class LingbotMapSlamBackendConfig(SlamBackendConfig, FactoryConfig["LingbotMapSl
         """Return backend-specific planning notes."""
         return [
             "LingBot-Map is wired as an offline and bounded terminal-streaming repository backend.",
-            "Streaming runs buffer RGB frames and emit terminal artifacts at finish, without incremental live preview.",
+            "Streaming requires max_frames and emits terminal artifacts at finish, without incremental live preview.",
+            "Windowed mode delegates finite-sequence windowing, overlap alignment, and stitching to upstream LingBot-Map.",
             "Install the LingBot optional dependency group and provide the checkpoint before real runs.",
         ]
 
