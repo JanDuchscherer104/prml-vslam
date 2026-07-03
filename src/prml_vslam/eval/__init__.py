@@ -7,6 +7,7 @@ source-prepared reference identifiers from :mod:`prml_vslam.sources.contracts`, 
 not own persisted stage policy itself.
 """
 
+from .image_service import ImageQualityEvaluationService
 from .services import DenseCloudEvaluationService, TrajectoryEvaluationService
 
-__all__ = ["DenseCloudEvaluationService", "TrajectoryEvaluationService"]
+__all__ = ["DenseCloudEvaluationService", "ImageQualityEvaluationService", "TrajectoryEvaluationService"]

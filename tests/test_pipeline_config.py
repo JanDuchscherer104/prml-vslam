@@ -103,6 +103,24 @@ def test_stage_config_rejects_negative_resource_values() -> None:
         StageConfig(custom_resources={"custom": -1.0})
 
 
+def test_mast3r_backend_config_validates_supported_img_size() -> None:
+    from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig
+
+    assert Mast3rSlamBackendConfig(img_size=224).img_size == 224
+    assert Mast3rSlamBackendConfig(img_size=512).img_size == 512
+    with pytest.raises(ValidationError):
+        Mast3rSlamBackendConfig(img_size=288)
+
+
+def test_mast3r_backend_config_match_frac_thresh_override() -> None:
+    from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig
+
+    assert Mast3rSlamBackendConfig().match_frac_thresh is None
+    assert Mast3rSlamBackendConfig(match_frac_thresh=0.6).match_frac_thresh == 0.6
+    with pytest.raises(ValidationError):
+        Mast3rSlamBackendConfig(match_frac_thresh=1.5)
+
+
 def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> None:
     assert [key.value for key in StageKey] == [
         "source",
@@ -113,6 +131,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         "align.cloud",
         "evaluate.cloud",
         "reconstruction",
+        "evaluate.image",
         "summary",
     ]
     assert list(STAGE_SECTION_ORDER) == [
@@ -124,6 +143,7 @@ def test_stage_key_vocabulary_and_static_section_bindings_are_target_only() -> N
         (StageKey.CLOUD_ALIGNMENT, "align_cloud"),
         (StageKey.RECONSTRUCTION, "reconstruction"),
         (StageKey.CLOUD_EVALUATION, "evaluate_cloud"),
+        (StageKey.IMAGE_EVALUATION, "evaluate_image"),
         (StageKey.SUMMARY, "summary"),
     ]
 
@@ -774,6 +794,7 @@ def test_mast3r_extra_declares_required_local_source_anchors() -> None:
         "torch==2.5.1",
         "torchvision==0.20.1",
         "torchaudio==2.5.1",
+        "lpips>=0.1.4,<0.2",
         "xformers",
         "MAST3R-SLAM",
         "MAST3R",
@@ -804,6 +825,7 @@ def test_lingbot_extra_declares_upstream_package_and_flashinfer() -> None:
     assert lingbot_extra == {
         "torch==2.5.1",
         "torchvision==0.20.1",
+        "lpips>=0.1.4,<0.2",
         "lingbot-map",
         "flashinfer-python",
         "torch-c-dlpack-ext==0.1.5",

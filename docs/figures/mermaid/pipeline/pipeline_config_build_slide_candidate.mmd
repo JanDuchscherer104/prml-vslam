@@ -1,0 +1,39 @@
+---
+config:
+  theme: base
+  htmlLabels: true
+  flowchart:
+    htmlLabels: true
+    nodeSpacing: 20
+    rankSpacing: 30
+    curve: basis
+  layout: elk
+  themeVariables:
+    background: "#ffffff"
+    fontFamily: "Inter, DejaVu Sans, Arial, sans-serif"
+    fontSize: "19px"
+    primaryTextColor: "#1f2937"
+    lineColor: "#64748b"
+  themeCSS: |
+    .nodeLabel { font-size: 19px; }
+    .edgeLabel { font-size: 15px; }
+---
+flowchart LR
+    RunConfig["<b>RunConfig</b><br/>fixed stage sections"]:::input
+    RunPlan["<b>RunPlan</b><br/>ordered stage plan"]:::compute
+    Specs["<b>Runtime specs</b><br/>factories and typed inputs"]:::data
+    Manager["<b>RuntimeManager</b><br/>lazy stage handles"]:::compute
+    Runner["<b>StageRunner</b><br/>offline or streaming protocol"]:::compute
+    Store["<b>StageResultStore</b><br/>typed handoffs"]:::output
+
+    RunConfig -->|"compile"| RunPlan
+    RunPlan -->|"preflight"| Manager
+    Specs --> Manager
+    Manager --> Runner
+    Runner --> Store
+    Store -.->|"build next input"| Specs
+
+    classDef input fill:#D5E8D4,stroke:#82B366,stroke-width:1.5px,rx:0,ry:0;
+    classDef output fill:#F8CECC,stroke:#B85450,stroke-width:1.5px,rx:0,ry:0;
+    classDef compute fill:#E1D5E7,stroke:#9673A6,stroke-width:1.5px,rx:8,ry:8;
+    classDef data fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.2px,rx:0,ry:0;
