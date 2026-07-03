@@ -1,0 +1,37 @@
+# Normalized VSLAM datastore build config for checked-in example sweeps.
+#
+# Usage:
+#   uv run prml-vslam dataset normalize \
+#     --config .configs/datasets/example-sweep-datastore.toml
+
+[[sources]]
+source_id = "record3d_dataset"
+sequence_ids = ["2026-06-03--18-29-08"]
+target_fps = 30.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14
+
+  [sources.reference_cloud]
+  depth_stride_px = 3
+  max_points      = 500_000
+  random_seed     = 17
+  min_confidence  = 1
+
+[[sources]]
+source_id = "tum_rgbd"
+sequence_ids = ["freiburg3_large_cabinet", "freiburg1_desk"]
+target_fps = 30.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14
+
+  [sources.reference_cloud]
+  depth_stride_px = 3
+  max_points      = 500_000
+  random_seed     = 17
+
+[[sources]]
+source_id = "advio"
+sequence_ids = ["advio-15", "advio-01"]
+target_fps = 15.0
+rgb_max_width_px = 392
+rgb_dimension_multiple = 14

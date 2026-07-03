@@ -27,6 +27,7 @@ from .rerun_policy import RerunLoggingPolicy
 
 _LOGGER = logging.getLogger(__name__)
 PayloadResolver = Callable[[TransientPayloadRef], np.ndarray | None]
+_LIVE_TRACKING_TRAJECTORY_HISTORY_WINDOW = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,17 @@ class _BaseRerunEventSink:
         """Observe one runtime update without durable `RunEvent` wrapping."""
         resolved_payloads = self._resolve_update_payloads(update, payloads=payloads, payload_resolver=payload_resolver)
         self._observe_resolved_update(update, payloads=resolved_payloads)
+
+    def observe_updates(
+        self,
+        updates: list[StageRuntimeUpdate],
+        *,
+        payloads: Mapping[str, np.ndarray] | None = None,
+        payload_resolver: PayloadResolver | None = None,
+    ) -> None:
+        """Observe a batch of runtime updates on one recording stream."""
+        for update in updates:
+            self.observe_update(update, payloads=payloads, payload_resolver=payload_resolver)
 
     def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
         self._policy.observe_update(self._stream, update, payloads=payloads)
@@ -157,11 +169,11 @@ class LiveRerunEventSink(_BaseRerunEventSink):
             )
         )
         attach_recording_sinks(self._stream, grpc_url=grpc_url, target_path=None)
+        self._policy.tracking_trajectory_history_window = _LIVE_TRACKING_TRAJECTORY_HISTORY_WINDOW
 
     def _observe_resolved_update(self, update: StageRuntimeUpdate, *, payloads: Mapping[str, np.ndarray]) -> None:
         try:
             super()._observe_resolved_update(update, payloads=payloads)
-            self._stream.flush(blocking=False)
         except Exception as exc:  # pragma: no cover - live viewer is best effort
             _LOGGER.warning("Skipping live Rerun update for stage '%s': %s", update.stage_key.value, exc)
 
@@ -229,6 +241,16 @@ class ExportRerunEventSink(_BaseRerunEventSink):
 
 
 class _ActorPayloadResolverMixin:
+    @staticmethod
+    def _payload_resolver(payload_resolver: ActorHandle | None) -> PayloadResolver | None:
+        if payload_resolver is None:
+            return None
+
+        def resolve_payload(ref: TransientPayloadRef) -> np.ndarray | None:
+            return cast(np.ndarray | None, ray.get(payload_resolver.read_payload.remote(ref.handle_id)))
+
+        return resolve_payload
+
     def _observe_with_actor_resolver(
         self,
         *,
@@ -236,15 +258,23 @@ class _ActorPayloadResolverMixin:
         update: StageRuntimeUpdate,
         payload_resolver: ActorHandle | None,
     ) -> None:
-        def resolve_payload(ref: TransientPayloadRef) -> np.ndarray | None:
-            if payload_resolver is None:
-                return None
-            return cast(np.ndarray | None, ray.get(payload_resolver.read_payload.remote(ref.handle_id)))
-
         try:
-            sink.observe_update(update, payload_resolver=None if payload_resolver is None else resolve_payload)
+            sink.observe_update(update, payload_resolver=self._payload_resolver(payload_resolver))
         except Exception as exc:  # pragma: no cover - best-effort sink guard
             _LOGGER.warning("Skipping Rerun sink runtime update for stage '%s': %s", update.stage_key.value, exc)
+
+    def _observe_updates_with_actor_resolver(
+        self,
+        *,
+        sink: _BaseRerunEventSink,
+        updates: list[StageRuntimeUpdate],
+        payload_resolver: ActorHandle | None,
+    ) -> None:
+        try:
+            sink.observe_updates(updates, payload_resolver=self._payload_resolver(payload_resolver))
+        except Exception as exc:  # pragma: no cover - best-effort sink guard
+            stage_key = "unknown" if not updates else updates[-1].stage_key.value
+            _LOGGER.warning("Skipping Rerun sink runtime update batch ending at stage '%s': %s", stage_key, exc)
 
 
 @ray.remote(num_cpus=1.0, max_restarts=0, max_task_retries=0)
@@ -284,6 +314,14 @@ class LiveRerunSinkActor(_ActorPayloadResolverMixin):
 
     def observe_update(self, *, update: StageRuntimeUpdate, payload_resolver: ActorHandle | None = None) -> None:
         self._observe_with_actor_resolver(sink=self._sink, update=update, payload_resolver=payload_resolver)
+
+    def observe_updates(
+        self,
+        *,
+        updates: list[StageRuntimeUpdate],
+        payload_resolver: ActorHandle | None = None,
+    ) -> None:
+        self._observe_updates_with_actor_resolver(sink=self._sink, updates=updates, payload_resolver=payload_resolver)
 
     def close(self) -> None:
         self._sink.close()
@@ -326,6 +364,14 @@ class ExportRerunSinkActor(_ActorPayloadResolverMixin):
 
     def observe_update(self, *, update: StageRuntimeUpdate, payload_resolver: ActorHandle | None = None) -> None:
         self._observe_with_actor_resolver(sink=self._sink, update=update, payload_resolver=payload_resolver)
+
+    def observe_updates(
+        self,
+        *,
+        updates: list[StageRuntimeUpdate],
+        payload_resolver: ActorHandle | None = None,
+    ) -> None:
+        self._observe_updates_with_actor_resolver(sink=self._sink, updates=updates, payload_resolver=payload_resolver)
 
     def close(self) -> None:
         self._sink.close()

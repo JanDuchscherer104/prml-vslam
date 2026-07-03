@@ -1,4 +1,4 @@
-# Canonical ViSTA-SLAM Pipeline Configuration
+# Canonical MASt3R-SLAM Pipeline Configuration
 # -------------------------------------------
 # This file defines a complete pipeline run config, including the source, SLAM
 # backend overrides, stage-local evaluation/reconstruction policy, and
@@ -8,7 +8,7 @@
 # uv run rerun .artifacts/mast3r-tum-cabinet-full/mast3r/visualization/viewer_recording.rrd --serve-web
 
 
-experiment_name          = "mast3r-tum-cabinet-full"
+experiment_name          = "mast3r-tum-freiburg3_large_cabinet"
 mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
@@ -19,7 +19,7 @@ enabled = true
     [stages.source.backend]
     source_id    = "tum_rgbd"
     sequence_id  = "freiburg3_large_cabinet"
-    frame_stride = 3
+    frame_stride = 1
     replay_mode  = "fast_as_possible"
 
 [stages.slam]
@@ -40,13 +40,14 @@ sampling_interval_ms    = 1000
 
     [stages.slam.outputs]
 
-    # ViSTA only emits dense pointmaps
+    # MASt3R-SLAM exports dense pointmaps, not a separate sparse landmark cloud.
     emit_dense_points  = true
     emit_sparse_points = false
 
     [stages.slam.backend]
     method_id = "mast3r"
-    # Frame cap to stop the backend after N frames.
+    # Comparable to ViSTA `max_frames`: shared pipeline frame cap before backend-specific
+    # keyframe selection and graph construction.
     # max_frames = 1500
 
     # Paper/upstream MASt3R-SLAM no-calibration preset.
@@ -71,7 +72,7 @@ sampling_interval_ms    = 1000
     # (`SharedKeyframes(..., buffer=512)`); this low-VRAM run intentionally
     # reduces it to 32. For paper-faithful comparison, use 512 and set ViSTA
     # `max_view_num = 400` from the TUM-RGBD paper/eval preset.
-    keyframe_buffer_size = 512
+    keyframe_buffer_size = 32
 
     # Comparable to ViSTA `point_conf_thres`: confidence filter used when
     # exporting dense reconstruction points.
@@ -86,24 +87,15 @@ enabled = true
 
 [stages.align_cloud]
 enabled = true
-max_correspondence_distance_m = 0.05
+# Tight ICP correspondence gate for cluttered SLAM clouds; larger values can
+# pull the aligned cloud toward wrong nearby surfaces.
+max_correspondence_distance_m = 0.02
 
 [stages.evaluate_trajectory]
 enabled = true
 
-[stages.reconstruction]
-enabled = true
-
-    [stages.reconstruction.input_selection]
-    source_kind = "evaluation_aligned_cloud"
-
-    [stages.reconstruction.backend]
-    method_id       = "open3d_tsdf"
-    extract_mesh    = true
-    integrate_color = true
-
 [stages.evaluate_cloud]
-enabled = false
+enabled = true
 
 [stages.align_trajectory]
 enabled = true

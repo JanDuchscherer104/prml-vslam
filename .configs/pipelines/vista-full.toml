@@ -121,12 +121,10 @@ enabled = true
 enabled = false
 
     [stages.reconstruction.input_selection]
-    source_kind = "evaluation_aligned_cloud"
+    source_kind = "slam_dense_point_cloud"
 
     [stages.reconstruction.backend]
-    method_id       = "open3d_tsdf"
-    extract_mesh    = true
-    integrate_color = true
+    method_id = "poisson"
 
 [stages.evaluate_cloud]
 enabled = false

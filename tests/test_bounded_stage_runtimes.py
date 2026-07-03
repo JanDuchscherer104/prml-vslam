@@ -21,13 +21,17 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
-from prml_vslam.pipeline.contracts.provenance import StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
-from prml_vslam.pipeline.stages.base.contracts import VisualizationIntent
+from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus, VisualizationIntent
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryStageInput
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
-from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
+from prml_vslam.reconstruction.config import PoissonBackendConfig
+from prml_vslam.reconstruction.stage import (
+    ReconstructionInputSourceKind,
+    ReconstructionRuntime,
+    ReconstructionStageInput,
+)
 from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
@@ -193,7 +197,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfBackendConfig):
+    class FakeBackendConfig(PoissonBackendConfig):
         extract_mesh: bool = True
 
         def setup_target(self, **_kwargs):
@@ -263,7 +267,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfBackendConfig):
+    class FakeBackendConfig(PoissonBackendConfig):
         extract_mesh: bool = False
 
         def setup_target(self, **_kwargs):
@@ -308,6 +312,61 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     ]
 
 
+def test_reconstruction_runtime_uses_point_cloud_backend_for_evaluation_aligned_cloud(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_config, _plan, run_paths = _request_plan_paths(
+        tmp_path,
+        reference_enabled=True,
+    )
+    calls: dict[str, Path] = {}
+
+    class FakeBackendConfig(PoissonBackendConfig):
+        def setup_target(self, **_kwargs):
+            return FakeBackend()
+
+    class FakeBackend:
+        def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
+            del observations, artifact_root
+            raise AssertionError("evaluation_aligned_cloud reconstruction must not consume RGB-D observations")
+
+        def run_point_cloud(self, point_cloud_path: Path, *, artifact_root: Path) -> ReconstructionArtifacts:
+            calls["point_cloud_path"] = point_cloud_path
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            cloud = artifact_root / "reconstruction_cloud.ply"
+            metadata = artifact_root / "reconstruction_metadata.json"
+            cloud.write_text("ply\n", encoding="utf-8")
+            metadata.write_text("{}\n", encoding="utf-8")
+            return ReconstructionArtifacts(reference_cloud_path=cloud, metadata_path=metadata)
+
+    class ForbiddenObservationSequenceLoader:
+        def __init__(self, sequence_ref: ObservationSequenceRef) -> None:
+            del sequence_ref
+            raise AssertionError("evaluation_aligned_cloud reconstruction must not open an observation sequence")
+
+    monkeypatch.setattr(
+        "prml_vslam.reconstruction.stage.runtime.FileObservationSequenceLoader",
+        ForbiddenObservationSequenceLoader,
+    )
+    point_cloud_path = tmp_path / "point_cloud_sim3_icp_aligned.ply"
+    point_cloud_path.write_text("ply\n", encoding="utf-8")
+
+    result = ReconstructionRuntime().run_offline(
+        ReconstructionStageInput(
+            backend=FakeBackendConfig(),
+            run_paths=run_paths,
+            input_source=ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD,
+            benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
+            point_cloud=ArtifactRef(path=point_cloud_path, kind="ply", fingerprint="icp"),
+        )
+    )
+
+    assert calls == {"point_cloud_path": point_cloud_path}
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.final_runtime_status.progress_unit == "point_clouds"
+
+
 def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Path) -> None:
     run_config, plan, run_paths = _request_plan_paths(tmp_path)
     prior_outcome = StageOutcome(
@@ -326,6 +385,21 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
             plan=plan,
             run_paths=run_paths,
             stage_outcomes=[prior_outcome],
+            stage_runtime_statuses=[
+                StageRuntimeStatus(
+                    stage_key=StageKey.SLAM,
+                    lifecycle_state=StageStatus.COMPLETED,
+                    progress_message="processed 10 frames, accepted 3 keyframes",
+                    completed_steps=10,
+                    progress_unit="frames",
+                    processed_items=10,
+                    accepted_keyframes=3,
+                    fps=None,
+                    throughput=None,
+                    throughput_unit=None,
+                    latency_ms=None,
+                )
+            ],
         )
     )
 
@@ -334,9 +408,15 @@ def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Pat
     assert result.final_runtime_status.lifecycle_state is StageStatus.COMPLETED
     assert result.payload is not None
     assert result.payload.stage_status == {StageKey.SLAM: StageStatus.COMPLETED}
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].accepted_keyframes == 3
+    assert result.payload.stage_runtime_summaries[StageKey.SLAM].fps is None
     assert runtime.stage_manifests[0].stage_id is StageKey.SLAM
     assert run_paths.summary_path.exists()
     assert run_paths.stage_manifests_path.exists()
+    persisted_summary = RunSummary.model_validate_json(run_paths.summary_path.read_text(encoding="utf-8"))
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].processed_items == 10
+    assert persisted_summary.stage_runtime_summaries[StageKey.SLAM].throughput is None
 
 
 def _request_plan_paths(

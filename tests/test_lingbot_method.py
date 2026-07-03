@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 import prml_vslam.app.pages.pipeline_request_editor as pipeline_request_editor
 import prml_vslam.methods.lingbot.adapter as lingbot_adapter
 from prml_vslam.app.models import PipelineSourceId
@@ -142,6 +144,8 @@ def test_lingbot_tomls_parse_to_valid_backend(config_path: str) -> None:
 
     assert config.stages.slam.backend.method_id is MethodId.LINGBOT_MAP
     assert config.stages.slam.backend.image_size % config.stages.slam.backend.patch_size == 0
+    if config_path == ".configs/pipelines/lingbot-full.toml":
+        assert config.stages.slam.backend.mode == "windowed"
 
 
 def test_lingbot_config_rejects_invalid_runtime_values() -> None:
@@ -290,6 +294,81 @@ def test_lingbot_auto_keyframe_interval_resolves_to_upstream_int() -> None:
     assert _resolve_keyframe_interval("auto", num_frames=1011, num_scale_frames=8) == 4
     assert _resolve_keyframe_interval(0, num_frames=700, num_scale_frames=8) == 1
     assert _resolve_keyframe_interval(3, num_frames=700, num_scale_frames=8) == 3
+
+
+def test_lingbot_runtime_dispatches_windowed_mode_to_upstream_windowed_api() -> None:
+    class FakeTensor:
+        shape = (700, 3, 2, 2)
+
+    class FakeTorch:
+        @staticmethod
+        def device(value: str) -> str:
+            return value
+
+    class FakeModel:
+        def inference_streaming(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("Windowed LingBot config must not call inference_streaming().")
+
+        def inference_windowed(self, image_tensor: FakeTensor, **kwargs: Any) -> dict[str, Any]:
+            captured["image_tensor"] = image_tensor
+            captured["kwargs"] = kwargs
+            return {"pose_enc": "windowed"}
+
+    captured: dict[str, Any] = {}
+    config = LingbotMapSlamBackendConfig(
+        mode="windowed",
+        window_size=128,
+        overlap_keyframes=8,
+        num_scale_frames=2,
+        keyframe_interval="auto",
+    )
+    runtime = lingbot_adapter._LingbotRuntime(config, path_config=PathConfig())
+
+    predictions = runtime._run_model(FakeModel(), FakeTensor(), FakeTorch)
+
+    assert predictions == {"pose_enc": "windowed"}
+    assert captured["image_tensor"].shape == (700, 3, 2, 2)
+    assert captured["kwargs"] == {
+        "window_size": 128,
+        "overlap_size": None,
+        "overlap_keyframes": 8,
+        "num_scale_frames": 2,
+        "keyframe_interval": 3,
+        "output_device": "cpu",
+    }
+
+
+def test_lingbot_runtime_dispatches_streaming_mode_to_upstream_streaming_api() -> None:
+    class FakeTensor:
+        shape = (20, 3, 2, 2)
+
+    class FakeTorch:
+        @staticmethod
+        def device(value: str) -> str:
+            return value
+
+    class FakeModel:
+        def inference_streaming(self, image_tensor: FakeTensor, **kwargs: Any) -> dict[str, Any]:
+            captured["image_tensor"] = image_tensor
+            captured["kwargs"] = kwargs
+            return {"pose_enc": "streaming"}
+
+        def inference_windowed(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("Streaming LingBot config must not call inference_windowed().")
+
+    captured: dict[str, Any] = {}
+    config = LingbotMapSlamBackendConfig(mode="streaming", num_scale_frames=2, keyframe_interval="auto")
+    runtime = lingbot_adapter._LingbotRuntime(config, path_config=PathConfig())
+
+    predictions = runtime._run_model(FakeModel(), FakeTensor(), FakeTorch)
+
+    assert predictions == {"pose_enc": "streaming"}
+    assert captured["image_tensor"].shape == (20, 3, 2, 2)
+    assert captured["kwargs"] == {
+        "num_scale_frames": 2,
+        "keyframe_interval": 1,
+        "output_device": "cpu",
+    }
 
 
 def test_lingbot_preprocesses_images_with_upstream_loader() -> None:
@@ -520,6 +599,64 @@ def test_lingbot_run_observations_uses_paths_when_available(
     assert artifacts.num_keyframes == 2
 
 
+def test_lingbot_run_observations_does_not_retain_heavy_offline_payloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_pose_decoder(monkeypatch, num_frames=1)
+    rgb = np.full((2, 2, 3), 128, dtype=np.uint8)
+    observation = Observation(
+        seq=0,
+        timestamp_ns=10,
+        provenance=ObservationProvenance(),
+        rgb_path=tmp_path / "000000.png",
+        rgb=rgb,
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeRuntime:
+        def __init__(self, _config: LingbotMapSlamBackendConfig, *, path_config: PathConfig) -> None:
+            del path_config
+
+        def infer_paths(self, paths: list[Path]) -> tuple[dict[str, Any], np.ndarray]:
+            captured["paths"] = paths
+            predictions = {
+                "pose_enc": np.zeros((1, 1, 9), dtype=np.float32),
+                "depth": np.ones((1, 1, 2, 2, 1), dtype=np.float32),
+            }
+            processed_images = np.zeros((1, 1, 3, 2, 2), dtype=np.float32)
+            return predictions, processed_images
+
+        def infer(self, _images_rgb: list[np.ndarray]) -> tuple[dict[str, Any], np.ndarray]:
+            raise AssertionError("Offline LingBot observations must use RGB paths.")
+
+    original_build_artifacts = lingbot_adapter._build_lingbot_artifacts
+
+    def capture_build_artifacts(**kwargs: Any):
+        [retained] = kwargs["observations"]
+        captured["retained_rgb"] = retained.rgb
+        captured["retained_rgb_path"] = retained.rgb_path
+        return original_build_artifacts(**kwargs)
+
+    monkeypatch.setattr(lingbot_adapter, "_LingbotRuntime", FakeRuntime)
+    monkeypatch.setattr(lingbot_adapter, "_build_lingbot_artifacts", capture_build_artifacts)
+    config = LingbotMapSlamBackendConfig()
+
+    artifacts = LingbotMapSlamBackend(config).run_observations(
+        [observation],
+        benchmark_inputs=None,
+        baseline_source=ReferenceSource.GROUND_TRUTH,
+        backend_config=config,
+        output_policy=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
+        artifact_root=tmp_path,
+    )
+
+    assert captured["paths"] == [tmp_path / "000000.png"]
+    assert captured["retained_rgb"] is None
+    assert captured["retained_rgb_path"] == tmp_path / "000000.png"
+    assert artifacts.num_processed_frames == 1
+
+
 def test_lingbot_run_observations_rejects_missing_rgb_paths(tmp_path: Path) -> None:
     config = LingbotMapSlamBackendConfig()
     observations = [
@@ -530,6 +667,21 @@ def test_lingbot_run_observations_rejects_missing_rgb_paths(tmp_path: Path) -> N
     with pytest.raises(RuntimeError, match="path-backed RGB observations"):
         LingbotMapSlamBackend(config).run_observations(
             observations,
+            benchmark_inputs=None,
+            baseline_source=ReferenceSource.GROUND_TRUTH,
+            backend_config=config,
+            output_policy=SlamOutputPolicy(emit_dense_points=False, emit_sparse_points=False),
+            artifact_root=tmp_path,
+        )
+
+
+def test_lingbot_streaming_requires_max_frames(tmp_path: Path) -> None:
+    config = LingbotMapSlamBackendConfig(max_frames=None)
+    backend = LingbotMapSlamBackend(config)
+
+    with pytest.raises(RuntimeError, match="requires `max_frames`"):
+        backend.start_streaming(
+            sequence_manifest=SequenceManifest(sequence_id="seq-1"),
             benchmark_inputs=None,
             baseline_source=ReferenceSource.GROUND_TRUTH,
             backend_config=config,

@@ -12,7 +12,7 @@ from prml_vslam.sources.protocols import BenchmarkInputSource, OfflineSequenceSo
 from prml_vslam.sources.stage.artifacts import source_artifacts
 from prml_vslam.sources.stage.contracts import SourceStageInput, SourceStageOutput
 from prml_vslam.utils import RunArtifactPaths
-from prml_vslam.utils.serialization import write_json
+from prml_vslam.utils.portable_paths import write_portable_json
 
 
 class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
@@ -58,7 +58,11 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
         if isinstance(self._source, BenchmarkInputSource):
             benchmark_inputs = self._source.prepare_benchmark_inputs(run_paths.benchmark_inputs_path.parent)
             if benchmark_inputs is not None:
-                write_json(run_paths.benchmark_inputs_path, benchmark_inputs)
+                write_portable_json(
+                    run_paths.benchmark_inputs_path,
+                    benchmark_inputs,
+                    root=run_paths.artifact_root,
+                )
         sequence_manifest = materialize_manifest(
             mode=input_payload.mode,
             frame_stride=input_payload.frame_stride,
@@ -66,7 +70,7 @@ class SourceRuntime(OfflineStageRuntime[SourceStageInput]):
             prepared_manifest=prepared_manifest,
             run_paths=run_paths,
         )
-        write_json(run_paths.sequence_manifest_path, sequence_manifest)
+        write_portable_json(run_paths.sequence_manifest_path, sequence_manifest, root=run_paths.artifact_root)
         source_output = SourceStageOutput(
             sequence_manifest=sequence_manifest,
             benchmark_inputs=benchmark_inputs,

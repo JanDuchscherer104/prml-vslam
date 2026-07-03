@@ -32,12 +32,28 @@ $
   frac(1, abs(E)) sum_(bold(e) in E) min_(bold(r) in R) norm(bold(e) - bold(r)),
 $
 
+This estimate-to-reference direction is illustrated in @fig:pointcloud-accuracy-metric.
+
+#figure(
+  image("../../figures/pointcloud/metric_schematics/pointcloud_accuracy.svg", width: 100%),
+  placement: none,
+  caption: [Dense-cloud accuracy queries each estimated point against its nearest reference point.],
+) <fig:pointcloud-accuracy-metric>
+
 and completeness queries reference points against the estimate,
 
 $
   "completeness" =
   frac(1, abs(R)) sum_(bold(r) in R) min_(bold(e) in E) norm(bold(r) - bold(e)).
 $
+
+The opposite reference-to-estimate direction is shown in @fig:pointcloud-completeness-metric.
+
+#figure(
+  image("../../figures/pointcloud/metric_schematics/pointcloud_completeness.svg", width: 100%),
+  placement: none,
+  caption: [Dense-cloud completeness queries each reference point against its nearest estimated point.],
+) <fig:pointcloud-completeness-metric>
 
 Their sum is the reported Chamfer distance:
 
@@ -49,6 +65,7 @@ This two-direction construction is illustrated in @fig:pointcloud-chamfer-metric
 
 #figure(
   image("../../figures/pointcloud/metric_schematics/pointcloud_chamfer.svg", width: 100%),
+  placement: none,
   caption: [Chamfer distance adds the estimate-to-reference and reference-to-estimate nearest-neighbor directions into one dense-cloud distance score.],
 ) <fig:pointcloud-chamfer-metric>
 
@@ -86,6 +103,7 @@ thresholded overlap interpretation.
 
 #figure(
   image("../../figures/pointcloud/metric_schematics/pointcloud_f1.svg", width: 100%),
+  placement: none,
   caption: [Dense-cloud F-score converts nearest-neighbor distances into precision and recall under the 5 cm tolerance used for the final metric tables.],
 ) <fig:pointcloud-f1-metric>
 
