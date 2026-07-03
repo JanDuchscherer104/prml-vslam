@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import ray
@@ -25,6 +25,16 @@ from prml_vslam.interfaces.alignment import GroundAlignmentMetadata
 from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.methods.stage import SlamStageRuntime
 from prml_vslam.methods.stage.backend_config import SlamBackendConfig
+from prml_vslam.methods.stage.visualization import (
+    ROLE_KEYFRAME_DEPTH,
+    ROLE_KEYFRAME_PINHOLE,
+    ROLE_KEYFRAME_PREVIEW,
+    ROLE_KEYFRAME_RGB,
+    ROLE_MODEL_CAMERA_RGB,
+    ROLE_MODEL_PINHOLE,
+    ROLE_MODEL_PREVIEW,
+    ROLE_SOURCE_RGB,
+)
 from prml_vslam.pipeline.backend import PipelineRuntimeSource
 from prml_vslam.pipeline.config import RunConfig
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
@@ -48,6 +58,7 @@ from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
 from prml_vslam.pipeline.contracts.stages import StageKey
+from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import (
     DEFAULT_MAX_FRAMES_IN_FLIGHT,
     EVENT_RING_LIMIT,
@@ -68,14 +79,16 @@ from prml_vslam.pipeline.stages.base.contracts import (
     StageRuntimeStatus,
     StageRuntimeUpdate,
     VisualizationIntent,
+    VisualizationItem,
 )
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
 from prml_vslam.pipeline.stages.base.proxy import StageRuntimeHandle
+from prml_vslam.pipeline.stages.base.ray import RayStageRuntimeHandle
 from prml_vslam.pipeline.stages.specs import stage_runtime_spec_for
 from prml_vslam.sources.protocols import OfflineSequenceSource, StreamingSequenceSource
 from prml_vslam.sources.stage.contracts import SourceStageOutput
 from prml_vslam.sources.stage.visualization import ROLE_SOURCE_REFERENCE_TRAJECTORY, SourceVisualizationAdapter
-from prml_vslam.utils import Console, PathConfig, RunArtifactPaths
+from prml_vslam.utils import Console, JsonScalar, PathConfig, RunArtifactPaths
 from prml_vslam.visualization.artifacts import artifact_visualizations
 
 _TERMINAL_STATES = {RunState.COMPLETED, RunState.FAILED, RunState.STOPPED}
@@ -123,13 +136,15 @@ class RunCoordinatorActor:
         self._source_finished = False
         self._streaming_finalized = False
         self._in_flight_frames = 0
+        self._slam_submission_refs: list[ray.ObjectRef[None]] = []
+        self._slam_submission_lock = threading.Lock()
         self._streaming_done = threading.Event()
         self._jsonl_sink: JsonlEventSink | None = None
         self._rerun_sinks: list[_RerunSinkSidecar] = []
         self._worker: threading.Thread | None = None
         self._source_actor: ActorHandle | None = None
         self._streaming_runtime_manager: RuntimeManager | None = None
-        self._slam_runtime_proxy: StageRuntimeHandle | None = None
+        self._slam_runtime_proxy: StageRuntimeHandle | RayStageRuntimeHandle | None = None
         self._run_config: RunConfig | None = None
         self._plan: RunPlan | None = None
         self._slam_backend: SlamBackendConfig | None = None
@@ -158,6 +173,7 @@ class RunCoordinatorActor:
         self._source_finished = False
         self._streaming_finalized = False
         self._in_flight_frames = 0
+        self._slam_submission_refs = []
         self._streaming_done = threading.Event()
         self._source_actor = None
         self._streaming_runtime_manager = None
@@ -292,10 +308,8 @@ class RunCoordinatorActor:
         )
         if self._stop_requested or self._slam_runtime_proxy is None:
             return
-        self._in_flight_frames += 1
-        frame_accepted = False
         try:
-            self._submit_frame_to_slam_runtime(
+            submission_ref = self._submit_frame_to_slam_runtime(
                 packet=packet,
                 frame_ref=frame_ref,
                 depth_ref=depth_ref,
@@ -305,19 +319,16 @@ class RunCoordinatorActor:
                 pose=pose,
                 provenance=provenance,
             )
-            frame_accepted = True
+            if submission_ref is None:
+                self._complete_inline_slam_submission()
+            else:
+                self._track_slam_submission(submission_ref)
         except Exception as exc:
             self._console.error("Streaming SLAM frame submission failed for run '%s': %s", self._run_id, exc)
             self._streaming_error = str(exc)
             self._source_finished = True
             if self._source_actor is not None:
                 self._source_actor.stop.remote()
-        finally:
-            self._in_flight_frames = max(0, self._in_flight_frames - 1)
-            if frame_accepted and self._source_actor is not None and not self._stop_requested:
-                self._source_actor.grant_credit.remote(1)
-        if frame_accepted:
-            self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
         if self._source_finished and self._in_flight_frames == 0:
             self._finalize_streaming()
 
@@ -344,8 +355,7 @@ class RunCoordinatorActor:
         if not self._has_rerun_sinks():
             return
         payload_resolver = self._self_actor_handle()
-        for update in updates:
-            self._submit_rerun_update(update=update, payload_resolver=payload_resolver)
+        self._submit_rerun_updates(updates=updates, payload_resolver=payload_resolver)
 
     def _submit_frame_to_slam_runtime(
         self,
@@ -358,31 +368,88 @@ class RunCoordinatorActor:
         intrinsics: CameraIntrinsics | None,
         pose: FrameTransform | None,
         provenance: ObservationProvenance,
-    ) -> None:
+    ) -> ray.ObjectRef[None] | None:
         if self._slam_runtime_proxy is None:
             raise RuntimeError("Streaming SLAM runtime has not been started.")
-        self._stage_runner.submit_stream_item(
-            runtime=self._slam_runtime_proxy,
-            item=Observation(
-                seq=packet.seq,
-                timestamp_ns=packet.timestamp_ns,
-                rgb=self._resolve_handle_payload(frame_ref),
-                depth_m=self._resolve_handle_payload(depth_ref) if pose is not None else None,
-                confidence=self._resolve_handle_payload(confidence_ref),
-                pointmap_xyz=self._resolve_handle_payload(pointmap_ref) if pose is not None else None,
-                point_cloud_xyz=packet.point_cloud_xyz if pose is not None else None,
-                point_cloud_rgb=packet.point_cloud_rgb if pose is not None else None,
-                intrinsics=intrinsics,
-                T_world_camera=pose,
-                arrival_timestamp_s=packet.arrival_timestamp_s,
-                provenance=provenance,
-            ),
+        item = Observation(
+            seq=packet.seq,
+            timestamp_ns=packet.timestamp_ns,
+            rgb=self._resolve_handle_payload(frame_ref),
+            depth_m=self._resolve_handle_payload(depth_ref) if pose is not None else None,
+            confidence=self._resolve_handle_payload(confidence_ref),
+            pointmap_xyz=self._resolve_handle_payload(pointmap_ref) if pose is not None else None,
+            point_cloud_xyz=packet.point_cloud_xyz if pose is not None else None,
+            point_cloud_rgb=packet.point_cloud_rgb if pose is not None else None,
+            intrinsics=intrinsics,
+            T_world_camera=pose,
+            arrival_timestamp_s=packet.arrival_timestamp_s,
+            provenance=provenance,
         )
+        if isinstance(self._slam_runtime_proxy, RayStageRuntimeHandle):
+            return self._slam_runtime_proxy.submit_stream_item_async(item)
+        self._stage_runner.submit_stream_item(runtime=self._slam_runtime_proxy, item=item)
+        return None
 
     def _drain_slam_runtime_updates(self) -> list[StageRuntimeUpdate]:
         if self._slam_runtime_proxy is None:
             return []
         return self._slam_runtime_proxy.drain_runtime_updates(max_items=None)
+
+    def _track_slam_submission(self, submission_ref: ray.ObjectRef[None]) -> None:
+        with self._slam_submission_lock:
+            self._slam_submission_refs.append(submission_ref)
+            self._in_flight_frames += 1
+
+    def _complete_inline_slam_submission(self) -> None:
+        if self._source_actor is not None and not self._stop_requested:
+            self._source_actor.grant_credit.remote(1)
+        self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
+
+    def _streaming_completion_loop(self) -> None:
+        while not self._streaming_done.is_set():
+            completed = self._drain_completed_slam_submissions(timeout_s=0.05)
+            if not completed:
+                self._streaming_done.wait(timeout=0.05)
+            if self._source_finished and self._in_flight_frames == 0:
+                self._finalize_streaming()
+
+    def _drain_completed_slam_submissions(self, *, timeout_s: float) -> int:
+        with self._slam_submission_lock:
+            pending_refs = list(self._slam_submission_refs)
+        if not pending_refs:
+            return 0
+        ready_refs, _ = ray.wait(pending_refs, num_returns=len(pending_refs), timeout=timeout_s)
+        if not ready_refs:
+            return 0
+        ready_set = set(ready_refs)
+        with self._slam_submission_lock:
+            self._slam_submission_refs = [ref for ref in self._slam_submission_refs if ref not in ready_set]
+        for submission_ref in ready_refs:
+            self._complete_slam_submission(submission_ref)
+        return len(ready_refs)
+
+    def _complete_slam_submission(self, submission_ref: ray.ObjectRef[None]) -> None:
+        try:
+            ray.get(submission_ref)
+        except Exception as exc:
+            if isinstance(self._slam_runtime_proxy, RayStageRuntimeHandle):
+                self._slam_runtime_proxy.mark_async_item_failed()
+            self._console.error("Streaming SLAM frame processing failed for run '%s': %s", self._run_id, exc)
+            self._streaming_error = str(exc)
+            self._source_finished = True
+            if self._source_actor is not None:
+                self._source_actor.stop.remote()
+        else:
+            if isinstance(self._slam_runtime_proxy, RayStageRuntimeHandle):
+                self._slam_runtime_proxy.mark_async_item_completed()
+            if self._source_actor is not None and not self._stop_requested:
+                self._source_actor.grant_credit.remote(1)
+            self._publish_slam_runtime_updates(self._drain_slam_runtime_updates())
+        finally:
+            with self._slam_submission_lock:
+                self._in_flight_frames = max(0, self._in_flight_frames - 1)
+        if self._source_finished and self._in_flight_frames == 0:
+            self._finalize_streaming()
 
     def _publish_slam_runtime_updates(self, updates: list[StageRuntimeUpdate]) -> None:
         if not updates:
@@ -393,18 +460,31 @@ class RunCoordinatorActor:
             self._console.warning("Failed to route live SLAM runtime updates for run '%s': %s", self._run_id, exc)
 
     def _cache_slam_runtime_payloads(self, updates: list[StageRuntimeUpdate]) -> None:
+        if self._slam_runtime_proxy is None or not self._rerun_sinks:
+            return
+        cache_export_payloads = any(sidecar.kind == "export" for sidecar in self._rerun_sinks)
+        cache_live_payloads = any(sidecar.kind == "live" for sidecar in self._rerun_sinks)
+        for update in updates:
+            cache_update = (
+                update if cache_export_payloads else self._live_rerun_update(update) if cache_live_payloads else None
+            )
+            if cache_update is None:
+                continue
+            for ref in _payload_refs_for_update(cache_update):
+                payload = self._read_slam_runtime_payload(ref)
+                if payload is not None:
+                    self._remember_handle(ref.handle_id, payload)
+
+    def _read_slam_runtime_payload(self, ref: TransientPayloadRef) -> np.ndarray | None:
+        if isinstance(self._slam_runtime_proxy, RayStageRuntimeHandle):
+            return self._slam_runtime_proxy.read_payload(ref)
         runtime = self._active_slam_runtime()
         if runtime is None:
-            return
-        for update in updates:
-            for item in update.visualizations:
-                for ref in item.payload_refs.values():
-                    payload = runtime.read_payload(ref)
-                    if payload is not None:
-                        self._remember_handle(ref.handle_id, payload)
+            return None
+        return runtime.read_payload(ref)
 
     def _active_slam_runtime(self) -> SlamStageRuntime | None:
-        if self._slam_runtime_proxy is None:
+        if self._slam_runtime_proxy is None or isinstance(self._slam_runtime_proxy, RayStageRuntimeHandle):
             return None
         runtime = self._slam_runtime_proxy.runtime
         if not isinstance(runtime, SlamStageRuntime):
@@ -458,7 +538,7 @@ class RunCoordinatorActor:
                     path_config=path_config,
                     runtime_source=streaming_source,
                 )
-                self._streaming_done.wait()
+                self._streaming_completion_loop()
         except Exception as exc:
             self._record_event(
                 RunFailed(event_id=self._next_event_id(), run_id=self._run_id, ts_ns=ts_ns(), error_message=str(exc))
@@ -719,12 +799,33 @@ class RunCoordinatorActor:
         runtime_manager: RuntimeManager,
     ) -> None:
         stage_key = StageKey.SLAM
-        runtime_proxy = runtime_manager.runtime_for(stage_key)
+        stage_spec = runtime_manager.stage_spec(stage_key)
+        runtime_factory = stage_spec.runtime_factory(context)
+        if runtime_factory is None:
+            raise RuntimeError("Streaming SLAM stage has no runtime factory.")
+        if not isinstance(runtime_factory, type):
+            raise RuntimeError("Ray-hosted streaming SLAM requires a class-based runtime factory.")
+        actor_options = actor_options_for_stage(
+            stage_key=stage_key,
+            run_config=context.run_config,
+            backend=context.run_config.stages.slam.backend,
+            default_num_cpus=1.0,
+            default_num_gpus=0.0,
+            restartable=False,
+            inherit_backend_defaults=True,
+        )
+        remote_options = cast(dict[str, Any], clean_actor_options(actor_options))
+        remote_runtime_cls: Any = ray.remote(**remote_options)(runtime_factory)
+        runtime_proxy = RayStageRuntimeHandle(
+            stage_key=stage_key,
+            actor=cast(ActorHandle, remote_runtime_cls.remote()),
+            resource_assignment=_resource_assignment_for_status(actor_options),
+        )
         self._stage_runner.start_configured_streaming_stage(
             stage_key=stage_key,
             runtime=runtime_proxy,
             stage_config=context.run_config.stages.section(stage_key),
-            stage_spec=runtime_manager.stage_spec(stage_key),
+            stage_spec=stage_spec,
             context=context,
             on_stage_started=self._emit_stage_started,
             on_stage_failed=self._record_stage_failure,
@@ -1036,23 +1137,70 @@ class RunCoordinatorActor:
         payload_resolver: ActorHandle | None,
         destinations: frozenset[_RerunSinkKind] = _RERUN_ALL_DESTINATIONS,
     ) -> None:
-        if self._rerun_sinks:
-            for sidecar in self._rerun_sinks:
-                if sidecar.kind not in destinations:
-                    continue
-                try:
-                    self._log_rerun_update_backlog(update, sidecar=sidecar)
-                    sidecar.last_call = sidecar.actor.observe_update.remote(
-                        update=update,
+        self._submit_rerun_updates(
+            updates=[update],
+            payload_resolver=payload_resolver,
+            destinations=destinations,
+        )
+
+    def _submit_rerun_updates(
+        self,
+        *,
+        updates: list[StageRuntimeUpdate],
+        payload_resolver: ActorHandle | None,
+        destinations: frozenset[_RerunSinkKind] = _RERUN_ALL_DESTINATIONS,
+    ) -> None:
+        if not self._rerun_sinks:
+            return
+        for sidecar in self._rerun_sinks:
+            if sidecar.kind not in destinations:
+                continue
+            routed_updates = [
+                routed_update
+                for update in updates
+                if (
+                    routed_update := (
+                        self._live_rerun_update(update) if sidecar.kind == "live" else _export_rerun_update(update)
+                    )
+                )
+                is not None
+            ]
+            if not routed_updates:
+                continue
+            try:
+                self._log_rerun_update_backlog(routed_updates[-1], sidecar=sidecar)
+                if sidecar.kind == "live":
+                    sidecar.last_call = sidecar.actor.observe_updates.remote(
+                        updates=routed_updates,
                         payload_resolver=payload_resolver,
                     )
-                except Exception as exc:  # pragma: no cover - best-effort sidecar submission
-                    self._console.warning(
-                        "Failed to submit Rerun %s sink runtime update for stage '%s': %s",
-                        sidecar.kind,
-                        update.stage_key.value,
-                        exc,
-                    )
+                else:
+                    for routed_update in routed_updates:
+                        sidecar.last_call = sidecar.actor.observe_update.remote(
+                            update=routed_update,
+                            payload_resolver=payload_resolver,
+                        )
+            except Exception as exc:  # pragma: no cover - best-effort sidecar submission
+                self._console.warning(
+                    "Failed to submit Rerun %s sink runtime update batch ending at stage '%s': %s",
+                    sidecar.kind,
+                    routed_updates[-1].stage_key.value,
+                    exc,
+                )
+
+    def _live_rerun_update(self, update: StageRuntimeUpdate) -> StageRuntimeUpdate | None:
+        run_config = self._run_config
+        if run_config is None:
+            return _export_rerun_update(update)
+        visualizations = [
+            item
+            for item in (_live_rerun_item_for_policy(item, run_config=run_config) for item in update.visualizations)
+            if item is not None
+        ]
+        semantic_events = _rerun_supported_semantic_events(update)
+        if not visualizations and not semantic_events:
+            return None
+        return update.model_copy(update={"visualizations": visualizations, "semantic_events": semantic_events})
 
     def _publish_runtime_updates_from_proxy(self, runtime_proxy: StageRuntimeHandle) -> None:
         updates = runtime_proxy.drain_runtime_updates(max_items=None)
@@ -1061,8 +1209,7 @@ class RunCoordinatorActor:
         with self._lock:
             for update in updates:
                 self._snapshot = self._projector.apply_runtime_update(self._snapshot, update)
-        for update in updates:
-            self._submit_rerun_update(update=update, payload_resolver=None)
+        self._submit_rerun_updates(updates=updates, payload_resolver=None)
 
     def _self_actor_handle(self) -> ActorHandle:
         return ray.get_actor(coordinator_actor_name(self._run_id), namespace=self._namespace)
@@ -1189,6 +1336,69 @@ class RunCoordinatorActor:
             results=self._result_store,
             slam_backend=self._require_slam_backend(),
         )
+
+
+def _resource_assignment_for_status(
+    actor_options: dict[str, float | int | dict[str, float] | None],
+) -> dict[str, JsonScalar]:
+    assignment: dict[str, JsonScalar] = {}
+    for key in ("num_cpus", "num_gpus"):
+        value = actor_options.get(key)
+        if isinstance(value, int | float):
+            assignment[key] = float(value)
+    resources = actor_options.get("resources")
+    if isinstance(resources, dict):
+        for resource_name, value in resources.items():
+            assignment[f"resource:{resource_name}"] = float(value)
+    return assignment
+
+
+def _export_rerun_update(update: StageRuntimeUpdate) -> StageRuntimeUpdate | None:
+    semantic_events = _rerun_supported_semantic_events(update)
+    if not update.visualizations and not semantic_events:
+        return None
+    if len(semantic_events) == len(update.semantic_events):
+        return update
+    return update.model_copy(update={"semantic_events": semantic_events})
+
+
+def _rerun_supported_semantic_events(
+    update: StageRuntimeUpdate,
+) -> list[GroundAlignmentMetadata | TrajectoryAlignmentArtifact | TrajectoryEvaluationManifest]:
+    return [
+        semantic_event
+        for semantic_event in update.semantic_events
+        if isinstance(
+            semantic_event, GroundAlignmentMetadata | TrajectoryAlignmentArtifact | TrajectoryEvaluationManifest
+        )
+    ]
+
+
+def _live_rerun_item_for_policy(item: VisualizationItem, *, run_config: RunConfig) -> VisualizationItem | None:
+    visualization_config = run_config.visualization
+    if item.role == ROLE_SOURCE_RGB and not visualization_config.log_source_rgb:
+        return None
+    if item.role == ROLE_MODEL_CAMERA_RGB and not visualization_config.log_camera_image_rgb:
+        return None
+    if item.role in {ROLE_MODEL_PREVIEW, ROLE_KEYFRAME_PREVIEW} and not visualization_config.log_diagnostic_preview:
+        return None
+    if item.role in {ROLE_KEYFRAME_RGB, ROLE_KEYFRAME_DEPTH, ROLE_KEYFRAME_PREVIEW}:
+        return None
+    if item.role in {ROLE_MODEL_PINHOLE, ROLE_KEYFRAME_PINHOLE} and item.intrinsics is not None:
+        return item.model_copy(update={"payload_refs": {}})
+    return item
+
+
+def _payload_refs_for_update(update: StageRuntimeUpdate) -> list[TransientPayloadRef]:
+    refs: list[TransientPayloadRef] = []
+    seen_handle_ids: set[str] = set()
+    for item in update.visualizations:
+        for ref in item.payload_refs.values():
+            if ref.handle_id in seen_handle_ids:
+                continue
+            seen_handle_ids.add(ref.handle_id)
+            refs.append(ref)
+    return refs
 
 
 __all__ = ["RunCoordinatorActor"]

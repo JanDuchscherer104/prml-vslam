@@ -135,6 +135,7 @@ class RerunLoggingPolicy:
     reference_point_cloud_decimation_keep_ratio: float = 1.0
     mesh_decimation_keep_ratio: float = 1.0
     decimation_random_seed: int = 0
+    tracking_trajectory_history_window: int | None = None
     _warned_fallback_intrinsics: bool = field(default=False, init=False, repr=False)
     _tracking_trajectory_xyz: list[tuple[float, float, float]] = field(default_factory=list, init=False, repr=False)
     _logged_tracking_start_axes: bool = field(default=False, init=False, repr=False)
@@ -621,6 +622,8 @@ class RerunLoggingPolicy:
             return
         entity_path = RERUN_SCENE.slam_raw_trajectory_path()
         self._tracking_trajectory_xyz.append((float(pose.tx), float(pose.ty), float(pose.tz)))
+        if self.tracking_trajectory_history_window is not None:
+            self._tracking_trajectory_xyz = self._tracking_trajectory_xyz[-self.tracking_trajectory_history_window :]
         if not self._logged_tracking_start_axes:
             self._log_trajectory_endpoint_markers(
                 stream,
