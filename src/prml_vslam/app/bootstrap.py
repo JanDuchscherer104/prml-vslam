@@ -52,6 +52,7 @@ _PAGE_SPECS = (
     (AppPageId.PIPELINE, ":material/account_tree:", "pipeline", False),
     (AppPageId.ARTIFACTS, ":material/folder_open:", "artifacts", False),
     (AppPageId.METRICS, ":material/show_chart:", "metrics", False),
+    (AppPageId.IMAGE_QUALITY, ":material/image:", "image_quality", False),
 )
 
 
@@ -141,6 +142,7 @@ def _enter_page(context: AppContext, page_id: AppPageId) -> None:
         AppPageId.PIPELINE,
         AppPageId.ARTIFACTS,
         AppPageId.METRICS,
+        AppPageId.IMAGE_QUALITY,
     } and context.run_service.snapshot().state in {
         RunState.PREPARING,
         RunState.RUNNING,

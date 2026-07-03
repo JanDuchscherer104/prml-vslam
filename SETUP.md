@@ -164,6 +164,17 @@ Run the MASt3R smoke pipeline:
 uv run --extra mast3r prml-vslam run-config .configs/pipelines/advio-15-offline-mast3r-smoke.toml
 ```
 
+# Troubleshoot Mast3r
+If a run fails on import torch, you can try:
+```bash
+unset LD_LIBRARY_PATH
+```
+
+If installed modules were not found:
+```bash
+export UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX"
+```
+
 **Note**: This requires the _normalized_ vslam-datastore entry of `advio-15` to be present. See [Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore) for details.
 
 ## LingBot/CUDA Setup

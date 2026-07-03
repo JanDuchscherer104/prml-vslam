@@ -39,6 +39,7 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.RECONSTRUCTION,
         StageKey.CLOUD_ALIGNMENT,
         StageKey.CLOUD_EVALUATION,
+        StageKey.IMAGE_EVALUATION,
         StageKey.SUMMARY,
     }
 )
@@ -115,6 +116,7 @@ def sync_pipeline_page_state_from_template(
         trajectory_eval_enabled=run_config.stages.evaluate_trajectory.enabled,
         trajectory_alignment_enabled=run_config.stages.align_trajectory.enabled,
         evaluate_cloud=run_config.stages.evaluate_cloud.enabled,
+        evaluate_image=run_config.stages.evaluate_image.enabled,
         connect_live_viewer=run_config.visualization.connect_live_viewer,
         export_viewer_rrd=run_config.visualization.export_viewer_rrd,
         grpc_url=run_config.visualization.grpc_url,
@@ -165,6 +167,7 @@ def build_run_config_from_action(
             trajectory_eval_enabled=action.trajectory_eval_enabled,
             trajectory_alignment_enabled=action.trajectory_alignment_enabled,
             evaluate_cloud=action.evaluate_cloud,
+            evaluate_image=action.evaluate_image,
             ground_alignment_enabled=action.ground_alignment_enabled,
             connect_live_viewer=action.connect_live_viewer,
             export_viewer_rrd=action.export_viewer_rrd,
@@ -340,6 +343,7 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
             "reconstruction": request.stages.reconstruction.model_dump(mode="json"),
             "align_cloud": request.stages.align_cloud.model_dump(mode="json"),
             "evaluate_cloud": request.stages.evaluate_cloud.model_dump(mode="json"),
+            "evaluate_image": request.stages.evaluate_image.model_dump(mode="json"),
             "summary": request.stages.summary.model_dump(mode="json"),
         },
         "visualization": request.visualization.model_dump(mode="json"),
