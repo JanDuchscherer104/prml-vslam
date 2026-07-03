@@ -60,12 +60,18 @@
 
 #include "sections/01-introduction.typ"
 #include "sections/02-related-work.typ"
-#include "sections/03-benchmark-framework.typ"
 #include "sections/04-candidate-methods.typ"
+#include "sections/03-benchmark-framework.typ"
 #include "sections/05-datasets.typ"
-#include "sections/06-metrics.typ"
-#include "sections/07-experiments.typ"
-#include "sections/08-discussion.typ"
+#include "sections/06a-trajectory.typ"
+#include "sections/06b-point-cloud.typ"
+#include "sections/06c-image-quality.typ"
+#include "sections/06d-performance-metrics.typ"
+// #include "sections/06-metrics.typ"
+// #include "sections/07-experiments.typ"
+// #include "sections/08-discussion.typ" TODO: include into conclusion
+// future work
 #include "sections/11-retrospective.typ"
 #include "sections/12-future-work.typ"
 #include "sections/09-conclusion.typ"
+#include "sections/13-work-breakdown.typ"

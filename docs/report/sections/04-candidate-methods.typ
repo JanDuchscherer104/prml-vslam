@@ -22,9 +22,9 @@ dense output is available. It also defines the evaluation risk: pairwise learned
 visually plausible fused geometry while retaining correlated scale or shape errors. ViSTA-SLAM
 therefore needs both trajectory placement and dense-cloud placement checks.
 
-== MASt3R-SLAM
+// MASt3R-SLAM
 // RESPONSIBLIY: Christopher (MASt3R-SLAM subsection)
-
+/*
 MASt3R-SLAM combines learned two-view priors with an explicit SLAM backend @murai2025mast3rslam.
 MASt3R predictions provide pointmaps and matching features; the online system adds efficient
 pointmap matching, tracking, keyframe fusion, loop closure, and second-order global optimization.
@@ -36,6 +36,8 @@ to a keyframe, fusion maintains canonical keyframe pointmaps, and global optimiz
 keyframe graph. The benchmark must therefore record image preprocessing, pointmap frame, CUDA
 runtime, and cloud-placement transform; weak camera-model assumptions do not remove those
 reproducibility variables.
+*/
+#include "drafts/ck-mast3r-integration.typ"
 
 == LingBot-Map
 // RESPONSIBLIY: JAN (LingBot-Map subsection)
