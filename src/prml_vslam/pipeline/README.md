@@ -168,7 +168,7 @@ flowchart LR
         SourcePayload["SequenceManifest + PreparedBenchmarkInputs"]
         SlamPayload["SlamStageOutput + SlamArtifacts"]
         GroundPayload["GroundAlignmentMetadata"]
-        EvalPayload["EvaluationArtifact"]
+        EvalPayload["TrajectoryEvaluationManifest"]
         ReconstructionPayload["ReconstructionArtifacts"]
         SummaryPayload["RunSummary + StageManifest[]"]
         VizItems["VisualizationItem[]"]

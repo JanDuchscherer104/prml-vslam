@@ -24,6 +24,7 @@ _KEYED_POINTS_PREFIX = "/world/slam/keyframes/points/"
 _KEYED_CAMERAS_PREFIX = "/world/slam/keyframes/cameras/"
 _RECONSTRUCTION_PREFIX = "/world/reconstruction/"
 _REFERENCE_PREFIX = "/world/reference/"
+_REFERENCE_POINTS_PREFIX = "/world/reference/points/"
 
 
 class RerunPointCloudSnapshot(BaseData):
@@ -456,7 +457,7 @@ def _reference_point_cloud_snapshots(recording: rdf.Recording) -> list[RerunPoin
     point_entities = sorted(
         column.entity_path
         for column in _component_columns(recording)
-        if column.component == "Points3D:positions" and column.entity_path.startswith(_REFERENCE_PREFIX)
+        if column.component == "Points3D:positions" and column.entity_path.startswith(_REFERENCE_POINTS_PREFIX)
     )
     snapshots: list[RerunPointCloudSnapshot] = []
     for points_entity in point_entities:

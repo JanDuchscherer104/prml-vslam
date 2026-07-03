@@ -16,6 +16,7 @@ import pytest
 import typer
 
 from prml_vslam.main import (
+    _apply_dataset_sampling_overrides,
     _build_rerun_viewer_command,
     _find_rerun_viewer_processes,
     _forward_rerun_viewer_stdout,
@@ -45,7 +46,7 @@ from prml_vslam.pipeline.demo import (
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.handles import TransientPayloadRef
-from prml_vslam.sources.config import AdvioSourceConfig
+from prml_vslam.sources.config import AdvioSourceConfig, Record3DDatasetSourceConfig
 from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource, AdvioServingConfig
 from prml_vslam.utils import PathConfig
 from tests.pipeline_testing_support import FakeStreamingSource
@@ -76,7 +77,7 @@ def _advio_source_payload(sequence_id: str = "advio-01") -> dict[str, object]:
         "sequence_id": sequence_id,
         "dataset_serving": {
             "pose_source": "ground_truth",
-            "pose_frame_mode": "provider_world",
+            "pose_frame_mode": "fixedpoint_common_start_local",
         },
     }
 
@@ -116,6 +117,20 @@ def _run_config_command(config_path: Path) -> None:
         ignore_unknown_options=True,
     )
     run_config(ctx, config_path)
+
+
+def test_dataset_sampling_overrides_accept_record3d_dataset_source() -> None:
+    source = Record3DDatasetSourceConfig(sequence_id="synthetic")
+
+    updated = _apply_dataset_sampling_overrides(
+        source,
+        dataset_frame_stride=None,
+        dataset_target_fps=5.0,
+    )
+
+    assert isinstance(updated, Record3DDatasetSourceConfig)
+    assert updated.frame_stride == 1
+    assert updated.target_fps == 5.0
 
 
 def test_load_run_config_toml_accepts_target_config(tmp_path: Path) -> None:
@@ -308,9 +323,8 @@ def test_build_advio_demo_run_config_enables_live_viewer_by_default(tmp_path: Pa
     assert request.visualization.connect_live_viewer is True
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.GROUND_TRUTH,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
     )
-    assert request.stages.source.backend.normalize_video_orientation is True
 
 
 def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: Path) -> None:
@@ -320,14 +334,14 @@ def test_build_advio_demo_run_config_keeps_streaming_replay_controls(tmp_path: P
         mode=PipelineMode.STREAMING,
         method=MethodId.VISTA,
         pose_source=AdvioPoseSource.ARCORE,
-        normalize_video_orientation=True,
+        dataset_target_fps=15.0,
     )
 
     assert request.stages.source.backend.dataset_serving == AdvioServingConfig(
         pose_source=AdvioPoseSource.ARCORE,
-        pose_frame_mode=AdvioPoseFrameMode.PROVIDER_WORLD,
+        pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
     )
-    assert request.stages.source.backend.normalize_video_orientation is True
+    assert request.stages.source.backend.target_fps == 15.0
 
 
 def test_plan_run_defaults_to_live_viewer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -520,7 +534,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam]
 enabled = true
@@ -1263,9 +1277,8 @@ def test_build_runtime_source_from_run_config_caps_streaming_replay(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
-            normalize_video_orientation=True,
         ),
         method=MethodId.VISTA,
         max_frames=2,

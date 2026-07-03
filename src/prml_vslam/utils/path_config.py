@@ -58,6 +58,12 @@ class RunArtifactPaths(BaseData):
     """Path to the exported trajectory."""
     point_cloud_path: Path
     """Path to the canonical exported point cloud."""
+    depth_maps_path: Path
+    """Path to normalized processed-raster depth maps."""
+    point_maps_path: Path
+    """Path to normalized processed-raster point maps."""
+    point_cloud_confidences_path: Path
+    """Path to normalized per-point or per-raster confidence values."""
     estimated_intrinsics_path: Path
     """Path to the canonical estimated camera-intrinsics series."""
     sparse_points_path: Path
@@ -72,10 +78,14 @@ class RunArtifactPaths(BaseData):
     """Path to the derived ground-alignment metadata artifact."""
     arcore_alignment_path: Path
     """Path to the ARCore alignment artifact."""
-    trajectory_metrics_path: Path
-    """Path to persisted trajectory evaluation metrics."""
+    trajectory_evaluation_manifest_path: Path
+    """Path to the canonical trajectory evaluation manifest."""
+    trajectory_metrics_long_path: Path
+    """Path to the canonical long-form trajectory metric table."""
     cloud_metrics_path: Path
     """Path to persisted dense-cloud evaluation metrics."""
+    image_metrics_path: Path
+    """Path to persisted rendered-image evaluation metrics."""
     reference_cloud_path: Path
     """Path to the reconstruction-stage reference cloud artifact."""
     summary_path: Path
@@ -103,6 +113,9 @@ class RunArtifactPaths(BaseData):
             benchmark_inputs_path=(resolved_root / "benchmark" / "inputs.json").resolve(),
             trajectory_path=(resolved_root / "slam" / "trajectory.tum").resolve(),
             point_cloud_path=(resolved_root / "slam" / "point_cloud.ply").resolve(),
+            depth_maps_path=(resolved_root / "slam" / "depth_maps.npz").resolve(),
+            point_maps_path=(resolved_root / "slam" / "point_maps.npz").resolve(),
+            point_cloud_confidences_path=(resolved_root / "slam" / "point_cloud_confidences.npz").resolve(),
             estimated_intrinsics_path=(resolved_root / "slam" / "estimated_intrinsics.json").resolve(),
             sparse_points_path=(resolved_root / "slam" / "sparse_points.ply").resolve(),
             dense_points_path=(resolved_root / "slam" / "dense_points.ply").resolve(),
@@ -110,8 +123,12 @@ class RunArtifactPaths(BaseData):
             native_rerun_rrd_path=(resolved_root / "native" / "rerun_recording.rrd").resolve(),
             ground_alignment_path=(resolved_root / "alignment" / "ground_alignment.json").resolve(),
             arcore_alignment_path=(resolved_root / "evaluation" / "arcore_alignment.json").resolve(),
-            trajectory_metrics_path=(resolved_root / "evaluation" / "trajectory_metrics.json").resolve(),
+            trajectory_evaluation_manifest_path=(
+                resolved_root / "evaluation" / "trajectory" / "manifest.json"
+            ).resolve(),
+            trajectory_metrics_long_path=(resolved_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
+            image_metrics_path=(resolved_root / "evaluation" / "image_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reconstruction" / "reconstruction_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
             stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),
@@ -223,6 +240,10 @@ class PathConfig(BaseConfig):
         """Resolve one dataset directory under the shared data root."""
         return self._resolve_dir(self.data_dir, dataset_slug, create=create)
 
+    def resolve_normalized_datastore_dir(self, dataset_slug: str, *, create: bool = False) -> Path:
+        """Resolve one normalized datastore directory under the shared data root."""
+        return self._resolve_dir(self.data_dir, "vslam-datastore", dataset_slug, create=create)
+
     def resolve_logs_dir(self, *, create: bool = False) -> Path:
         """Resolve the shared runtime logs directory."""
         return self._resolve_dir(self.logs_dir, create=create)
@@ -265,7 +286,7 @@ class PathConfig(BaseConfig):
         target run configs. It enforces the ``.toml`` suffix and can optionally
         create the parent directory without creating the config file itself.
         """
-        resolved = self.resolve_repo_path(path, base_dir=base_dir)
+        resolved = self.resolve_repo_path(path, base_dir=None if base_dir is None else Path(base_dir))
         if resolved.suffix != ".toml":
             raise ValueError(f"Config path must be a .toml file, got {resolved}")
         if create_parent:

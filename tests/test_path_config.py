@@ -44,8 +44,15 @@ def test_path_config_builds_canonical_run_layout(tmp_path: Path) -> None:
     assert run_paths.capture_manifest_path == expected_root / "input" / "capture_manifest.json"
     assert run_paths.sequence_manifest_path == expected_root / "input" / "sequence_manifest.json"
     assert run_paths.trajectory_path == expected_root / "slam" / "trajectory.tum"
+    assert run_paths.point_cloud_path == expected_root / "slam" / "point_cloud.ply"
+    assert run_paths.depth_maps_path == expected_root / "slam" / "depth_maps.npz"
+    assert run_paths.point_maps_path == expected_root / "slam" / "point_maps.npz"
+    assert run_paths.point_cloud_confidences_path == expected_root / "slam" / "point_cloud_confidences.npz"
     assert run_paths.estimated_intrinsics_path == expected_root / "slam" / "estimated_intrinsics.json"
-    assert run_paths.trajectory_metrics_path == expected_root / "evaluation" / "trajectory_metrics.json"
+    assert (
+        run_paths.trajectory_evaluation_manifest_path == expected_root / "evaluation" / "trajectory" / "manifest.json"
+    )
+    assert run_paths.trajectory_metrics_long_path == expected_root / "evaluation" / "trajectory" / "metrics_long.csv"
     assert run_paths.summary_path == expected_root / "summary" / "run_summary.json"
     assert run_paths.stage_manifests_path == expected_root / "summary" / "stage_manifests.json"
     assert run_paths.plotly_scene_path("vista") == expected_root / "visualization" / "vista_scene.html"
@@ -86,6 +93,15 @@ def test_path_config_builds_dataset_paths(tmp_path: Path) -> None:
     assert dataset_dir == (tmp_path / ".data" / "advio").resolve()
 
 
+def test_path_config_builds_normalized_datastore_paths(tmp_path: Path) -> None:
+    path_config = PathConfig(root=tmp_path)
+
+    datastore_dir = path_config.resolve_normalized_datastore_dir("record3d")
+
+    assert datastore_dir == (tmp_path / ".data" / "vslam-datastore" / "record3d").resolve()
+    assert path_config.resolve_dataset_dir("record3d") == (tmp_path / ".data" / "record3d").resolve()
+
+
 def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path: Path) -> None:
     path_config = PathConfig(root=tmp_path)
 
@@ -95,6 +111,7 @@ def test_path_config_create_flags_delegate_to_shared_directory_resolver(tmp_path
         path_config.resolve_configs_dir(create=True),
         path_config.resolve_pipeline_configs_dir(create=True),
         path_config.resolve_dataset_dir("advio", create=True),
+        path_config.resolve_normalized_datastore_dir("advio", create=True),
         path_config.resolve_logs_dir(create=True),
         path_config.resolve_run_logs_dir("vista-full-tuning", create=True),
         path_config.resolve_method_repo_dir("vista-slam", create=True),

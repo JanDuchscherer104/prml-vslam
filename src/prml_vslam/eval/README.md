@@ -5,17 +5,15 @@ artifacts.
 
 ## Current Scope
 
-- discover normalized run artifacts
 - resolve reference and estimate trajectories
-- run explicit `evo` trajectory evaluation, currently centered on translation APE
-- persist and reload evaluation results
+- run explicit `evo` trajectory evaluation for translation/rotation APE and RPE
+- persist trajectory evaluation manifests, long-form metric rows, and error-series refs
 - provide the repository-owned trajectory-evaluation stage execution seam used by the pipeline
 
-Persisted trajectory results now carry explicit metric semantics such as metric
-id, pose relation, alignment mode, and sync tolerance. The current evaluator
-still computes translation APE only, but the contract now provides a typed
-place to extend into drift-oriented RPE work without redesigning the payload
-again.
+Persisted trajectory results now carry reference and candidate trajectory
+provenance, long-form statistic rows with evo pose relations, and error-series
+references. Error-series artifacts store APE geometry for trajectory overlays
+and scalar RPE values without implying unavailable evo pair geometry.
 
 ## Boundary
 
@@ -39,11 +37,12 @@ remains here.
   failure fingerprints.
 - Runtime: [`stage_trajectory/runtime.py`](./stage_trajectory/runtime.py)
   adapts `TrajectoryEvaluationService` into `OfflineStageRuntime` and returns
-  an `EvaluationArtifact` inside `StageResult`.
+  a `TrajectoryEvaluationManifest` inside `StageResult`.
 - Diagnostic config: [`stage_cloud/config.py`](./stage_cloud/config.py) defines
   `CloudEvaluationStageConfig` for `evaluate.cloud`. It records planned dense
   cloud metrics and artifact selection, but no runtime is registered yet.
 
 Evaluation consumes prepared references and normalized method outputs. It does
-not prepare sources, execute SLAM backends, own Rerun logging, or compute
-summary projections.
+not discover app selections, prepare sources, execute SLAM backends, own Rerun
+logging, or compute summary projections. App and post-run aggregation discovery
+lives in [`query.py`](./query.py) and is read-only.

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
@@ -36,25 +37,47 @@ from prml_vslam.pipeline.demo import (
     load_run_config_toml,
     persist_advio_demo_run_config,
 )
-from prml_vslam.pipeline.run_bundle import RunBundleCollisionPolicy, export_run_bundle, import_run_bundle
 from prml_vslam.pipeline.run_service import RunService
-from prml_vslam.sources.config import AdvioSourceConfig, SourceBackendConfig, VideoSourceConfig
-from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.config import (
+    AdvioSourceConfig,
+    Record3DDatasetSourceConfig,
+    SourceBackendConfig,
+    TumRgbdSourceConfig,
+    VideoSourceConfig,
+    runtime_frame_selection_for_source_config,
+)
+from prml_vslam.sources.contracts import PreparedBenchmarkInputs, ReferenceSource, SequenceManifest
 from prml_vslam.sources.datasets.advio import (
     AdvioDatasetService,
-    AdvioDownloadPreset,
     AdvioDownloadRequest,
-    AdvioModality,
-    AdvioPoseFrameMode,
     AdvioPoseSource,
 )
+from prml_vslam.sources.datasets.build_config import NormalizedDatasetBuildConfig
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig, ReferenceCloudConfig
+from prml_vslam.sources.datasets.normalization import (
+    dataset_id_for_source_config,
+    dataset_service,
+    default_frame_selection_for_dataset,
+    normalize_dataset_entries,
+    normalize_dataset_entry,
+    normalize_dataset_source_configs,
+    normalized_runtime_profile_for_dataset,
+    normalized_store_for_service,
+    parse_dataset_id,
+)
+from prml_vslam.sources.datasets.normalized_query import (
+    NormalizedDatasetQuery,
+    NormalizedSequenceRecord,
+    query_normalized_dataset,
+)
+from prml_vslam.sources.datasets.normalized_store import NormalizedDatasetEntry
+from prml_vslam.sources.datasets.record3d import Record3DDatasetService, Record3DDownloadRequest
 from prml_vslam.sources.datasets.tum_rgbd import (
     TumRgbdDatasetService,
-    TumRgbdDownloadPreset,
     TumRgbdDownloadRequest,
-    TumRgbdModality,
 )
 from prml_vslam.sources.record3d import Record3DStreamConfig
+from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils.console import Console
 from prml_vslam.utils.path_config import PathConfig, get_path_config
 
@@ -73,11 +96,23 @@ tum_rgbd_app = typer.Typer(
     no_args_is_help=True,
     help="TUM RGB-D dataset inspection and download helpers.",
 )
+record3d_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Record3D dataset inspection and download helpers.",
+)
+dataset_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Normalized offline dataset store helpers.",
+)
 console = Console(__name__)
 pipeline_demo_console = Console("pipeline.demo")
 
 app.add_typer(advio_app, name="advio")
 app.add_typer(tum_rgbd_app, name="tum-rgbd")
+app.add_typer(record3d_app, name="record3d")
+app.add_typer(dataset_app, name="dataset")
 
 
 def _reference_trajectory_filename(source: ReferenceSource) -> str:
@@ -98,15 +133,17 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
         "Source Stage",
         (
             ("--stages.source.enabled", "Enable or disable source normalization."),
-            ("--stages.source.backend.source_id", "Source kind: video, advio, tum_rgbd, record3d."),
+            ("--stages.source.backend.source_id", "Source kind: video, advio, tum_rgbd, record3d_dataset, record3d."),
             ("--stages.source.backend.video_path", "Video source path when source_id=video."),
-            ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO or TUM RGB-D."),
+            ("--stages.source.backend.sequence_id", "Dataset sequence id for ADVIO, TUM RGB-D, or Record3D."),
             ("--stages.source.backend.frame_stride", "Frame sampling stride."),
             ("--stages.source.backend.target_fps", "Frame sampling target FPS."),
             ("--stages.source.backend.replay_mode", "Replay pacing: realtime or fast_as_possible."),
             ("--stages.source.backend.dataset_serving.pose_source", "ADVIO pose provider."),
-            ("--stages.source.backend.dataset_serving.pose_frame_mode", "ADVIO replay pose frame mode."),
-            ("--stages.source.backend.normalize_video_orientation", "Normalize video display orientation."),
+            (
+                "--stages.source.backend.dataset_serving.pose_frame_mode",
+                "ADVIO normalized replay pose frame mode.",
+            ),
             ("--stages.source.backend.transport", "Record3D transport: usb or wifi."),
             ("--stages.source.backend.device_index", "Record3D USB device index."),
             ("--stages.source.backend.device_address", "Record3D Wi-Fi device address."),
@@ -152,8 +189,6 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.align_cloud.reference_source", "Preferred source-prepared reference cloud."),
             ("--stages.align_cloud.max_correspondence_distance_m", "ICP maximum correspondence distance in meters."),
             ("--stages.evaluate_cloud.enabled", "Enable dense-cloud diagnostic planning."),
-            ("--stages.evaluate_cloud.selection.reference_artifact_key", "Reference cloud artifact key."),
-            ("--stages.evaluate_cloud.selection.estimate_artifact_key", "Estimated cloud artifact key."),
             ("--stages.summary.enabled", "Enable summary projection."),
         ),
     ),
@@ -692,62 +727,144 @@ def _run_config_loaded(*, run_cfg: RunConfig, path_config: PathConfig) -> None:
         raise typer.Exit(code=1)
 
 
-@app.command("export-run")
-def export_run(
-    artifact_root: Annotated[
+@app.command("plan-sweep-config")
+def plan_sweep_config(
+    sweep_path: Annotated[
         Path,
-        typer.Argument(help="Method-level run artifact root to export."),
-    ],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Output `.prmlrun.tar.gz` bundle path."),
+        typer.Argument(
+            help="Path to a sweep TOML file.",
+        ),
     ],
 ) -> None:
-    """Export a completed run artifact root as a portable single-file bundle."""
+    """Print the expanded sweep plan as JSON without executing any runs.
+
+    Loads the sweep TOML, validates the config, resolves all method template
+    paths, and prints the list of expanded run items.  Use this command to
+    inspect ordering and run IDs before committing to a full sweep execution.
+    """
+    from prml_vslam.pipeline.sweep import expand_sweep, load_sweep_config
+
+    path_config = get_path_config()
     try:
-        result = export_run_bundle(artifact_root, output)
+        config = load_sweep_config(sweep_path, path_config)
+        items = expand_sweep(config, path_config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog(
-        {
-            "bundle_path": result.bundle_path.as_posix(),
-            "run_id": result.manifest.exported_run_id,
-            "artifact_label": result.manifest.artifact_label,
-            "file_count": len(result.manifest.files),
-        }
-    )
+    print(json.dumps([item.model_dump(mode="json") for item in items], indent=2))
 
 
-@app.command("import-run")
-def import_run(
-    bundle_path: Annotated[
+@app.command("run-sweep-config")
+def run_sweep_config(
+    sweep_path: Annotated[
         Path,
-        typer.Argument(help="Portable `.prmlrun.tar.gz` bundle to import."),
+        typer.Argument(
+            help="Path to a sweep TOML file.",
+        ),
     ],
-    output_dir: Annotated[
-        Path,
-        typer.Option("--output-dir", help="Artifacts directory that should receive the imported run."),
-    ] = Path(".artifacts"),
-    on_collision: Annotated[
-        RunBundleCollisionPolicy,
-        typer.Option("--on-collision", help="How to handle an existing target run root.", case_sensitive=False),
-    ] = RunBundleCollisionPolicy.FAIL,
+    fail_fast: Annotated[
+        bool,
+        typer.Option(
+            "--fail-fast/--continue-on-failure",
+            help=(
+                "Stop immediately after the first failed run (--fail-fast, default) "
+                "or attempt all runs and report failures at the end (--continue-on-failure)."
+            ),
+        ),
+    ] = True,
 ) -> None:
-    """Import a portable run bundle into the local artifacts tree."""
+    """Execute all expanded runs from a sweep TOML sequentially.
+
+    Each run reuses the existing single-run execution path (``_run_config_loaded``)
+    and writes its own timestamped log under the run-log directory.  Local
+    artifacts under ``[sweep].output_dir`` remain the only source of truth.
+
+    Exits with code 1 when one or more runs fail.  With ``--fail-fast`` (default)
+    execution stops on the first failure; with ``--continue-on-failure`` all runs
+    are attempted and a failure summary is printed at the end.  A ``Ctrl-C``
+    interrupt always propagates immediately regardless of the mode.
+    """
+    from prml_vslam.pipeline.sweep import build_run_config_from_sweep_item, expand_sweep, load_sweep_config
+
+    path_config = get_path_config()
     try:
-        result = import_run_bundle(bundle_path, output_dir=output_dir, collision_policy=on_collision)
+        config = load_sweep_config(sweep_path, path_config)
+        items = expand_sweep(config, path_config)
+        _preflight_sweep_normalized_entries(items, path_config=path_config)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog(
-        {
-            "artifact_root": result.artifact_root.as_posix(),
-            "run_id": result.manifest.exported_run_id,
-            "artifact_label": result.manifest.artifact_label,
-            "warnings": result.warnings,
-        }
-    )
+
+    total = len(items)
+    failures: list[str] = []
+
+    for idx, item in enumerate(items, start=1):
+        console.info("Sweep run %d/%d: %s", idx, total, item.run_id)
+        try:
+            run_cfg = build_run_config_from_sweep_item(item)
+        except Exception as exc:
+            console.error("Sweep run %s failed to build config (run %d/%d): %s", item.run_id, idx, total, exc)
+            failures.append(item.run_id)
+            if fail_fast:
+                raise typer.Exit(code=1) from exc
+            continue
+        run_id = path_config.slugify_experiment_name(run_cfg.experiment_name)
+        with _capture_run_config_logs(path_config=path_config, run_id=run_id) as log_path:
+            console.info("Persisting run-config log to '%s'.", log_path)
+            try:
+                _run_config_loaded(run_cfg=run_cfg, path_config=path_config)
+            except typer.Exit as exc:
+                if exc.exit_code == 130:
+                    raise
+                console.error("Sweep run %s failed (run %d/%d).", item.run_id, idx, total)
+                failures.append(item.run_id)
+                if fail_fast:
+                    raise typer.Exit(code=1) from exc
+
+    if failures:
+        console.error(
+            "%d of %d sweep run(s) failed: %s",
+            len(failures),
+            total,
+            ", ".join(failures),
+        )
+        raise typer.Exit(code=1)
+
+    console.info("Sweep complete: %d/%d runs succeeded.", total - len(failures), total)
+
+
+def _preflight_sweep_normalized_entries(items: list[Any], *, path_config: PathConfig) -> None:
+    """Verify dataset-backed sweep runs can resolve a normalized datastore entry."""
+    from prml_vslam.pipeline.sweep import build_run_config_from_sweep_item
+
+    failures: list[str] = []
+    for item in items:
+        try:
+            run_cfg = build_run_config_from_sweep_item(item)
+            source_backend = run_cfg.stages.source.backend
+            if not isinstance(source_backend, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig):
+                continue
+            dataset_id = dataset_id_for_source_config(source_backend)
+            service = dataset_service(dataset_id, path_config)
+            frame_selection = runtime_frame_selection_for_source_config(source_backend)
+            profile = normalized_runtime_profile_for_dataset(
+                dataset_id=dataset_id,
+                service=service,
+                source_config=source_backend,
+            )
+            normalized_store_for_service(dataset_id, path_config).select_entry_for_runtime(
+                profile,
+                frame_selection=frame_selection,
+            )
+        except Exception as exc:
+            failures.append(f"{item.run_id}: {exc}")
+    if failures:
+        joined = "\n- ".join(failures)
+        raise FileNotFoundError(
+            "Sweep normalized datastore preflight failed. Build compatible normalized runtime entries with "
+            "`prml-vslam dataset normalize --config .configs/datasets/benchmark-vslam-datastore.toml`.\n"
+            f"- {joined}"
+        )
 
 
 @app.command("eval-trajectory")
@@ -772,10 +889,8 @@ def eval_trajectory(
     ] = None,
 ) -> None:
     """Evaluate trajectory against a reference directly from an existing artifact root."""
-    import json as _json
-
-    from prml_vslam.eval.contracts import DiscoveredRun, SelectionSnapshot
-    from prml_vslam.eval.services import TrajectoryEvaluationService
+    from prml_vslam.eval.services import TrajectoryEvaluationRepairService
+    from prml_vslam.eval.trajectory_contracts import DiscoveredRun
 
     path_config = get_path_config()
     resolved_root = path_config.resolve_repo_path(artifact_root)
@@ -785,15 +900,10 @@ def eval_trajectory(
         console.error(f"Estimated trajectory not found: '{estimate_path}'")
         raise typer.Exit(code=1)
 
-    reference_path = resolved_root / "benchmark" / _reference_trajectory_filename(baseline)
-    if not reference_path.exists():
-        console.error(f"Reference trajectory not found: '{reference_path}'")
-        raise typer.Exit(code=1)
-
     if sequence_id is None:
         manifest_path = resolved_root / "input" / "sequence_manifest.json"
         if manifest_path.exists():
-            sequence_id = _json.loads(manifest_path.read_text(encoding="utf-8")).get("sequence_id", "unknown")
+            sequence_id = json.loads(manifest_path.read_text(encoding="utf-8")).get("sequence_id", "unknown")
         else:
             sequence_id = "unknown"
 
@@ -801,23 +911,230 @@ def eval_trajectory(
         (m for part in reversed(resolved_root.parts) for m in MethodId if part == m.value),
         None,
     )
-    selection = SelectionSnapshot(
-        sequence_slug=sequence_id,
-        reference_path=reference_path,
-        run=DiscoveredRun(
-            artifact_root=resolved_root,
-            estimate_path=estimate_path,
-            method=method,
-            label=method.display_name if method is not None else resolved_root.name,
-        ),
+    run = DiscoveredRun(
+        artifact_root=resolved_root,
+        estimate_path=estimate_path,
+        method=method.value if method is not None else None,
+        label=method.display_name if method is not None else resolved_root.name,
     )
     try:
-        service = TrajectoryEvaluationService(path_config)
-        artifact = service.compute_evaluation(selection=selection)
+        service = TrajectoryEvaluationRepairService(path_config)
+        artifact = service.recompute_run_evaluation(run, baseline_source=baseline, sequence_slug=sequence_id)
     except Exception as exc:
         console.error(str(exc))
         raise typer.Exit(code=1) from exc
-    console.plog({"result_path": str(artifact.path), "stats": artifact.stats.model_dump(mode="json")})
+    console.plog(
+        {
+            "manifest_path": str((artifact.artifact_root / "evaluation" / "trajectory" / "manifest.json").resolve()),
+            "metrics_long_path": str(
+                (artifact.artifact_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve()
+            ),
+            "error_series_count": len(artifact.error_series_paths),
+        }
+    )
+
+
+@app.command("eval-image")
+def eval_image(
+    reference: Annotated[
+        Path,
+        typer.Argument(help="Ground-truth image file, or a directory of frames named to match the generated set."),
+    ],
+    generated: Annotated[
+        Path,
+        typer.Argument(help="Generated image file, or a directory of frames to compare against the reference."),
+    ],
+    data_range: Annotated[
+        float | None,
+        typer.Option("--data-range", help="Source value range (default: 255 for uint8 inputs)."),
+    ] = None,
+    mask: Annotated[
+        Path | None,
+        typer.Option("--mask", help="Optional boolean mask image; only valid for single-image comparison."),
+    ] = None,
+    persist_to: Annotated[
+        Path | None,
+        typer.Option("--persist-to", help="Artifact root under which to write evaluation/image_metrics.json."),
+    ] = None,
+) -> None:
+    """Compute image-quality metrics (L1/L2/PSNR/SSIM) between reference and generated images."""
+    from prml_vslam.eval.contracts import ImageQualitySummary
+    from prml_vslam.eval.image_service import ImageQualityEvaluationService
+
+    path_config = get_path_config()
+    reference_path = path_config.resolve_repo_path(reference)
+    generated_path = path_config.resolve_repo_path(generated)
+    service = ImageQualityEvaluationService(path_config)
+
+    try:
+        if reference_path.is_dir() and generated_path.is_dir():
+            if mask is not None:
+                console.error("--mask is only supported for single-image comparison.")
+                raise typer.Exit(code=1)
+            summary = service.evaluate_directories(
+                reference_dir=reference_path,
+                generated_dir=generated_path,
+                data_range=data_range,
+            )
+        elif reference_path.is_file() and generated_path.is_file():
+            metrics = service.compute_pair(
+                reference_path=reference_path,
+                generated_path=generated_path,
+                data_range=data_range,
+                mask_path=path_config.resolve_repo_path(mask) if mask is not None else None,
+            )
+            summary = ImageQualitySummary.from_frames([metrics])
+        else:
+            console.error("reference and generated must both be files or both be directories.")
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload: dict[str, object] = {
+        "pair_count": summary.pair_count,
+        "mean_coverage": summary.mean_coverage,
+        "stats": {metric_id: stats.model_dump(mode="json") for metric_id, stats in summary.stats.items()},
+    }
+    if persist_to is not None:
+        payload["result_path"] = str(service.persist(summary, path_config.resolve_repo_path(persist_to)))
+    console.plog(payload)
+
+
+@app.command("render-cloud")
+def render_cloud(
+    cloud: Annotated[
+        Path,
+        typer.Argument(help="Colored point cloud (PLY), e.g. an artifact root's slam/dense_points.ply."),
+    ],
+    trajectory: Annotated[
+        Path,
+        typer.Argument(help="TUM trajectory whose poses (in the cloud's world frame) to render from."),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Directory to write rendered NNNNNN.png frames into."),
+    ],
+    intrinsics_json: Annotated[
+        Path | None,
+        typer.Option("--intrinsics-json", help="CameraIntrinsics JSON file (must include width_px/height_px)."),
+    ] = None,
+    fx: Annotated[
+        float | None, typer.Option("--fx", help="Focal length x (px); used when --intrinsics-json is omitted.")
+    ] = None,
+    fy: Annotated[float | None, typer.Option("--fy", help="Focal length y (px).")] = None,
+    cx: Annotated[float | None, typer.Option("--cx", help="Principal point x (px).")] = None,
+    cy: Annotated[float | None, typer.Option("--cy", help="Principal point y (px).")] = None,
+    width: Annotated[int | None, typer.Option("--width", help="Raster width (px).")] = None,
+    height: Annotated[int | None, typer.Option("--height", help="Raster height (px).")] = None,
+    depth_max_m: Annotated[
+        float, typer.Option("--depth-max-m", help="Drop points farther than this distance (m).")
+    ] = 50.0,
+    depth_scale: Annotated[float, typer.Option("--depth-scale", help="Open3D depth encoding factor.")] = 1000.0,
+    dilation_px: Annotated[
+        int,
+        typer.Option("--dilation-px", help="Optional morphological hole-fill radius for sparse clouds (0 = raw)."),
+    ] = 0,
+) -> None:
+    """Render synthetic frames from a point cloud along a trajectory.
+
+    This is the low-level primitive (explicit cloud + trajectory + intrinsics). To
+    score a finished run against its input frames, use `render-run`, which pairs by
+    timestamp and applies the coverage mask.
+    """
+    from prml_vslam.interfaces.camera import CameraIntrinsics
+    from prml_vslam.rendering import (
+        PointCloudRenderer,
+        RenderConfig,
+        poses_from_tum_trajectory,
+        render_trajectory_views,
+    )
+
+    path_config = get_path_config()
+    cloud_path = path_config.resolve_repo_path(cloud)
+    trajectory_path = path_config.resolve_repo_path(trajectory)
+    output_path = path_config.resolve_repo_path(output_dir)
+
+    try:
+        if intrinsics_json is not None:
+            intrinsics_payload = path_config.resolve_repo_path(intrinsics_json).read_text(encoding="utf-8")
+            intrinsics = CameraIntrinsics.model_validate_json(intrinsics_payload)
+        elif None not in (fx, fy, cx, cy, width, height):
+            intrinsics = CameraIntrinsics(fx=fx, fy=fy, cx=cx, cy=cy, width_px=width, height_px=height)
+        else:
+            console.error("Provide --intrinsics-json, or all of --fx --fy --cx --cy --width --height.")
+            raise typer.Exit(code=1)
+        if intrinsics.width_px is None or intrinsics.height_px is None:
+            console.error("Intrinsics must include width_px and height_px for rendering.")
+            raise typer.Exit(code=1)
+
+        config = RenderConfig(depth_scale=depth_scale, depth_max_m=depth_max_m, dilation_px=dilation_px)
+        renderer = PointCloudRenderer.from_ply(cloud_path, config=config)
+        poses = [pose for _, pose in poses_from_tum_trajectory(trajectory_path)]
+        rendered_paths = render_trajectory_views(renderer, intrinsics=intrinsics, poses=poses, output_dir=output_path)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    console.plog({"rendered_frames": len(rendered_paths), "output_dir": str(output_path)})
+
+
+@app.command("render-run")
+def render_run(
+    artifact_root: Annotated[
+        Path,
+        typer.Argument(help="A finished run's artifact root (e.g. .artifacts/<experiment>/<method>)."),
+    ],
+    no_gallery: Annotated[
+        bool, typer.Option("--no-gallery", help="Skip writing the GT/rendered/side-by-side gallery.")
+    ] = False,
+    gallery_every: Annotated[
+        int, typer.Option("--gallery-every", help="Save every Nth scored pair to the gallery (1 = all).")
+    ] = 10,
+    dilation_px: Annotated[
+        int, typer.Option("--dilation-px", help="Optional morphological hole-fill radius for sparse clouds.")
+    ] = 0,
+    depth_max_m: Annotated[
+        float,
+        typer.Option("--depth-max-m", help="Render depth clip in cloud units (huge default; SLAM is up-to-scale)."),
+    ] = 1e6,
+) -> None:
+    """Render a run's dense cloud from its trajectory and score it against the input frames.
+
+    Pairs each estimated pose with the input frame nearest in time, renders at the
+    source intrinsics, scores masked L1/L2/PSNR/SSIM, and writes
+    evaluation/image_metrics.json plus a side-by-side gallery for visual review.
+    """
+    from prml_vslam.eval.image_service import ImageQualityEvaluationService
+    from prml_vslam.eval.render_eval import RenderEvalConfig
+
+    path_config = get_path_config()
+    resolved_root = path_config.resolve_repo_path(artifact_root)
+    config = RenderEvalConfig(
+        save_gallery=not no_gallery,
+        gallery_every=gallery_every,
+        dilation_px=dilation_px,
+        depth_max_m=depth_max_m,
+    )
+    try:
+        result = ImageQualityEvaluationService(path_config).evaluate_run(resolved_root, config=config)
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload: dict[str, object] = {
+        "scored_pairs": result.scored_pairs,
+        "mean_coverage": result.summary.mean_coverage,
+        "stats": {metric_id: stats.model_dump(mode="json") for metric_id, stats in result.summary.stats.items()},
+        "result_path": str(result.metrics_path),
+    }
+    if result.gallery_dir is not None:
+        payload["gallery_dir"] = str(result.gallery_dir)
+    console.plog(payload)
 
 
 @app.command("write-demo-config")
@@ -854,17 +1171,25 @@ def write_demo_config(
     ] = None,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Dataset frame stride stored in the demo run config."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Dataset target FPS stored in the demo run config."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
+        ),
     ] = None,
 ) -> None:
     """Persist the canonical ADVIO demo run config as TOML."""
     path_config = get_path_config()
     advio_service = AdvioDatasetService(path_config)
-    resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
+    resolved_sequence_id = _resolve_demo_sequence_id(path_config, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
     resolved_config_path = persist_advio_demo_run_config(
         path_config=path_config,
@@ -931,28 +1256,21 @@ def pipeline_demo(
             case_sensitive=False,
         ),
     ] = AdvioPoseSource.GROUND_TRUTH,
-    pose_frame_mode: Annotated[
-        AdvioPoseFrameMode,
-        typer.Option(
-            "--pose-frame-mode",
-            help="Frame semantics used when serving ADVIO replay poses.",
-            case_sensitive=False,
-        ),
-    ] = AdvioPoseFrameMode.PROVIDER_WORLD,
-    normalize_video_orientation: Annotated[
-        bool,
-        typer.Option(
-            "--normalize-video-orientation/--raw-video-orientation",
-            help="Whether to normalize video display orientation during replay.",
-        ),
-    ] = True,
     dataset_frame_stride: Annotated[
         int,
-        typer.Option("--dataset-frame-stride", min=1, help="Frame stride used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-frame-stride",
+            min=1,
+            help="Read-time stride for replaying stored ADVIO normalized observations.",
+        ),
     ] = 1,
     dataset_target_fps: Annotated[
         float | None,
-        typer.Option("--dataset-target-fps", min=0.01, help="Target FPS used for ADVIO replay packets."),
+        typer.Option(
+            "--dataset-target-fps",
+            min=0.01,
+            help="Read-time target FPS for replaying stored ADVIO normalized observations.",
+        ),
     ] = None,
     poll_interval_seconds: Annotated[
         float,
@@ -966,7 +1284,7 @@ def pipeline_demo(
     """Run the bounded ADVIO replay demo without starting Streamlit."""
     path_config = get_path_config()
     advio_service = AdvioDatasetService(path_config)
-    resolved_sequence_id = _resolve_demo_sequence_id(advio_service, explicit_sequence_id=sequence_id)
+    resolved_sequence_id = _resolve_demo_sequence_id(path_config, explicit_sequence_id=sequence_id)
     scene = advio_service.scene(resolved_sequence_id)
     run_config = build_advio_demo_run_config(
         path_config=path_config,
@@ -974,8 +1292,6 @@ def pipeline_demo(
         mode=PipelineMode.STREAMING,
         method=method,
         pose_source=pose_source,
-        pose_frame_mode=pose_frame_mode,
-        normalize_video_orientation=normalize_video_orientation,
         dataset_frame_stride=dataset_frame_stride,
         dataset_target_fps=dataset_target_fps,
     )
@@ -1033,18 +1349,476 @@ def launch_app(
         raise typer.Exit(code=exc.returncode) from exc
 
 
+@record3d_app.command("summary")
+def record3d_summary() -> None:
+    """Print normalized Record3D coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = Record3DDatasetService(path_config)
+    normalized = query_normalized_dataset(DatasetId.RECORD3D, path_config)
+    payload = {
+        "normalized": _normalized_query_summary_payload(normalized),
+        "native_cache": _native_cache_facts(service),
+    }
+    console.plog(payload)
+
+
+@record3d_app.command("download")
+def record3d_download(
+    sequence_ids: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--sequence",
+            help="Repeat to select one or more zero-based Record3D sequence indices. Omit to target all scenes.",
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite/--reuse",
+            help="Whether to re-download cached `.r3d` archives.",
+        ),
+    ] = False,
+) -> None:
+    """Download selected Record3D `.r3d` archives."""
+    service = Record3DDatasetService(get_path_config())
+    try:
+        result = service.download(
+            Record3DDownloadRequest(
+                sequence_ids=[] if sequence_ids is None else sequence_ids,
+                overwrite=overwrite,
+            )
+        )
+    except Exception as exc:
+        console.error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "result": result.model_dump(mode="json"),
+        "summary": service.summarize().model_dump(mode="json"),
+    }
+    console.plog(payload)
+
+
+def _dataset_source_config_from_toml(
+    config_path: Path,
+) -> tuple[DatasetId, AdvioSourceConfig | TumRgbdSourceConfig | Record3DDatasetSourceConfig]:
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    backend_payload = _source_backend_payload(data)
+    backend = SourceStageConfig.model_validate({"backend": backend_payload}).backend
+    if isinstance(backend, AdvioSourceConfig):
+        return DatasetId.ADVIO, backend
+    if isinstance(backend, TumRgbdSourceConfig):
+        return DatasetId.TUM_RGBD, backend
+    if isinstance(backend, Record3DDatasetSourceConfig):
+        return DatasetId.RECORD3D, backend
+    raise ValueError(
+        "Expected a dataset source config with source_id advio, tum_rgbd, or record3d_dataset; "
+        f"got {None if backend is None else backend.source_id!r}."
+    )
+
+
+def _source_backend_payload(data: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(data.get("stages"), dict):
+        source = data["stages"].get("source")
+        if isinstance(source, dict) and isinstance(source.get("backend"), dict):
+            return source["backend"]
+    if isinstance(data.get("backend"), dict):
+        return data["backend"]
+    if "source_id" in data:
+        return data
+    raise ValueError("Expected source config TOML with `source_id`, `[backend]`, or `[stages.source.backend]`.")
+
+
+@dataset_app.command("normalize")
+def dataset_normalize(
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ] = None,
+    config_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="TOML build config with dataset groups and shared normalize-time settings.",
+        ),
+    ] = None,
+    source_config_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--source-config",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="TOML source config that defines one byte-affecting normalized-store profile.",
+        ),
+    ] = None,
+    sequences: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--sequence",
+            help="Repeat to select one or more sequences. Omit to normalize all offline-ready local sequences.",
+        ),
+    ] = None,
+    workers: Annotated[
+        int | None,
+        typer.Option("--workers", min=1, help="Parallel workers for all-sequence normalization. Defaults to CPUs."),
+    ] = None,
+    frame_stride: Annotated[
+        int | None,
+        typer.Option("--frame-stride", min=1, help="Normalize every Nth frame into the datastore."),
+    ] = None,
+    target_fps: Annotated[
+        float | None,
+        typer.Option("--target-fps", min=0.0, help="Normalize an approximate target FPS into the datastore."),
+    ] = None,
+    reference_cloud_pixel_stride: Annotated[
+        int | None,
+        typer.Option("--reference-cloud-pixel-stride", "--record3d-reference-cloud-pixel-stride", min=1),
+    ] = None,
+    reference_cloud_min_confidence: Annotated[
+        int | None,
+        typer.Option("--reference-cloud-min-confidence", "--record3d-reference-cloud-min-confidence", min=0, max=255),
+    ] = None,
+    reference_cloud_max_points: Annotated[
+        int | None,
+        typer.Option("--reference-cloud-max-points", "--record3d-reference-cloud-max-points", min=1),
+    ] = None,
+) -> None:
+    """Create or replace normalized dataset entries."""
+    path_config = get_path_config()
+    if config_path is not None:
+        if dataset is not None or source_config_path is not None or sequences:
+            raise typer.BadParameter("--config owns source selection; omit --dataset, --source-config, and --sequence.")
+        if any(
+            value is not None
+            for value in (
+                frame_stride,
+                target_fps,
+                reference_cloud_pixel_stride,
+                reference_cloud_min_confidence,
+                reference_cloud_max_points,
+            )
+        ):
+            raise typer.BadParameter(
+                "--config owns frame selection, RGB preprocessing, and reference-cloud settings; "
+                "omit normalize-time override flags."
+            )
+        try:
+            build_config = NormalizedDatasetBuildConfig.from_toml(config_path)
+            source_configs = build_config.source_configs()
+            worker_count = workers or build_config.workers or (os.cpu_count() or 1)
+            entries = normalize_dataset_source_configs(
+                path_config=path_config,
+                source_configs=source_configs,
+                workers=worker_count,
+            )
+        except (ValueError, ValidationError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        console.plog(
+            {
+                "config_path": config_path.as_posix(),
+                "source_count": len(source_configs),
+                "workers": min(worker_count, len(source_configs)),
+                "entries": [entry.model_dump(mode="json") for entry in entries],
+            }
+        )
+        return
+    if source_config_path is not None:
+        if sequences:
+            raise typer.BadParameter("--source-config includes sequence_id; omit --sequence.")
+        if any(
+            value is not None
+            for value in (
+                frame_stride,
+                target_fps,
+                reference_cloud_pixel_stride,
+                reference_cloud_min_confidence,
+                reference_cloud_max_points,
+            )
+        ):
+            raise typer.BadParameter(
+                "--source-config owns frame selection, RGB preprocessing, and reference-cloud settings; "
+                "omit normalize-time override flags."
+            )
+        try:
+            dataset_id, source_config = _dataset_source_config_from_toml(source_config_path)
+            if dataset is not None and parse_dataset_id(dataset) is not dataset_id:
+                raise ValueError(f"--dataset {dataset!r} does not match source config dataset {dataset_id.value!r}.")
+            service = dataset_service(dataset_id, path_config)
+            entry = normalize_dataset_entry(
+                dataset_id=dataset_id,
+                path_config=path_config,
+                service=service,
+                source_config=source_config,
+            )
+        except (ValueError, ValidationError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        console.plog(
+            {
+                "dataset_id": dataset_id.value,
+                "source_config": source_config.model_dump(mode="json"),
+                "entry": entry.model_dump(mode="json"),
+            }
+        )
+        return
+    if dataset is None:
+        raise typer.BadParameter("Pass --dataset or --source-config.")
+    try:
+        dataset_id = parse_dataset_id(dataset)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    service = dataset_service(dataset_id, path_config)
+    default_reference_cloud = (
+        ReferenceCloudConfig(min_confidence=1) if dataset_id is DatasetId.RECORD3D else ReferenceCloudConfig()
+    )
+    reference_cloud = default_reference_cloud.model_copy(
+        update={
+            key: value
+            for key, value in {
+                "depth_stride_px": reference_cloud_pixel_stride,
+                "min_confidence": reference_cloud_min_confidence,
+                "max_points": reference_cloud_max_points,
+            }.items()
+            if value is not None
+        }
+    )
+    sequence_ids: list[int | str] = list(service.list_local_sequence_ids() if not sequences else sequences)
+    if not sequence_ids:
+        raise typer.BadParameter(f"No offline-ready local {dataset_id.label} sequences found.")
+    try:
+        if frame_stride is not None and target_fps is not None:
+            raise ValueError("Configure either `frame_stride` or `target_fps`, not both.")
+        default_selection = default_frame_selection_for_dataset(dataset_id)
+        frame_selection = FrameSelectionConfig(
+            frame_stride=1 if frame_stride is None else frame_stride,
+            target_fps=(default_selection.target_fps if frame_stride is None and target_fps is None else target_fps),
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    worker_count = workers or (os.cpu_count() or 1)
+    entries = normalize_dataset_entries(
+        dataset_id=dataset_id,
+        path_config=path_config,
+        sequence_ids=sequence_ids,
+        reference_cloud=None if dataset_id is DatasetId.ADVIO else reference_cloud,
+        frame_selection=frame_selection,
+        workers=worker_count,
+    )
+    payload: dict[str, Any] = {
+        "dataset_id": dataset_id.value,
+        "sequence_count": len(sequence_ids),
+        "frame_stride": frame_selection.frame_stride,
+        "target_fps": frame_selection.target_fps,
+        "workers": min(worker_count, len(sequence_ids)),
+    }
+    if len(entries) == 1 and sequences:
+        payload["entry"] = entries[0].model_dump(mode="json")
+    else:
+        payload["entries"] = [entry.model_dump(mode="json") for entry in entries]
+    console.plog(payload)
+
+
+@dataset_app.command("summary")
+def dataset_summary(
+    dataset: Annotated[
+        str,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ],
+    sequence: Annotated[
+        str | None,
+        typer.Option("--sequence", "-s", help="Limit summary tables to one normalized sequence."),
+    ] = None,
+    profile_key: Annotated[
+        str | None,
+        typer.Option("--profile-key", help="Profile key for --sequence when more than one profile exists."),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Include full stats and metadata tables."),
+    ] = False,
+) -> None:
+    """Print compact normalized-entry coverage and persisted analysis tables."""
+    path_config = get_path_config()
+    try:
+        dataset_id = parse_dataset_id(dataset)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    query = query_normalized_dataset(dataset_id, path_config)
+    console.plog(
+        {
+            "dataset_id": dataset_id.value,
+            "store_root": path_config.resolve_normalized_datastore_dir(dataset_id.value),
+            "record_count": len(query.records),
+            "sequence_count": len(query.sequence_ids),
+            "issue_count": len(query.issues),
+            **_dataset_summary_tables(query, sequence=sequence, profile_key=profile_key, verbose=verbose),
+            "issues": query.issues,
+        }
+    )
+
+
+@dataset_app.command("inspect")
+def dataset_inspect(
+    dataset: Annotated[
+        str,
+        typer.Option("--dataset", "-d", help="Dataset id: advio, tum_rgbd, or record3d."),
+    ],
+    sequence: Annotated[
+        str,
+        typer.Option("--sequence", "-s", help="Normalized sequence id to inspect."),
+    ],
+    profile_key: Annotated[
+        str | None,
+        typer.Option("--profile-key", help="Profile key. Omit to prefer the default profile for the sequence."),
+    ] = None,
+) -> None:
+    """Inspect one normalized dataset entry without loading heavy RGB/depth payloads."""
+    path_config = get_path_config()
+    try:
+        dataset_id = parse_dataset_id(dataset)
+        query = query_normalized_dataset(dataset_id, path_config)
+        record = _select_normalized_record(query.records, sequence=sequence, profile_key=profile_key)
+        entry = _load_normalized_entry_from_root(record.root)
+        manifest = SequenceManifest.model_validate_json(entry.sequence_manifest_path.read_text(encoding="utf-8"))
+        benchmark = PreparedBenchmarkInputs.model_validate_json(entry.benchmark_inputs_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.plog(
+        {
+            "entry": record.model_dump(mode="json"),
+            "sequence_manifest": manifest.model_dump(mode="json"),
+            "reference_trajectories": [
+                ref.model_dump(mode="json")
+                for ref in benchmark.reference_trajectories + benchmark.candidate_trajectories
+            ],
+            "reference_clouds": [ref.model_dump(mode="json") for ref in benchmark.reference_clouds],
+            "observation_sequences": [ref.model_dump(mode="json") for ref in benchmark.observation_sequences],
+            "observation_summary": _entry_dataframe_records(query.observation_summary_frame(), record),
+            "trajectory_summary": _entry_dataframe_records(query.trajectory_summary_frame(), record),
+            "payload_footprint": _entry_dataframe_records(query.payload_footprint_frame(), record),
+            "metadata": _entry_dataframe_records(query.metadata_df, record),
+            "stats": _entry_dataframe_records(query.stats_df, record),
+        }
+    )
+
+
+def _load_normalized_entry_from_root(root: Path) -> NormalizedDatasetEntry:
+    entry_path = root / "entry.json"
+    if not entry_path.exists():
+        raise ValueError(f"Normalized entry metadata does not exist: {entry_path}")
+    return NormalizedDatasetEntry.model_validate_json(entry_path.read_text(encoding="utf-8"))
+
+
+def _select_normalized_record(
+    records: list[NormalizedSequenceRecord],
+    *,
+    sequence: str,
+    profile_key: str | None,
+) -> NormalizedSequenceRecord:
+    sequence_records = [record for record in records if record.sequence_id == sequence]
+    if not sequence_records:
+        raise ValueError(f"No normalized entry found for sequence {sequence!r}.")
+    if profile_key is not None:
+        matching = [record for record in sequence_records if record.profile_key == profile_key]
+        if not matching:
+            raise ValueError(f"No normalized entry found for sequence {sequence!r} and profile {profile_key!r}.")
+        return matching[0]
+    defaults = [record for record in sequence_records if record.is_default_profile]
+    if len(defaults) == 1:
+        return defaults[0]
+    if len(sequence_records) == 1:
+        return sequence_records[0]
+    raise ValueError(
+        f"Sequence {sequence!r} has multiple normalized profiles; pass --profile-key. "
+        f"Available profiles: {[record.profile_key for record in sequence_records]}"
+    )
+
+
+def _dataset_summary_tables(
+    query: NormalizedDatasetQuery,
+    *,
+    sequence: str | None,
+    profile_key: str | None,
+    verbose: bool,
+) -> dict[str, Any]:
+    if profile_key is not None and sequence is None:
+        raise typer.BadParameter("--profile-key requires --sequence.")
+    records = (
+        [_select_normalized_record(query.records, sequence=sequence, profile_key=profile_key)]
+        if sequence is not None
+        else query.records
+    )
+    payload: dict[str, Any] = {
+        "records": _record_rows(query, records),
+        "observation_summary": _records_dataframe_records(query.observation_summary_frame(), records),
+        "payload_footprint": _records_dataframe_records(query.payload_footprint_frame(), records),
+    }
+    if sequence is not None or verbose:
+        payload["trajectory_summary"] = _records_dataframe_records(query.trajectory_summary_frame(), records)
+    if verbose:
+        payload["metadata"] = _records_dataframe_records(query.metadata_df, records)
+        payload["stats"] = _records_dataframe_records(query.stats_df, records)
+    else:
+        payload["hint"] = (
+            "Pass --verbose for full stats/metadata tables."
+            if sequence is not None
+            else "Pass --sequence for trajectory details or --verbose for full stats/metadata tables."
+        )
+    return payload
+
+
+def _record_rows(
+    query: NormalizedDatasetQuery, records: list[NormalizedSequenceRecord]
+) -> list[dict[str, str | int | float | bool | None]]:
+    keys = {(record.sequence_id, record.profile_key) for record in records}
+    return [row for row in query.table_rows() if (str(row["Sequence"]), str(row["Profile"])) in keys]
+
+
+def _dataframe_records(frame: Any) -> list[dict[str, Any]]:
+    if bool(getattr(frame, "empty", True)):
+        return []
+    records = frame.to_dict(orient="records")
+    return [dict(record) for record in records]
+
+
+def _normalized_query_summary_payload(query: NormalizedDatasetQuery) -> dict[str, Any]:
+    return {
+        "dataset_id": query.dataset_id.value,
+        "records": [record.model_dump(mode="json") for record in query.records],
+        "issues": query.issues,
+        "stats": _dataframe_records(query.stats_df),
+        "metadata": _dataframe_records(query.metadata_df),
+    }
+
+
+def _entry_dataframe_records(frame: Any, record: NormalizedSequenceRecord) -> list[dict[str, Any]]:
+    return _records_dataframe_records(frame, [record])
+
+
+def _records_dataframe_records(frame: Any, records: list[NormalizedSequenceRecord]) -> list[dict[str, Any]]:
+    keys = {(record.sequence_id, record.profile_key) for record in records}
+    return [
+        row
+        for row in _dataframe_records(frame)
+        if (row.get("sequence_id", row.get("Sequence")), row.get("profile_key", row.get("Profile"))) in keys
+    ]
+
+
 @advio_app.command("summary")
 def advio_summary() -> None:
-    """Print committed and local ADVIO dataset coverage."""
-    service = AdvioDatasetService(get_path_config())
-    summary = service.summarize()
+    """Print normalized ADVIO coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = AdvioDatasetService(path_config)
+    normalized = query_normalized_dataset(DatasetId.ADVIO, path_config)
     payload = {
-        "dataset_root": str(service.dataset_root),
         "upstream": service.catalog.upstream.model_dump(mode="json"),
-        "summary": summary.model_dump(mode="json"),
-        "local_sequence_ids": [
-            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
-        ],
+        "normalized": _normalized_query_summary_payload(normalized),
+        "native_cache": _native_cache_facts(service),
     }
     console.plog(payload)
 
@@ -1055,22 +1829,6 @@ def advio_download(
         list[int] | None,
         typer.Option("--sequence", help="Repeat to select one or more ADVIO sequence ids. Omit to target all scenes."),
     ] = None,
-    preset: Annotated[
-        AdvioDownloadPreset,
-        typer.Option(
-            "--preset",
-            help="Curated modality bundle used when no explicit modality override is provided.",
-            case_sensitive=False,
-        ),
-    ] = AdvioDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[AdvioModality] | None,
-        typer.Option(
-            "--modality",
-            help="Repeat to override the preset with explicit modality groups.",
-            case_sensitive=False,
-        ),
-    ] = None,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -1079,14 +1837,12 @@ def advio_download(
         ),
     ] = False,
 ) -> None:
-    """Download selected ADVIO scene archives and extract only requested modality bundles."""
+    """Download selected ADVIO scene archives and extract complete scenes."""
     service = AdvioDatasetService(get_path_config())
     try:
         result = service.download(
             AdvioDownloadRequest(
                 sequence_ids=[] if sequence_ids is None else sequence_ids,
-                preset=preset,
-                modalities=[] if modalities is None else modalities,
                 overwrite=overwrite,
             )
         )
@@ -1103,16 +1859,14 @@ def advio_download(
 
 @tum_rgbd_app.command("summary")
 def tum_rgbd_summary() -> None:
-    """Print committed and local TUM RGB-D dataset coverage."""
-    service = TumRgbdDatasetService(get_path_config())
-    summary = service.summarize()
+    """Print normalized TUM RGB-D coverage plus native download-cache state."""
+    path_config = get_path_config()
+    service = TumRgbdDatasetService(path_config)
+    normalized = query_normalized_dataset(DatasetId.TUM_RGBD, path_config)
     payload = {
-        "dataset_root": str(service.dataset_root),
         "upstream": service.catalog.upstream,
-        "summary": summary.model_dump(mode="json"),
-        "local_sequence_ids": [
-            status.scene.sequence_id for status in service.local_scene_statuses() if status.sequence_dir
-        ],
+        "normalized": _normalized_query_summary_payload(normalized),
+        "native_cache": _native_cache_facts(service),
     }
     console.plog(payload)
 
@@ -1123,22 +1877,6 @@ def tum_rgbd_download(
         list[str] | None,
         typer.Option("--sequence", help="Repeat to select one or more TUM sequence ids. Omit to target all scenes."),
     ] = None,
-    preset: Annotated[
-        TumRgbdDownloadPreset,
-        typer.Option(
-            "--preset",
-            help="Curated modality bundle used when no explicit modality override is provided.",
-            case_sensitive=False,
-        ),
-    ] = TumRgbdDownloadPreset.OFFLINE,
-    modalities: Annotated[
-        list[TumRgbdModality] | None,
-        typer.Option(
-            "--modality",
-            help="Repeat to override the preset with explicit modality groups.",
-            case_sensitive=False,
-        ),
-    ] = None,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -1147,14 +1885,12 @@ def tum_rgbd_download(
         ),
     ] = False,
 ) -> None:
-    """Download selected TUM RGB-D archives and extract only requested modality bundles."""
+    """Download selected TUM RGB-D archives and extract complete scenes."""
     service = TumRgbdDatasetService(get_path_config())
     try:
         result = service.download(
             TumRgbdDownloadRequest(
                 sequence_ids=[] if sequence_ids is None else sequence_ids,
-                preset=preset,
-                modalities=[] if modalities is None else modalities,
                 overwrite=overwrite,
             )
         )
@@ -1169,16 +1905,35 @@ def tum_rgbd_download(
     console.plog(payload)
 
 
-def _resolve_demo_sequence_id(service: AdvioDatasetService, *, explicit_sequence_id: int | None) -> int:
-    """Resolve one replay-ready ADVIO sequence for the CLI demo."""
+def _resolve_demo_sequence_id(path_config: PathConfig, *, explicit_sequence_id: int | None) -> int:
+    """Resolve one normalized ADVIO sequence for the CLI demo."""
     if explicit_sequence_id is not None:
         return explicit_sequence_id
-    previewable_ids = [status.scene.sequence_id for status in service.local_scene_statuses() if status.replay_ready]
-    if not previewable_ids:
+    records = query_normalized_dataset(DatasetId.ADVIO, path_config).records
+    sequence_ids = [
+        int(record.sequence_id.split("-", maxsplit=1)[1])
+        for record in records
+        if record.sequence_id.startswith("advio-") and record.sequence_id.split("-", maxsplit=1)[1].isdigit()
+    ]
+    if not sequence_ids:
         raise typer.BadParameter(
-            "No replay-ready ADVIO scenes were found. Download the streaming bundle first or pass --sequence."
+            "No normalized ADVIO entries were found. Run `prml-vslam dataset normalize --dataset advio` first or pass --sequence."
         )
-    return previewable_ids[0]
+    return sequence_ids[0]
+
+
+def _native_cache_facts(
+    service: AdvioDatasetService | TumRgbdDatasetService | Record3DDatasetService,
+) -> dict[str, Any]:
+    statuses = service.local_scene_statuses()
+    return {
+        "dataset_root": str(service.dataset_root),
+        "local_scene_count": sum(status.sequence_dir is not None for status in statuses),
+        "cached_archive_count": sum(status.archive_path is not None for status in statuses),
+        "total_remote_archive_bytes": sum(scene.archive_size_bytes for scene in service.catalog.scenes),
+        "sequence_ids": [status.scene.sequence_id for status in statuses if status.sequence_dir is not None],
+        "archive_sequence_ids": [status.scene.sequence_id for status in statuses if status.archive_path is not None],
+    }
 
 
 def _apply_dotted_overrides_to_run_config(run_config: RunConfig, args: list[str]) -> RunConfig:
@@ -1265,7 +2020,7 @@ def _apply_dataset_sampling_overrides(
         return source_backend
     if dataset_frame_stride is not None and dataset_target_fps is not None:
         raise typer.BadParameter("Configure either --dataset-frame-stride or --dataset-target-fps, not both.")
-    if not isinstance(source_backend, AdvioSourceConfig):
+    if not isinstance(source_backend, AdvioSourceConfig | Record3DDatasetSourceConfig | TumRgbdSourceConfig):
         raise typer.BadParameter("Dataset sampling overrides require a dataset-backed source.")
     return source_backend.model_copy(
         update={

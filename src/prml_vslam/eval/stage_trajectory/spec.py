@@ -13,13 +13,20 @@ from prml_vslam.pipeline.stages.base.spec import StageRuntimeSpec
 def _build_offline_input(context: PipelineExecutionContext) -> TrajectoryEvaluationStageInput:
     config = context.run_config.stages.evaluate_trajectory
     slam_backend = context.run_config.stages.slam.backend
+    benchmark_inputs = context.results.require_benchmark_inputs()
+    reference = (
+        None if benchmark_inputs is None else benchmark_inputs.trajectory_for_source(config.evaluation.baseline_source)
+    )
     return TrajectoryEvaluationStageInput(
         artifact_root=context.plan.artifact_root,
+        path_config=context.path_config,
         baseline_source=config.evaluation.baseline_source,
         method_id=None if slam_backend is None else slam_backend.method_id,
         method_label="unknown" if slam_backend is None else slam_backend.display_name,
         sequence_manifest=context.results.require_sequence_manifest(),
-        benchmark_inputs=context.results.require_benchmark_inputs(),
+        benchmark_inputs=benchmark_inputs,
+        reference_trajectory=reference,
+        candidate_trajectories=[] if benchmark_inputs is None else list(benchmark_inputs.candidate_trajectories),
         slam=context.results.require_slam_artifacts(),
     )
 

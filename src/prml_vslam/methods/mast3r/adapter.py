@@ -107,6 +107,19 @@ def _ensure_uint8_rgb_from_uimg(uimg: Any) -> np.ndarray | None:
     return np.ascontiguousarray(arr)
 
 
+def _silence_upstream_warnings() -> None:
+    """Filter known-benign third-party warnings emitted by MASt3R-SLAM and torch.
+
+    These originate in upstream code we do not own (legacy
+    ``torch.load(weights_only=False)`` at model load and a non-writable
+    NumPy->tensor view during inference) and otherwise flood the run console.
+    """
+    import warnings  # noqa: PLC0415
+
+    warnings.filterwarnings("ignore", message=r".*weights_only=False.*", category=FutureWarning)
+    warnings.filterwarnings("ignore", message=r".*NumPy array is not writable.*", category=UserWarning)
+
+
 def _estimate_camera_intrinsics_from_frame(mast3r_frame: Any) -> CameraIntrinsics | None:
     """Estimate model-raster intrinsics from a MASt3R keyframe pointmap."""
     import torch  # noqa: PLC0415
@@ -207,6 +220,7 @@ class Mast3rSlamSession:
         """Load the upstream runtime and model state needed before the first frame."""
         import torch  # noqa: PLC0415
 
+        _silence_upstream_warnings()
         self._inject_sys_path()
         self._validate_prerequisites()
 
@@ -217,9 +231,15 @@ class Mast3rSlamSession:
         load_config(str(self._resolve_path(self._cfg.yaml_config_path)))
         from mast3r_slam.config import config as mast3r_cfg  # noqa: PLC0415
 
-        # Apply optional override for use_calib before any downstream module reads it.
+        # Apply optional overrides before any downstream module reads the global config.
         if self._cfg.use_calib is not None:
             mast3r_cfg["use_calib"] = bool(self._cfg.use_calib)
+        if self._cfg.match_frac_thresh is not None:
+            if "tracking" not in mast3r_cfg:
+                raise RuntimeError(
+                    "Cannot override match_frac_thresh: the MASt3R YAML config has no `tracking` section."
+                )
+            mast3r_cfg["tracking"]["match_frac_thresh"] = float(self._cfg.match_frac_thresh)
 
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.set_grad_enabled(False)

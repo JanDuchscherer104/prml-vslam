@@ -1,12 +1,12 @@
-# Graph Report - prml-vslam  (2026-06-12)
+# Graph Report - prml-vslam-2  (2026-07-03)
 
 ## Corpus Check
-- 270 files · ~1,062,950 words
+- 332 files · ~2,636,755 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4155 nodes · 20485 edges · 36 communities detected
-- Extraction: 29% EXTRACTED · 71% INFERRED · 0% AMBIGUOUS · INFERRED: 14624 edges (avg confidence: 0.58)
+- 5495 nodes · 27540 edges · 33 communities detected
+- Extraction: 29% EXTRACTED · 71% INFERRED · 0% AMBIGUOUS · INFERRED: 19437 edges (avg confidence: 0.59)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -30,7 +30,6 @@
 - [[_COMMUNITY_Community 17|Community 17]]
 - [[_COMMUNITY_Community 18|Community 18]]
 - [[_COMMUNITY_Community 19|Community 19]]
-- [[_COMMUNITY_Community 20|Community 20]]
 - [[_COMMUNITY_Community 21|Community 21]]
 - [[_COMMUNITY_Community 22|Community 22]]
 - [[_COMMUNITY_Community 23|Community 23]]
@@ -44,146 +43,140 @@
 - [[_COMMUNITY_Community 31|Community 31]]
 - [[_COMMUNITY_Community 32|Community 32]]
 - [[_COMMUNITY_Community 33|Community 33]]
-- [[_COMMUNITY_Community 34|Community 34]]
-- [[_COMMUNITY_Community 35|Community 35]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `StageKey` - 454 edges
-2. `SequenceManifest` - 333 edges
-3. `ArtifactRef` - 291 edges
-4. `MethodId` - 276 edges
-5. `PreparedBenchmarkInputs` - 262 edges
-6. `StageRuntimeStatus` - 247 edges
-7. `PathConfig` - 240 edges
-8. `RunConfig` - 227 edges
-9. `StageRuntimeUpdate` - 212 edges
-10. `DatasetId` - 206 edges
+1. `SequenceManifest` - 490 edges
+2. `StageKey` - 474 edges
+3. `PreparedBenchmarkInputs` - 409 edges
+4. `DatasetId` - 403 edges
+5. `PathConfig` - 322 edges
+6. `ReferenceSource` - 310 edges
+7. `ArtifactRef` - 303 edges
+8. `MethodId` - 298 edges
+9. `StageRuntimeStatus` - 280 edges
+10. `CameraIntrinsics` - 264 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Mast3rSlamBackendConfig` --calls--> `test_mast3r_backend_config_validates_supported_img_size()`  [INFERRED]
+  src/prml_vslam/methods/stage/backend_config.py → tests/test_pipeline_config.py
+- `Mast3rSlamBackendConfig` --calls--> `test_mast3r_backend_config_match_frac_thresh_override()`  [INFERRED]
+  src/prml_vslam/methods/stage/backend_config.py → tests/test_pipeline_config.py
+- `clean_actor_options()` --calls--> `test_clean_actor_options_keeps_nonempty_resources_dict()`  [INFERRED]
+  src/prml_vslam/pipeline/ray_runtime/common.py → tests/test_pipeline.py
 - `path()` --calls--> `test_source_materialization_does_not_import_stage_package()`  [INFERRED]
   src/prml_vslam/pipeline/sinks/jsonl.py → tests/test_package_exports.py
 - `path()` --calls--> `report_path()`  [INFERRED]
   src/prml_vslam/pipeline/sinks/jsonl.py → scripts/loc_stats.py
-- `SequenceManifest` --uses--> `Small runtime sources used by focused pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Minimal offline source for pipeline smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
-- `SequenceManifest` --uses--> `Finite in-memory packet stream for streaming smoke tests.`  [INFERRED]
-  src/prml_vslam/sources/contracts.py → tests/pipeline_testing_support.py
 
 ## Communities
 
 ### Community 0 - "Community 0"
 Cohesion: 0.01
-Nodes (500): _build_artifacts(), Convert an ADVIO pose CSV into a TUM trajectory file., write_advio_pose_tum(), resolve(), build_vista_artifacts(), Normalize native ViSTA exports into repository-owned artifact contracts.      Th, _write_point_cloud_confidences(), get_events() (+492 more)
+Nodes (547): GroundAlignmentMetadata, Result of one derived ground-plane alignment attempt.      When :attr:`applied`, InputArtifactDiagnostics, Inspection helpers for persisted pipeline run artifact roots., One submitted run attempt found in a persisted event log., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory., Load typed metadata and path inventory for one persisted run root. (+539 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.02
-Nodes (416): GroundAlignmentMetadata, InputArtifactDiagnostics, Inspection helpers for persisted pipeline run artifact roots., One submitted run attempt found in a persisted event log., Structured inspection result for one persisted pipeline run., Discover method-level run roots under the configured artifact directory., Load typed metadata and path inventory for one persisted run root., One selectable persisted method-level run artifact root. (+408 more)
+Cohesion: 0.01
+Nodes (472): build_advio_comparison_trajectories(), AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return local availability status for every catalog scene., Download selected ADVIO scenes and extract complete scene payloads., load_advio_fixpoints() (+464 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.02
-Nodes (295): build_advio_page_data(), handle_advio_preview_action(), AdvioDownloadManager, _ensure_directory_parent(), Return the cache directory used for downloaded scene archives., Return one catalog scene by id., Return local availability status for every catalog scene., Download selected ADVIO scenes and extract the requested modalities. (+287 more)
+Cohesion: 0.01
+Nodes (488): _apply_snapshot_fallbacks(), _candidate_from_root(), _canonical_path_rows(), _derive_slam_artifacts(), discover_run_artifact_roots(), _file_inventory(), _format_size(), inspect_run_artifacts() (+480 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.02
-Nodes (279): _ensure_uint8_rgb_from_uimg(), _estimate_camera_intrinsics_from_frame(), _InProcessManager, _InProcessValue, Mast3rSlamBackend, Mast3rSlamSession, Canonical MASt3R-SLAM backend adapter (offline + streaming).  This adapter wraps, Estimate model-raster intrinsics from a MASt3R keyframe pointmap. (+271 more)
+Cohesion: 0.03
+Nodes (472): _DensePredictionArtifacts, _ensure_uint8_rgb_from_uimg(), _estimate_camera_intrinsics_from_frame(), _InProcessManager, _InProcessValue, Mast3rSlamSession, Canonical MASt3R-SLAM backend adapter (offline + streaming).  This adapter wraps, Run LingBot terminal inference and clear streaming state. (+464 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.01
-Nodes (295): build_advio_comparison_trajectories(), build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), load_advio_explorer_sample(), validate_dataset_root(), Plotly figure builders for the ADVIO dataset page. (+287 more)
+Nodes (355): build_advio_page_data(), handle_advio_preview_action(), Controller helpers for the ADVIO Streamlit page., Persist the current ADVIO download-form state., Keep persisted preview state aligned with the runtime snapshot., Apply one preview-form action and return an error message when it fails., _scene_rows(), sync_advio_download_state() (+347 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.03
-Nodes (290): Result of one derived ground-plane alignment attempt.      When :attr:`applied`, CameraIntrinsics, load_camera_intrinsics_yaml(), Load the repository's canonical single-camera intrinsics YAML schema., Describe one camera raster in a backend- and dataset-neutral way.      Use this, Render the shared intrinsics matrix in the compact LaTeX form used by UI surface, BenchmarkReference, CloudAlignmentArtifact (+282 more)
+Cohesion: 0.01
+Nodes (362): align_estimate_sim3(), is_gravity_aligned_target(), Return True when both trajectories have enough geometric spread for Sim(3) align, Align *estimate* to *reference* via Sim(3) and return the aligned trajectory and, Return the tilt angle in degrees between the transformed and original down-axis,, sim3_up_axis_tilt_deg(), trajectory_supports_sim3(), build_intrinsics_residual_figure() (+354 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.02
-Nodes (210): Controller helpers for the ADVIO Streamlit page., Persist the current ADVIO download-form state., Persist the current explorer selection and load its offline sample., Keep persisted preview state aligned with the runtime snapshot., Apply one preview-form action and return an error message when it fails., _scene_rows(), sync_advio_download_state(), sync_advio_preview_state() (+202 more)
+Nodes (344): build_crowd_density_figure(), build_local_readiness_figure(), build_scene_attribute_figure(), build_scene_mix_figure(), Plotly figure builders for the ADVIO dataset page., Build a crowd-density composition chart., Build a scene-attribute prevalence chart., Build a stacked venue/environment overview for the catalog. (+336 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.02
-Nodes (171): BaseConfig, _advio_native_fps(), CloudAlignmentStageConfig, CloudEvaluationStageConfig, CloudMetricId, _collect_unknown_field_warnings(), _compile_run_plan(), config_warnings() (+163 more)
+Nodes (240): _adapt_checkpoint_state_dict(), _as_numpy(), _build_artifacts(), _build_lingbot_artifacts(), _cast_aggregator_for_inference(), _decode_pose_predictions(), _expect_lingbot_config(), _extract_checkpoint_state_dict() (+232 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.03
-Nodes (134): artifact_ref(), Build one stable artifact reference for a materialized path., _ape_error_colors(), augment_viewer_recording_with_ground_plane(), create_recording_stream(), _decimate_rows(), _entity_token(), evaluation_metric_root() (+126 more)
+Nodes (234): BaseConfig, apply_dataset_default_baselines(), CloudAlignmentStageConfig, CloudEvaluationStageConfig, _collect_unknown_field_warnings(), _compile_run_plan(), config_warnings(), default_trajectory_baseline_for_source() (+226 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.02
-Nodes (99): Build the normalized ADVIO source adapter., Return deterministic output paths declared by this stage., Build the normalized Record3D source adapter., Configure one raw-video source adapter.      Raw video sources only provide the, Build the normalized raw-video source adapter., Configure one TUM RGB-D dataset source adapter.      TUM RGB-D sources can provi, Build the normalized TUM RGB-D source adapter., Configure one ADVIO dataset source adapter.      ADVIO adds dataset-serving poli (+91 more)
+Nodes (220): artifact_ref(), artifact_visualizations(), _entity_token(), observation_sequence_artifact_key(), Build one stable artifact reference for a materialized path., reference_cloud_artifact_key(), reference_cloud_metadata_artifact_key(), reference_trajectory_artifact_key() (+212 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.04
-Nodes (113): _frame_transform_from_vista_pose(), Normalize one upstream ViSTA pose matrix into the canonical repo transform DTO., VistaSlamBackendConfig, Return a child console with additional namespace parts., _render_preview_frame(), Observation, ObservationProvenance, Shared RDF observation contracts.  This module owns the single observation bound (+105 more)
+Cohesion: 0.02
+Nodes (152): main(), _parse_args(), _preferred_trajectory(), _write_reference_svg(), _write_summary_bar_variants(), _write_summary_csv(), Render directly via Rich for structured or non-log output., build_dataset_summary_bar_figure() (+144 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.02
-Nodes (113): ArxivSourceSpec, download_file(), fetch_pdf(), from_json(), load_manifest(), main(), normalize_member_path(), _optional_non_empty_string() (+105 more)
+Nodes (79): GroundPlaneModel, GroundPlaneVisualizationHint, Alignment result DTOs shared outside the alignment package.  These datamodels de, Dominant ground-plane hypothesis expressed in native ``world`` coordinates., Finite plane-patch geometry ready for visualization consumers., GroundAlignmentConfig, Record3DTransportId, _CappedPacketStream (+71 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.05
-Nodes (74): _coerce_view_graph(), _coerce_view_graph_node(), load_vista_confidences(), load_vista_estimated_intrinsics_series(), load_vista_intrinsics_matrices(), load_vista_native_trajectory(), load_vista_vector(), load_vista_view_graph() (+66 more)
+Cohesion: 0.04
+Nodes (107): advio_common_start_local_trajectories(), advio_frame_transform_from_pose(), AdvioFixedpointRegistration, apply_advio_fixedpoint_registration(), estimate_advio_fixedpoint_registration(), _estimate_rigid_no_scale(), _gravity_tilt_deg(), _horizontal_span_m() (+99 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.07
-Nodes (34): Replay clock used by dataset and video source streams., Select whether replay follows source timing or returns observations immediately., Apply source-timestamp pacing for real-time replay., Reset the clock baseline for a new replay loop or connection., Sleep until the replay timestamp should be emitted., ReplayClock, ReplayMode, ImageSequenceObservationSource (+26 more)
+Cohesion: 0.05
+Nodes (51): Replay clock used by dataset and video source streams., Select whether replay follows source timing or returns observations immediately., Apply source-timestamp pacing for real-time replay., Reset the clock baseline for a new replay loop or connection., Sleep until the replay timestamp should be emitted., ReplayClock, ReplayMode, ImageSequenceObservationSource (+43 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.11
-Nodes (32): GroundPlaneModel, GroundPlaneVisualizationHint, Alignment result DTOs shared outside the alignment package.  These datamodels de, Dominant ground-plane hypothesis expressed in native ``world`` coordinates., Finite plane-patch geometry ready for visualization consumers., GroundAlignmentConfig, _camera_down_alignment(), GroundAlignmentService (+24 more)
+Cohesion: 0.05
+Nodes (64): build_stage_telemetry_figure(), ErrorPlotSeries, pointmap_preview_image(), Build a compact rolling telemetry line chart for one stage metric., Trajectory payload needed by pipeline plot builders., Error-series payload needed by pipeline plot builders., Return a renderable preview image for one pointmap-like preview artifact., TrajectoryPlotSeries (+56 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.12
-Nodes (37): test_load_recording_summary_reports_live_keyed_and_tracking_surfaces(), test_write_validation_bundle_emits_report_and_projection_images(), test_write_validation_bundle_respects_explicit_keyed_cloud_limit(), _write_synthetic_recording(), _ancestor_entity_paths(), _component_columns(), _keyed_point_cloud_snapshots(), _latest_live_model_snapshot() (+29 more)
+Nodes (33): build_pipeline_snapshot_render_model(), _coerce_int_metric(), _format_latency(), _format_optional_rate(), _format_queue(), _format_resources(), _format_tasks(), _format_throughput() (+25 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.21
-Nodes (18): _apply_snapshot_fallbacks(), _candidate_from_root(), _canonical_path_rows(), _derive_slam_artifacts(), discover_run_artifact_roots(), _file_inventory(), _format_size(), inspect_run_artifacts() (+10 more)
+Cohesion: 0.1
+Nodes (21): caller_namespace(), configure_logging(), _ConsoleLogFormatter, _ConsoleLogHighlighter, _display_name(), from_callsite(), get_console(), _qualify_namespace() (+13 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.18
-Nodes (2): finish_streaming(), start_streaming()
+Cohesion: 0.15
+Nodes (2): Tests for package-root public export surfaces., test_source_materialization_does_not_import_stage_package()
 
 ### Community 18 - "Community 18"
-Cohesion: 0.17
-Nodes (2): Tests for package-root public export surfaces., test_source_materialization_does_not_import_stage_package()
+Cohesion: 0.18
+Nodes (2): finish_streaming(), start_streaming()
 
 ### Community 19 - "Community 19"
 Cohesion: 0.36
 Nodes (4): test_resolve_issue_moves_record_to_resolved_collection(), test_resolve_refactor_moves_record_to_resolved_collection(), test_resolve_todo_moves_record_to_resolved_collection(), _write_toml()
 
-### Community 20 - "Community 20"
+### Community 21 - "Community 21"
 Cohesion: 1.0
 Nodes (1): Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays
 
-### Community 21 - "Community 21"
+### Community 22 - "Community 22"
 Cohesion: 1.0
 Nodes (1): Ray-specific helpers for future stage runtime deployment.  This module intention
 
-### Community 22 - "Community 22"
+### Community 23 - "Community 23"
 Cohesion: 1.0
 Nodes (1): Return the human-readable label shown in plan previews.
 
-### Community 23 - "Community 23"
+### Community 24 - "Community 24"
 Cohesion: 1.0
 Nodes (1): Return whether ``exc`` looks like a transient local Ray connection failure.
 
-### Community 24 - "Community 24"
+### Community 25 - "Community 25"
 Cohesion: 1.0
 Nodes (1): Deserialize one IPC payload back into the target validated model type.
 
-### Community 25 - "Community 25"
+### Community 26 - "Community 26"
 Cohesion: 1.0
 Nodes (1): Return the compact source label used in logs and diagnostics.
 
-### Community 26 - "Community 26"
-Cohesion: 1.0
-Nodes (1): Return the short user-facing dataset label.
-
 ### Community 27 - "Community 27"
 Cohesion: 1.0
-Nodes (1): Connect to the source and prepare subsequent blocking observation reads.
+Nodes (1): Return the short user-facing dataset label.
 
 ### Community 28 - "Community 28"
 Cohesion: 1.0
@@ -199,46 +192,36 @@ Nodes (1): Build the shared transform DTO from a 4x4 homogeneous matrix.
 
 ### Community 31 - "Community 31"
 Cohesion: 1.0
-Nodes (1): Return the user-facing method label.
+Nodes (1): Build one spec from one JSON object.
 
 ### Community 32 - "Community 32"
 Cohesion: 1.0
-Nodes (1): Build one spec from one JSON object.
+Nodes (1): Return the net code-line delta.
 
 ### Community 33 - "Community 33"
 Cohesion: 1.0
-Nodes (1): Return the net code-line delta.
-
-### Community 34 - "Community 34"
-Cohesion: 1.0
 Nodes (1): Return the path that should own this change in reports.
 
-### Community 35 - "Community 35"
-Cohesion: 1.0
-Nodes (1): Describe normalized durable outputs from one reconstruction run.      The minima
-
 ## Knowledge Gaps
-- **248 isolated node(s):** `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`, `Frame preprocessing helpers for ViSTA-SLAM.`, `One RGB frame prepared for upstream ViSTA ingestion.`, `Use the exact upstream ViSTA crop-and-resize helper path.`, `Convert one upstream ViSTA array-like payload into a numpy array.` (+243 more)
+- **274 isolated node(s):** `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`, `Frame preprocessing helpers for ViSTA-SLAM.`, `One RGB frame prepared for upstream ViSTA ingestion.`, `Use the exact upstream ViSTA crop-and-resize helper path.`, `Convert one upstream ViSTA array-like payload into a numpy array.` (+269 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 17`** (12 nodes): `protocols.py`, `protocols.py`, `drain_runtime_updates()`, `drain_streaming_updates()`, `finish_streaming()`, `run_observations()`, `run_offline()`, `start_streaming()`, `status()`, `step_streaming()`, `stop()`, `submit_stream_item()`
+- **Thin community `Community 17`** (13 nodes): `test_package_exports.py`, `Tests for package-root public export surfaces.`, `test_align_root_does_not_reexport_heavy_subpackages()`, `test_executable_stage_packages_export_canonical_surfaces()`, `test_interfaces_package_exports_only_canonical_pose_surface()`, `test_methods_package_exports_slam_surfaces()`, `test_pipeline_contracts_package_is_not_a_compatibility_hub()`, `test_pipeline_package_exports_only_minimal_public_surface()`, `test_reconstruction_package_exports_runtime_surfaces_without_harness()`, `test_replay_package_exports_only_replay_primitives()`, `test_source_materialization_does_not_import_stage_package()`, `test_sources_package_exports_source_owned_contracts()`, `test_vista_package_is_the_only_canonical_vista_surface()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 18`** (12 nodes): `test_package_exports.py`, `Tests for package-root public export surfaces.`, `test_executable_stage_packages_export_canonical_surfaces()`, `test_interfaces_package_exports_only_canonical_pose_surface()`, `test_methods_package_exports_slam_surfaces()`, `test_pipeline_contracts_package_is_not_a_compatibility_hub()`, `test_pipeline_package_exports_only_minimal_public_surface()`, `test_reconstruction_package_exports_runtime_surfaces_without_harness()`, `test_replay_package_exports_only_replay_primitives()`, `test_source_materialization_does_not_import_stage_package()`, `test_sources_package_exports_source_owned_contracts()`, `test_vista_package_is_the_only_canonical_vista_surface()`
+- **Thin community `Community 18`** (12 nodes): `protocols.py`, `protocols.py`, `drain_runtime_updates()`, `drain_streaming_updates()`, `finish_streaming()`, `run_observations()`, `run_offline()`, `start_streaming()`, `status()`, `step_streaming()`, `stop()`, `submit_stream_item()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 20`** (2 nodes): `streamlit_app.py`, `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`
+- **Thin community `Community 21`** (2 nodes): `streamlit_app.py`, `Thin Streamlit entrypoint for the PRML VSLAM workbench scaffold.  The file stays`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 21`** (2 nodes): `ray.py`, `Ray-specific helpers for future stage runtime deployment.  This module intention`
+- **Thin community `Community 22`** (2 nodes): `ray.py`, `Ray-specific helpers for future stage runtime deployment.  This module intention`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 22`** (1 nodes): `Return the human-readable label shown in plan previews.`
+- **Thin community `Community 23`** (1 nodes): `Return the human-readable label shown in plan previews.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 23`** (1 nodes): `Return whether ``exc`` looks like a transient local Ray connection failure.`
+- **Thin community `Community 24`** (1 nodes): `Return whether ``exc`` looks like a transient local Ray connection failure.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 24`** (1 nodes): `Deserialize one IPC payload back into the target validated model type.`
+- **Thin community `Community 25`** (1 nodes): `Deserialize one IPC payload back into the target validated model type.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 25`** (1 nodes): `Return the compact source label used in logs and diagnostics.`
+- **Thin community `Community 26`** (1 nodes): `Return the compact source label used in logs and diagnostics.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 26`** (1 nodes): `Return the short user-facing dataset label.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 27`** (1 nodes): `Connect to the source and prepare subsequent blocking observation reads.`
+- **Thin community `Community 27`** (1 nodes): `Return the short user-facing dataset label.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 28`** (1 nodes): `Disconnect or release the source and any owned runtime resources.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -246,31 +229,27 @@ Nodes (1): Describe normalized durable outputs from one reconstruction run.     
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 30`** (1 nodes): `Build the shared transform DTO from a 4x4 homogeneous matrix.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 31`** (1 nodes): `Return the user-facing method label.`
+- **Thin community `Community 31`** (1 nodes): `Build one spec from one JSON object.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 32`** (1 nodes): `Build one spec from one JSON object.`
+- **Thin community `Community 32`** (1 nodes): `Return the net code-line delta.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 33`** (1 nodes): `Return the net code-line delta.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 34`** (1 nodes): `Return the path that should own this change in reports.`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 35`** (1 nodes): `Describe normalized durable outputs from one reconstruction run.      The minima`
+- **Thin community `Community 33`** (1 nodes): `Return the path that should own this change in reports.`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 7` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 9`, `Community 10`, `Community 12`, `Community 13`, `Community 14`?**
-  _High betweenness centrality (0.121) - this node is a cross-community bridge._
-- **Why does `StageKey` connect `Community 1` to `Community 0`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`?**
-  _High betweenness centrality (0.081) - this node is a cross-community bridge._
-- **Why does `SequenceManifest` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 9`, `Community 10`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
-- **Are the 451 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
-  _`StageKey` has 451 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 330 inferred relationships involving `SequenceManifest` (e.g. with `OfflineSlamBackend` and `StreamingSlamBackend`) actually correct?**
-  _`SequenceManifest` has 330 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 287 inferred relationships involving `ArtifactRef` (e.g. with `SlamUpdate` and `SlamArtifacts`) actually correct?**
-  _`ArtifactRef` has 287 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 273 inferred relationships involving `MethodId` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
-  _`MethodId` has 273 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Test package helpers and suites for PRML VSLAM.` connect `Community 11` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 13`, `Community 14`?**
+  _High betweenness centrality (0.102) - this node is a cross-community bridge._
+- **Why does `SequenceManifest` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`, `Community 13`?**
+  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+- **Why does `CameraIntrinsics` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 11`, `Community 12`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
+- **Are the 487 inferred relationships involving `SequenceManifest` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
+  _`SequenceManifest` has 487 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 471 inferred relationships involving `StageKey` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
+  _`StageKey` has 471 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 404 inferred relationships involving `PreparedBenchmarkInputs` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
+  _`PreparedBenchmarkInputs` has 404 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 400 inferred relationships involving `DatasetId` (e.g. with `RunConfigOverrideCommand` and `_RerunViewerProcess`) actually correct?**
+  _`DatasetId` has 400 INFERRED edges - model-reasoned connections that need verification._

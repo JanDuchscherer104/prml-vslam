@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from prml_vslam.sources.datasets.advio import (
     AdvioDownloadRequest,
     AdvioLocalSceneStatus,
-    AdvioOfflineSample,
-    AdvioServingConfig,
 )
+from prml_vslam.sources.datasets.contracts import DatasetId, FrameSelectionConfig
+from prml_vslam.sources.datasets.normalization import open_normalized_dataset_stream
 
 from .models import (
     ACTIVE_PREVIEW_STREAM_STATES,
     AdvioDownloadFormData,
     AdvioPageData,
     AdvioPreviewFormData,
-    AdvioPreviewSnapshot,
+    DatasetPreviewSnapshot,
+    DatasetTableRow,
 )
 from .state import save_model_updates
 
@@ -54,26 +56,15 @@ def sync_advio_download_state(context: AppContext, request: AdvioDownloadRequest
         context.state,
         context.state.advio,
         selected_sequence_ids=request.sequence_ids,
-        download_preset=request.preset,
-        selected_modalities=request.modalities,
         overwrite_existing=request.overwrite,
     )
 
 
-def load_advio_explorer_sample(
-    context: AppContext, *, sequence_id: int
-) -> tuple[AdvioOfflineSample | None, str | None]:
-    """Persist the current explorer selection and load its offline sample."""
-    save_model_updates(context.store, context.state, context.state.advio, explorer_sequence_id=sequence_id)
-    try:
-        return context.advio_service.load_local_sample(sequence_id), None
-    except (FileNotFoundError, ValueError) as exc:
-        return None, str(exc)
-
-
-def sync_advio_preview_state(context: AppContext, snapshot: AdvioPreviewSnapshot | None = None) -> AdvioPreviewSnapshot:
+def sync_advio_preview_state(
+    context: AppContext, snapshot: DatasetPreviewSnapshot | None = None
+) -> DatasetPreviewSnapshot:
     """Keep persisted preview state aligned with the runtime snapshot."""
-    snapshot = context.advio_runtime.snapshot() if snapshot is None else snapshot
+    snapshot = context.dataset_preview_runtime.snapshot() if snapshot is None else snapshot
     if context.state.advio.preview_is_running and snapshot.state not in ACTIVE_PREVIEW_STREAM_STATES:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
     return snapshot
@@ -87,46 +78,51 @@ def handle_advio_preview_action(context: AppContext, form: AdvioPreviewFormData)
         context.state.advio,
         preview_sequence_id=form.sequence_id,
         preview_pose_source=form.pose_source,
-        preview_normalize_video_orientation=form.normalize_video_orientation,
     )
     if form.stop_requested:
-        context.advio_runtime.stop()
+        context.dataset_preview_runtime.stop()
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return None
     if not form.start_requested:
         return None
     try:
         scene = context.advio_service.scene(form.sequence_id)
-        context.advio_runtime.start(
+        context.dataset_preview_runtime.start(
             sequence_id=form.sequence_id,
             sequence_label=scene.display_name,
             pose_source=form.pose_source,
-            stream=context.advio_service.open_preview_stream(
-                sequence_id=form.sequence_id,
-                dataset_serving=AdvioServingConfig(pose_source=form.pose_source),
-                normalize_video_orientation=form.normalize_video_orientation,
+            stream=open_normalized_dataset_stream(
+                dataset_id=DatasetId.ADVIO,
+                sequence_id=f"advio-{form.sequence_id:02d}",
+                profile_key=form.profile_key,
+                frame_selection=FrameSelectionConfig(),
+                include_depth=True,
+                path_config=context.path_config,
+                output_dir=context.path_config.resolve_output_dir(
+                    Path("dataset-preview") / "advio" / f"advio-{form.sequence_id:02d}", create=True
+                ),
             ),
         )
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=True)
         save_model_updates(context.store, context.state, context.state.tum_rgbd, preview_is_running=False)
+        save_model_updates(context.store, context.state, context.state.record3d_dataset, preview_is_running=False)
         return None
     except Exception as exc:
         save_model_updates(context.store, context.state, context.state.advio, preview_is_running=False)
         return str(exc)
 
 
-def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[dict[str, object]]:
+def _scene_rows(statuses: list[AdvioLocalSceneStatus]) -> list[DatasetTableRow]:
     return [
         {
             "Scene": status.scene.sequence_slug,
+            "Sequence": status.scene.sequence_slug,
             "Venue": status.scene.venue,
             "Dataset": status.scene.dataset_code,
             "Environment": status.scene.environment.label,
             "Packed Size (MB)": round(status.scene.archive_size_bytes / 1e6, 1),
-            "Local": status.sequence_dir is not None,
-            "Replay Ready": status.replay_ready,
-            "Offline Ready": status.offline_ready,
-            "Local Modalities": ", ".join(modality.label for modality in status.local_modalities),
+            "Downloaded Cache": status.sequence_dir is not None,
+            "Cached Archive": status.archive_path is not None,
         }
         for status in statuses
     ]

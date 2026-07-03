@@ -13,7 +13,6 @@ import streamlit as st
 from prml_vslam.interfaces import CameraIntrinsics, Observation
 
 LiveMetric: TypeAlias = tuple[str, str]
-ImageWidth: TypeAlias = int | Literal["content", "stretch"]
 
 _LIVE_IMAGE_MAX_WIDTH_PX = 730
 _LIVE_IMAGE_JPEG_QUALITY = 90
@@ -69,7 +68,7 @@ def render_live_image(
     *,
     channels: Literal["RGB", "BGR"] = "RGB",
     clamp: bool = True,
-    width: ImageWidth = "stretch",
+    width: int | Literal["content", "stretch"] = "stretch",
 ) -> None:
     """Render one high-churn live image without using Streamlit's media endpoint."""
     st.image(live_image_data_url(image, channels=channels, clamp=clamp), width=width)

@@ -1,0 +1,4 @@
+dataset_id,dataset_label,sequence_count,total_duration_s,average_duration_s
+advio,ADVIO,23,4070.559893,176.980865
+tum_rgbd,TUM RGB-D,19,1176.412380,61.916441
+record3d,Record3D,8,830.797991,103.849749

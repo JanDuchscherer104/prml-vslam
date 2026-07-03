@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,6 +11,7 @@ import numpy as np
 import open3d as o3d
 from evo.core.trajectory import PoseTrajectory3D  # type: ignore[import-untyped]
 from evo.tools import file_interface  # type: ignore[import-untyped]
+from numpy.typing import NDArray
 from pytransform3d.transformations import transform, vectors_to_points
 
 from prml_vslam.utils.console import get_console
@@ -18,6 +20,8 @@ if TYPE_CHECKING:
     from prml_vslam.interfaces.camera import CameraIntrinsics
     from prml_vslam.interfaces.transforms import FrameTransform
 
+
+# Default reference-cloud sampling values used by config models and helper fallbacks.
 DEFAULT_REFERENCE_CLOUD_DEPTH_STRIDE_PX = 8
 DEFAULT_REFERENCE_CLOUD_MAX_POINTS = 100_000
 DEFAULT_REFERENCE_CLOUD_RANDOM_SEED = 17
@@ -54,17 +58,84 @@ def write_tum_trajectory(
     return trajectory_path.resolve()
 
 
-def load_tum_trajectory(path: Path) -> PoseTrajectory3D:
+def load_tum_trajectory(path: Path, *, canonicalize_timestamps: bool = False) -> PoseTrajectory3D:
     """Load a TUM trajectory file into an `evo` pose trajectory."""
     if path.stat().st_size == 0:
         raise ValueError(f"TUM trajectory file '{path}' is empty.")
 
-    trajectory = file_interface.read_tum_trajectory_file(path)
+    trajectory = (
+        _read_canonical_tum_trajectory(path)
+        if canonicalize_timestamps
+        else file_interface.read_tum_trajectory_file(path)
+    )
     trajectory = _normalize_trajectory_quaternions(trajectory)
     valid, details = trajectory.check()
     if not valid:
         raise ValueError(f"Invalid TUM trajectory '{path}': {details}")
     return trajectory
+
+
+def trajectory_relative_to_first_pose(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
+    """Express every pose relative to the first pose."""
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
+    if not poses:
+        return trajectory
+    T_first_world = np.linalg.inv(poses[0])
+    return PoseTrajectory3D(
+        poses_se3=[T_first_world @ pose for pose in poses],
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
+
+
+def poses_relative_to_first_pose(poses_world_camera: Sequence[FrameTransform]) -> list[FrameTransform]:
+    """Express frame-labelled camera poses relative to their first pose."""
+    if not poses_world_camera:
+        raise ValueError("First-pose normalization requires at least one camera pose.")
+    T_first_world = np.linalg.inv(poses_world_camera[0].as_matrix())
+    return [
+        pose_world_camera.__class__.from_matrix(
+            T_first_world @ pose_world_camera.as_matrix(),
+            target_frame=pose_world_camera.target_frame,
+            source_frame=pose_world_camera.source_frame,
+        )
+        for pose_world_camera in poses_world_camera
+    ]
+
+
+def trajectory_positions_at_timestamps(
+    trajectory: PoseTrajectory3D,
+    timestamps_s: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Linearly interpolate trajectory positions at requested timestamps in seconds."""
+    trajectory_timestamps = np.asarray(trajectory.timestamps, dtype=np.float64)
+    positions = np.asarray(trajectory.positions_xyz, dtype=np.float64)
+    return np.stack(
+        [np.interp(timestamps_s, trajectory_timestamps, positions[:, axis]) for axis in range(3)],
+        axis=1,
+    )
+
+
+def _read_canonical_tum_trajectory(path: Path) -> PoseTrajectory3D:
+    rows_by_timestamp: dict[float, list[float]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split()
+        if len(fields) < 8:
+            raise ValueError(f"Invalid TUM trajectory row in {path}: {line!r}")
+        timestamp = float(fields[0])
+        if timestamp not in rows_by_timestamp:
+            rows_by_timestamp[timestamp] = [float(field) for field in fields[:8]]
+    if not rows_by_timestamp:
+        raise ValueError(f"TUM trajectory file '{path}' is empty.")
+
+    rows = [rows_by_timestamp[timestamp] for timestamp in sorted(rows_by_timestamp)]
+    return PoseTrajectory3D(
+        positions_xyz=np.asarray([row[1:4] for row in rows], dtype=np.float64),
+        orientations_quat_wxyz=np.asarray([[row[7], row[4], row[5], row[6]] for row in rows], dtype=np.float64),
+        timestamps=np.asarray([row[0] for row in rows], dtype=np.float64),
+    )
 
 
 def _normalize_trajectory_quaternions(trajectory: PoseTrajectory3D) -> PoseTrajectory3D:
@@ -312,6 +383,110 @@ def _depth_map_to_world_points_tensor(
     return points_h.matmul(T_tensor.T())[:, :3].cpu().numpy().astype(np.float64, copy=False)
 
 
+def yaw_similarity_align(
+    estimate_xyz: NDArray[np.float64],
+    reference_xyz: NDArray[np.float64],
+    *,
+    up_axis: tuple[float, float, float] | NDArray[np.float64] = (0.0, 1.0, 0.0),
+    correct_scale: bool = True,
+) -> tuple[float, NDArray[np.float64], NDArray[np.float64]]:
+    """Gravity-locked similarity mapping ``estimate`` onto ``reference``.
+
+    Solves ``min_{s, R, t} sum_i ||reference_i - (s R estimate_i + t)||^2`` where
+    ``R`` is constrained to a pure rotation about ``up_axis`` (yaw only). Because
+    ``R`` fixes ``up_axis`` exactly, the result can never flip a gravity-aligned,
+    near-planar trajectory upside down (the failure mode of full Umeyama on
+    planar inputs). Inputs must be index-aligned (already timestamp-associated).
+
+    Returns ``(scale, rotation_3x3, translation_3)``.
+    """
+    estimate = np.asarray(estimate_xyz, dtype=np.float64).reshape(-1, 3)
+    reference = np.asarray(reference_xyz, dtype=np.float64).reshape(-1, 3)
+    if estimate.shape != reference.shape:
+        raise ValueError(f"yaw_similarity_align needs matching shapes, got {estimate.shape} and {reference.shape}.")
+    up = np.asarray(up_axis, dtype=np.float64).reshape(3)
+    up_norm = float(np.linalg.norm(up))
+    if up_norm == 0.0:
+        raise ValueError("yaw_similarity_align up_axis must be non-zero.")
+    up = up / up_norm
+    identity = np.eye(3, dtype=np.float64)
+    if len(estimate) == 0:
+        return 1.0, identity, np.zeros(3, dtype=np.float64)
+
+    estimate_centroid = estimate.mean(axis=0)
+    reference_centroid = reference.mean(axis=0)
+    estimate_centered = estimate - estimate_centroid
+    reference_centered = reference - reference_centroid
+
+    seed = np.array([1.0, 0.0, 0.0]) if abs(up[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    plane_x = seed - np.dot(seed, up) * up
+    plane_x /= np.linalg.norm(plane_x)
+    plane_y = np.cross(up, plane_x)
+
+    estimate_x = estimate_centered @ plane_x
+    estimate_y = estimate_centered @ plane_y
+    reference_x = reference_centered @ plane_x
+    reference_y = reference_centered @ plane_y
+    cross_term = float(np.sum(estimate_x * reference_y - estimate_y * reference_x))
+    dot_term = float(np.sum(estimate_x * reference_x + estimate_y * reference_y))
+    theta = math.atan2(cross_term, dot_term)
+
+    skew_up = np.array(
+        [[0.0, -up[2], up[1]], [up[2], 0.0, -up[0]], [-up[1], up[0], 0.0]],
+        dtype=np.float64,
+    )
+    rotation = math.cos(theta) * identity + math.sin(theta) * skew_up + (1.0 - math.cos(theta)) * np.outer(up, up)
+
+    scale = 1.0
+    if correct_scale:
+        denominator = float(np.sum(estimate_centered**2))
+        if denominator > 0.0:
+            scale = float(np.sum(reference_centered * (estimate_centered @ rotation.T)) / denominator)
+    translation = reference_centroid - scale * (rotation @ estimate_centroid)
+    return scale, rotation, translation
+
+
+def apply_similarity_to_trajectory(
+    trajectory: PoseTrajectory3D,
+    *,
+    scale: float,
+    rotation: NDArray[np.float64],
+    translation: NDArray[np.float64],
+) -> PoseTrajectory3D:
+    """Return a copy of ``trajectory`` transformed by ``p -> s R p + t``.
+
+    Rotations are left-multiplied by ``R`` and positions follow the similarity,
+    matching the convention of the trajectory Sim(3) artifact.
+    """
+    from prml_vslam.interfaces.transforms import FrameTransform
+
+    rotation = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    translation = np.asarray(translation, dtype=np.float64).reshape(3)
+    poses = [np.asarray(pose, dtype=np.float64) for pose in trajectory.poses_se3]
+    if not poses:
+        return PoseTrajectory3D(
+            positions_xyz=np.zeros((0, 3), dtype=np.float64),
+            orientations_quat_wxyz=np.zeros((0, 4), dtype=np.float64),
+            timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+        )
+    transformed: list[NDArray[np.float64]] = []
+    for pose in poses:
+        matrix = np.eye(4, dtype=np.float64)
+        matrix[:3, :3] = rotation @ pose[:3, :3]
+        matrix[:3, 3] = scale * (rotation @ pose[:3, 3]) + translation
+        transformed.append(matrix)
+    positions_xyz = np.asarray([matrix[:3, 3] for matrix in transformed], dtype=np.float64)
+    orientations_quat_wxyz = np.asarray(
+        [FrameTransform.from_matrix(matrix).quaternion_xyzw()[[3, 0, 1, 2]] for matrix in transformed],
+        dtype=np.float64,
+    )
+    return PoseTrajectory3D(
+        positions_xyz=positions_xyz,
+        orientations_quat_wxyz=orientations_quat_wxyz,
+        timestamps=np.asarray(trajectory.timestamps, dtype=np.float64),
+    )
+
+
 def _sample_rgb_colors(
     rgb: np.ndarray | None,
     *,
@@ -346,4 +521,6 @@ __all__ = [
     "transform_points_world_camera",
     "write_point_cloud_ply",
     "write_tum_trajectory",
+    "apply_similarity_to_trajectory",
+    "yaw_similarity_align",
 ]

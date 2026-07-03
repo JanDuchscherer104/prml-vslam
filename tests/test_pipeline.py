@@ -20,17 +20,9 @@ import pytest
 import ray
 from pydantic import ValidationError
 
-from prml_vslam.eval.contracts import (
-    ErrorSeries,
-    EvaluationArtifact,
-    MetricStats,
-    TrajectoryAlignmentArtifact,
-    TrajectoryAlignmentMode,
-    TrajectoryEvaluationSemantics,
-    TrajectoryMetricId,
-    TrajectorySeries,
-)
+from prml_vslam.align.trajectory_sim3.contracts import TrajectoryAlignmentArtifact
 from prml_vslam.eval.stage_trajectory.spec import TRAJECTORY_EVALUATION_STAGE_SPEC
+from prml_vslam.eval.trajectory_contracts import TrajectoryEvaluationManifest
 from prml_vslam.interfaces import (
     CAMERA_RDF_FRAME,
     FrameTransform,
@@ -50,13 +42,7 @@ from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.backend_ray import RayPipelineBackend
 from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.context import PipelineExecutionContext
-from prml_vslam.pipeline.contracts.events import (
-    RunStopped,
-    StageCompleted,
-    StageFailed,
-    StageOutcome,
-    StageStatus,
-)
+from prml_vslam.pipeline.contracts.events import RunStopped, StageCompleted, StageFailed, StageOutcome, StageStatus
 from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanStage
 from prml_vslam.pipeline.contracts.provenance import RunSummary
 from prml_vslam.pipeline.contracts.runtime import RunSnapshot, RunState
@@ -65,7 +51,12 @@ from prml_vslam.pipeline.placement import actor_options_for_stage
 from prml_vslam.pipeline.ray_runtime.common import clean_actor_options
 from prml_vslam.pipeline.ray_runtime.coordinator import RunCoordinatorActor
 from prml_vslam.pipeline.ray_runtime.stage_actors import PacketSourceActor, observation_metadata_for_transport
-from prml_vslam.pipeline.ray_runtime.substrate import build_runtime_env, prepare_ray_environment
+from prml_vslam.pipeline.ray_runtime.substrate import (
+    _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES,
+    _local_object_store_memory_bytes,
+    build_runtime_env,
+    prepare_ray_environment,
+)
 from prml_vslam.pipeline.run_service import RunService
 from prml_vslam.pipeline.runner import StageResultStore, StageRunner
 from prml_vslam.pipeline.runtime_manager import RuntimeManager
@@ -294,7 +285,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -323,7 +314,7 @@ sequence_id = "advio-01"
 
 [stages.source.backend.dataset_serving]
 pose_source = "ground_truth"
-pose_frame_mode = "provider_world"
+pose_frame_mode = "fixedpoint_common_start_local"
 
 [stages.slam.backend]
 method_id = "vista"
@@ -341,7 +332,7 @@ viewer_blueprint_path = ".configs/visualization/vista_blueprint.rbl"
     assert run_config.visualization.viewer_blueprint_path == Path(".configs/visualization/vista_blueprint.rbl")
 
 
-def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> None:
+def test_run_config_marks_cloud_eval_available(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
         experiment_name="cloud-validation",
@@ -356,8 +347,8 @@ def test_run_config_marks_cloud_eval_placeholder_unavailable(tmp_path: Path) -> 
     plan = run_config.compile_plan(path_config)
     cloud_stage = next(stage for stage in plan.stages if stage.key is StageKey.CLOUD_EVALUATION)
 
-    assert cloud_stage.available is False
-    assert cloud_stage.availability_reason == "Dense-cloud evaluation is planned but no runtime is registered yet."
+    assert cloud_stage.available is True
+    assert cloud_stage.availability_reason is None
 
 
 def test_run_config_compile_plan_uses_supplied_path_config(tmp_path: Path) -> None:
@@ -420,33 +411,6 @@ def test_build_run_config_copies_backend_policy_and_visualization_fields(tmp_pat
     assert run_config.visualization.export_viewer_rrd is True
 
 
-def test_stage_registry_marks_placeholder_stages_unavailable(tmp_path: Path) -> None:
-    path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
-    run_config = _run_config(
-        experiment_name="placeholder",
-        mode=PipelineMode.OFFLINE,
-        output_dir=path_config.artifacts_dir,
-        source_backend=AdvioSourceConfig(
-            sequence_id="advio-01",
-            dataset_serving={
-                "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
-            },
-        ),
-        method=MethodId.VISTA,
-        reference_enabled=False,
-        trajectory_eval_enabled=False,
-        evaluate_cloud=True,
-    )
-
-    plan = run_config.compile_plan(path_config=path_config)
-
-    unavailable = [stage for stage in plan.stages if not stage.available]
-    assert len(unavailable) == 1
-    assert unavailable[0].key.value == "evaluate.cloud"
-    assert "no runtime is registered yet" in unavailable[0].availability_reason
-
-
 def test_stage_registry_allows_tum_rgbd_reference_reconstruction(tmp_path: Path) -> None:
     path_config = PathConfig(root=_repo_root(), artifacts_dir=tmp_path / ".artifacts")
     run_config = _run_config(
@@ -493,7 +457,9 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         method=MethodId.VISTA,
         reference_enabled=True,
     )
-    run_config.stages.reconstruction.backend.extract_mesh = True
+    from prml_vslam.reconstruction.config import PoissonBackendConfig
+
+    run_config.stages.reconstruction.backend = PoissonBackendConfig()
     plan = _plan_with_stages(
         tmp_path=tmp_path,
         run_config=run_config,
@@ -512,11 +478,22 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     source_reference_cloud.parent.mkdir(parents=True, exist_ok=True)
     source_reference_cloud.write_text("source benchmark reference\n", encoding="utf-8")
 
+    import numpy as np
+
+    from prml_vslam.interfaces.artifacts import ArtifactRef
+    from prml_vslam.reconstruction.stage.contracts import ReconstructionInputSourceKind
+    from prml_vslam.utils.geometry import write_point_cloud_ply
+
+    dummy_pcd = tmp_path / "dummy.ply"
+    write_point_cloud_ply(dummy_pcd, np.random.rand(10, 3))
+
     result = ReconstructionRuntime().run_offline(
         ReconstructionStageInput(
             backend=run_config.stages.reconstruction.backend,
             run_paths=context.run_paths,
             benchmark_inputs=benchmark_inputs,
+            input_source=ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD,
+            point_cloud=ArtifactRef(path=dummy_pcd, kind="ply", fingerprint="dummy"),
         )
     )
 
@@ -528,7 +505,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     assert source_reference_cloud.read_text(encoding="utf-8") == "source benchmark reference\n"
     assert result.outcome.artifacts["reconstruction_metadata"].path.exists()
     assert result.outcome.artifacts["reference_mesh"].path.exists()
-    assert result.outcome.metrics["observation_count"] == 1
+    assert "point_cloud_input" in result.outcome.metrics
 
 
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:
@@ -869,6 +846,51 @@ def test_run_coordinator_read_payload_accepts_materialized_payloads() -> None:
     assert np.array_equal(resolved, payload)
 
 
+def test_run_coordinator_stores_reused_source_and_slam_results(tmp_path: Path) -> None:
+    reuse_paths = RunArtifactPaths.build(tmp_path / "old-run" / "vista")
+    reuse_paths.sequence_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.sequence_manifest_path.write_text(
+        SequenceManifest(sequence_id="reused-seq").model_dump_json(),
+        encoding="utf-8",
+    )
+    reuse_paths.benchmark_inputs_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.benchmark_inputs_path.write_text(PreparedBenchmarkInputs().model_dump_json(), encoding="utf-8")
+    reuse_paths.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    reuse_paths.trajectory_path.write_text("0 0 0 0 0 0 0 1\n", encoding="utf-8")
+    reuse_paths.dense_points_path.write_text("ply\n", encoding="utf-8")
+    run_config = RunConfig.from_toml(
+        f"""
+experiment_name = "reuse"
+mode = "offline"
+output_dir = "{tmp_path.as_posix()}"
+reuse_artifact_root = "{reuse_paths.artifact_root.as_posix()}"
+
+[stages.source]
+enabled = false
+
+[stages.slam]
+enabled = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_trajectory]
+enabled = true
+"""
+    )
+    plan = run_config.compile_plan(PathConfig(root=tmp_path))
+    coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
+    coordinator = coordinator_cls(run_id="reuse", namespace="pytest-unit")
+
+    coordinator._load_reused_results(run_config=run_config, plan=plan)
+
+    assert coordinator._result_store.require_sequence_manifest().sequence_id == "reused-seq"
+    slam = coordinator._result_store.require_slam_artifacts()
+    assert slam.trajectory_tum.path == reuse_paths.trajectory_path
+    assert slam.dense_points_ply is not None
+    assert slam.dense_points_ply.path == reuse_paths.dense_points_path
+
+
 def test_run_coordinator_forwards_packet_arrival_timestamp_to_slam_runtime() -> None:
     coordinator_cls = RunCoordinatorActor.__ray_metadata__.modified_class
     coordinator = coordinator_cls(run_id="demo", namespace="pytest-unit")
@@ -1112,7 +1134,7 @@ def test_run_coordinator_routes_slam_runtime_updates_to_live_and_export_sidecars
     assert submitted == [("live", update, "resolver"), ("export", update, "resolver")]
 
 
-def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_only(
+def test_run_coordinator_routes_trajectory_evaluation_manifest_to_export_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1129,34 +1151,12 @@ def test_run_coordinator_routes_trajectory_evaluation_payload_to_export_sidecar_
         submitted.append((update, payload_resolver, destinations))
 
     monkeypatch.setattr(coordinator, "_submit_rerun_update", capture_rerun_update)
-    artifact = EvaluationArtifact(
-        path=tmp_path / "ape.json",
-        title="APE translation",
-        matched_pairs=1,
-        stats=MetricStats(rmse=0.1, mean=0.1, median=0.1, std=0.0, min=0.1, max=0.1, sse=0.01),
-        reference_path=tmp_path / "ref.tum",
-        estimate_path=tmp_path / "estimate.tum",
-        semantics=TrajectoryEvaluationSemantics(
-            metric_id=TrajectoryMetricId.APE_TRANSLATION,
-            alignment_mode=TrajectoryAlignmentMode.TIMESTAMP_ASSOCIATED_ONLY,
-            sync_max_diff_s=0.01,
-        ),
-        trajectories=[
-            TrajectorySeries(
-                name="reference",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.0, 0.0, 0.0]], dtype=np.float64),
-            ),
-            TrajectorySeries(
-                name="estimate",
-                timestamps_s=np.array([0.0], dtype=np.float64),
-                positions_xyz=np.array([[0.1, 0.0, 0.0]], dtype=np.float64),
-            ),
-        ],
-        error_series=ErrorSeries(
-            timestamps_s=np.array([0.0], dtype=np.float64),
-            values=np.array([0.1], dtype=np.float64),
-        ),
+    artifact = TrajectoryEvaluationManifest(
+        artifact_root=tmp_path,
+        sequence_id="seq-1",
+        run_id="demo",
+        reference_trajectories=[tmp_path / "ref.tum"],
+        candidate_trajectories=[tmp_path / "estimate.tum"],
     )
 
     coordinator._record_stage_result(
@@ -1592,7 +1592,7 @@ def test_run_coordinator_emits_source_stage_failure_before_run_failed(
     assert failed_event.outcome.error_message == "source boom"
 
 
-def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
+def test_run_coordinator_fails_fast_for_cloud_evaluation_missing_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run_config = _run_config(
@@ -1623,7 +1623,7 @@ def test_run_coordinator_fails_fast_for_available_stage_without_runtime_spec(
     )
 
     failed_event = next(event for event in coordinator.events() if event.kind == "run.failed")
-    assert "evaluate.cloud" in failed_event.error_message
+    assert "Cloud evaluation requires" in failed_event.error_message
 
 
 def test_run_coordinator_offline_dispatches_batch_stage_executors(tmp_path: Path) -> None:
@@ -1686,11 +1686,11 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
     coordinator._path_config = path_config
     coordinator._slam_backend = _test_backend_config(default_cpu=1.0, default_gpu=0.0)
 
-    metrics_path = plan.artifact_root / "evaluation" / "trajectory_metrics.json"
+    manifest_path = plan.artifact_root / "evaluation" / "trajectory" / "manifest.json"
 
     def _fake_trajectory_run_offline(self, input_payload):
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text('{"title": "fake"}', encoding="utf-8")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text('{"run_id": "fake"}', encoding="utf-8")
         return StageResult(
             stage_key=StageKey.TRAJECTORY_EVALUATION,
             payload=None,
@@ -1699,7 +1699,13 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
                 status=StageStatus.COMPLETED,
                 config_hash="traj-cfg",
                 input_fingerprint="traj-inp",
-                artifacts={"trajectory_metrics": ArtifactRef(path=metrics_path, kind="json", fingerprint="metrics")},
+                artifacts={
+                    "trajectory_evaluation_manifest": ArtifactRef(
+                        path=manifest_path,
+                        kind="json",
+                        fingerprint="manifest",
+                    )
+                },
             ),
             final_runtime_status=StageRuntimeStatus(
                 stage_key=StageKey.TRAJECTORY_EVALUATION,
@@ -1721,8 +1727,8 @@ def test_run_coordinator_offline_executes_trajectory_evaluation_stage(
 
     snapshot = coordinator.snapshot()
     assert snapshot.stage_outcomes[StageKey.TRAJECTORY_EVALUATION].status is StageStatus.COMPLETED
-    assert metrics_path.exists()
-    assert "trajectory_metrics" in snapshot.artifacts
+    assert manifest_path.exists()
+    assert "trajectory_evaluation_manifest" in snapshot.artifacts
     assert snapshot.state is RunState.COMPLETED
 
 
@@ -2247,6 +2253,42 @@ def test_ray_backend_closes_parent_log_handle_after_spawn(tmp_path: Path, monkey
     assert backend._local_head._read_metadata() == {"address": "127.0.0.1:25002", "pid": 789}
 
 
+def test_local_object_store_memory_env_falls_back_on_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "not-an-int")
+
+    assert _local_object_store_memory_bytes(console) == _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    assert warnings == [
+        "Ignoring invalid PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES='not-an-int'; using "
+        f"{_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES}."
+    ]
+
+
+def test_local_object_store_memory_env_falls_back_on_non_positive_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "0")
+
+    assert _local_object_store_memory_bytes(console) == _DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES
+    assert warnings == [
+        "Ignoring non-positive PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES=0; using "
+        f"{_DEFAULT_LOCAL_OBJECT_STORE_MEMORY_BYTES}."
+    ]
+
+
+def test_local_object_store_memory_env_uses_positive_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    console = SimpleNamespace(warning=lambda message, *args: warnings.append(message % args))
+
+    monkeypatch.setenv("PRML_VSLAM_RAY_OBJECT_STORE_MEMORY_BYTES", "2048")
+
+    assert _local_object_store_memory_bytes(console) == 2048
+    assert warnings == []
+
+
 def test_ray_backend_preserve_shutdown_skips_local_head_termination(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = RayPipelineBackend(namespace="prml_vslam.local")
     backend._coordinators = {"run-1": object()}  # type: ignore[assignment]
@@ -2367,12 +2409,11 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
             sequence_id="advio-01",
             dataset_serving={
                 "pose_source": "ground_truth",
-                "pose_frame_mode": "provider_world",
+                "pose_frame_mode": "fixedpoint_common_start_local",
             },
         ),
         method=MethodId.VISTA,
-        emit_dense_points=True,
-        evaluate_cloud=True,
+        reference_enabled=True,
     )
     created_runs: list[str] = []
 
@@ -2383,7 +2424,7 @@ def test_ray_backend_submit_run_rejects_unavailable_stage_after_planning(
         lambda run_id, *, actor_options: created_runs.append(run_id),
     )
 
-    with pytest.raises(RuntimeError, match="no runtime is registered yet"):
+    with pytest.raises(RuntimeError, match="Reconstruction currently requires a TUM RGB-D dataset source"):
         backend.submit_run(run_config=run_config)
 
     assert created_runs == []

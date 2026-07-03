@@ -10,7 +10,7 @@ dependencies = [
   "av>=16,<17",
   "scipy>=1.13,<2",
   "opencv-python>=4.10,<5",
-  "open3d>=0.19.0,<0.20",
+  "open3d-cpu>=0.19.0,<0.20",
   "matplotlib>=3.8,<4",
   "pooch>=1.8,<2",
   "plotly>=6.6.0,<7",
@@ -20,6 +20,7 @@ dependencies = [
   "ray>=2.40,<3",
   "rich>=13.7,<15",
   "seaborn>=0.13,<1",
+  "scikit-image>=0.25,<1",
   "streamlit>=1.35,<2",
   "tqdm>=4.66,<5",
   "tomli-w>=1.2,<2",
@@ -28,6 +29,8 @@ dependencies = [
   "pytransform3d>=3.14.4",
   "PyYAML>=6,<7",
   "rerun-sdk==0.24.1",
+  "pyliblzfse==0.4.1",
+  "pandas==2.3.3",
 ]
 
   [project.optional-dependencies]
@@ -47,6 +50,7 @@ dependencies = [
     "torch==2.5.1",
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
+    "lpips>=0.1.4,<0.2",
     "xformers",
     "MAST3R-SLAM",
     "MAST3R",
@@ -60,6 +64,7 @@ dependencies = [
     "torch==2.5.1",
     "torchvision==0.20.1",
     "torchaudio==2.5.1",
+    "lpips>=0.1.4,<0.2",
     "xformers",
     "pypose>=0.6",
     "einops>=0.6",
@@ -69,6 +74,14 @@ dependencies = [
     "DBoW3Py",
     "torch-scatter",
     "nksr @ git+https://github.com/nv-tlabs/nksr.git#subdirectory=package",
+  ]
+  lingbot = [
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "lpips>=0.1.4,<0.2",
+    "lingbot-map",
+    "flashinfer-python",
+    "torch-c-dlpack-ext==0.1.5",
   ]
 
   [project.scripts]
@@ -105,32 +118,41 @@ python_files = ["test_*.py"]
 addopts      = "-vv -ra --strict-markers --capture=no -p no:dash"
 
 [tool.uv]
+build-constraint-dependencies = ["torch==2.5.1"]
 conflicts = [
   [
     { extra = "mast3r" },
     { extra = "vista" },
   ],
+  [
+    { extra = "lingbot" },
+    { extra = "mast3r" },
+  ],
+  [
+    { extra = "lingbot" },
+    { extra = "vista" },
+  ],
 ]
-constraint-dependencies = [
-  "click==8.3.1",
-  "starlette==1.0.0",
-]
+constraint-dependencies = ["click==8.3.1", "starlette==1.0.0"]
+no-build-isolation-package = ["lietorch", "mast3r-slam"]
 
   [tool.uv.extra-build-dependencies]
+  DBoW3Py     = ["numpy"]
   MAST3R-SLAM = ["torch==2.5.1"]
-  curope = ["torch==2.5.1"]
-  xformers = ["torch==2.5.1"]
-  nksr = ["torch==2.5.1", "gitpython", "ninja"]
+  curope      = ["torch==2.5.1"]
+  xformers    = ["torch==2.5.1"]
+  nksr        = ["torch==2.5.1", "gitpython", "ninja"]
   torch-scatter = ["torch==2.5.1"]
 
   [tool.uv.sources]
-  DBoW3Py = { path = "external/vista-slam/DBoW3Py", editable = false }
-  MAST3R-SLAM = { path = "external/mast3r-slam", editable = true }
-  MAST3R = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true }
-  in3d = { path = "external/mast3r-slam/thirdparty/in3d", editable = true }
-  asmk = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true }
-  curope = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
-  imgui = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true }
+  DBoW3Py     = { path = "external/vista-slam/DBoW3Py", editable = true, extra = "vista" }
+  lingbot-map = { path = "external/lingbot-map", editable = true, extra = "lingbot" }
+  MAST3R-SLAM = { path = "external/mast3r-slam", editable = true, extra = "mast3r" }
+  MAST3R      = { path = "external/mast3r-slam/thirdparty/mast3r", editable = true, extra = "mast3r" }
+  in3d        = { path = "external/mast3r-slam/thirdparty/in3d", editable = true, extra = "mast3r" }
+  asmk        = { path = "external/mast3r-slam/thirdparty/mast3r/asmk", editable = true, extra = "mast3r" }
+  curope      = { path = "external/mast3r-slam/thirdparty/mast3r/dust3r/croco/models/curope", editable = true, extra = "mast3r", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+  imgui       = { path = "external/mast3r-slam/thirdparty/in3d/thirdparty/pyimgui", editable = true, extra = "mast3r" }
 
   # These metadata overrides replace upstream dynamic local file-URI dependencies
   # with portable path-source names so uv can lock the optional MASt3R graph.
@@ -183,8 +205,8 @@ constraint-dependencies = [
   ]
 
   [[tool.uv.dependency-metadata]]
-  name = "curope"
-  version = "0.0.0"
+  name          = "curope"
+  version       = "0.0.0"
   requires-dist = []
 
 [tool.mypy]
@@ -198,6 +220,8 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typin
   module = [
     "cv2",
     "cv2.*",
+    "lpips",
+    "lpips.*",
     "numpy",
     "numpy.*",
     "pydantic",
@@ -214,19 +238,13 @@ mypy_path           = ["$MYPY_CONFIG_FILE_DIR/src", "$MYPY_CONFIG_FILE_DIR/typin
   ignore_missing_imports = true
 
   [[tool.mypy.overrides]]
-  module = [
-    "open3d",
-    "open3d.*",
-  ]
+  module        = ["open3d", "open3d.*"]
   ignore_errors = true
 
 [tool.pyright]
-include = ["src", "tests", "typings"]
+include    = ["src", "tests", "typings"]
 extraPaths = ["src"]
-stubPath = "typings"
+stubPath   = "typings"
 
 [dependency-groups]
-dev = [
-  "graphifyy>=0.4.26",
-  "mcp>=1.27.0",
-]
+dev = ["graphifyy>=0.4.26", "mcp>=1.27.0"]

@@ -4,21 +4,20 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from prml_vslam.methods.stage.backend_config import MethodId
 from prml_vslam.pipeline import PipelineMode
-from prml_vslam.pipeline.config import BackendSpec, RunConfig, build_run_config
+from prml_vslam.pipeline.config import RunConfig, build_run_config
 from prml_vslam.pipeline.contracts.plan import RunPlan
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.demo import build_runtime_source_from_run_config, load_run_config_toml
 from prml_vslam.sources.config import AdvioSourceConfig, Record3DSourceConfig
 from prml_vslam.sources.datasets.advio import (
-    AdvioLocalSceneStatus,
     AdvioPoseFrameMode,
-    AdvioPoseSource,
     AdvioServingConfig,
 )
+from prml_vslam.sources.datasets.normalized_query import resolve_normalized_advio_sequence_id
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 from prml_vslam.utils import BaseData, JsonObject, PathConfig
 
@@ -39,26 +38,11 @@ _SUPPORTED_APP_STAGE_IDS = frozenset(
         StageKey.TRAJECTORY_EVALUATION,
         StageKey.RECONSTRUCTION,
         StageKey.CLOUD_ALIGNMENT,
+        StageKey.CLOUD_EVALUATION,
+        StageKey.IMAGE_EVALUATION,
         StageKey.SUMMARY,
     }
 )
-
-PipelinePageStateUpdateValue: TypeAlias = (
-    PipelineSourceId
-    | AdvioPoseSource
-    | AdvioPoseFrameMode
-    | Record3DTransportId
-    | PipelineMode
-    | MethodId
-    | BackendSpec
-    | Path
-    | int
-    | float
-    | str
-    | bool
-    | None
-)
-PipelinePageStateUpdates: TypeAlias = dict[str, PipelinePageStateUpdateValue]
 
 
 class PipelinePageAction(PipelinePageState):
@@ -81,28 +65,29 @@ def sync_pipeline_page_state_from_template(
     context: AppContext,
     config_path: Path,
     run_config: RunConfig,
-    statuses: list[AdvioLocalSceneStatus],
 ) -> None:
     """Hydrate Pipeline page state from a newly selected request template."""
     page_state = context.state.pipeline
     if page_state.config_path == config_path:
         return
-    source_updates: PipelinePageStateUpdates = {
+    source_updates: dict[str, object] = {
         "source_kind": page_state.source_kind,
         "advio_sequence_id": page_state.advio_sequence_id,
     }
     source_backend = run_config.stages.source.backend
     match source_backend:
         case AdvioSourceConfig(sequence_id=sequence_slug):
-            advio_sequence_id, _ = resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=statuses)
+            advio_sequence_id, _ = resolve_normalized_advio_sequence_id(
+                sequence_slug=sequence_slug,
+                path_config=context.path_config,
+            )
             source_updates = {
                 "source_kind": PipelineSourceId.ADVIO,
                 "advio_sequence_id": advio_sequence_id,
                 "dataset_frame_stride": source_backend.frame_stride,
                 "dataset_target_fps": source_backend.target_fps,
                 "pose_source": source_backend.dataset_serving.pose_source,
-                "pose_frame_mode": source_backend.dataset_serving.pose_frame_mode,
-                "normalize_video_orientation": source_backend.normalize_video_orientation,
+                "pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
             }
         case Record3DSourceConfig() as record3d_source:
             source_updates = {
@@ -131,6 +116,7 @@ def sync_pipeline_page_state_from_template(
         trajectory_eval_enabled=run_config.stages.evaluate_trajectory.enabled,
         trajectory_alignment_enabled=run_config.stages.align_trajectory.enabled,
         evaluate_cloud=run_config.stages.evaluate_cloud.enabled,
+        evaluate_image=run_config.stages.evaluate_image.enabled,
         connect_live_viewer=run_config.visualization.connect_live_viewer,
         export_viewer_rrd=run_config.visualization.export_viewer_rrd,
         grpc_url=run_config.visualization.grpc_url,
@@ -159,13 +145,14 @@ def build_run_config_from_action(
                 target_fps=action.dataset_target_fps,
                 dataset_serving=AdvioServingConfig(
                     pose_source=action.pose_source,
-                    pose_frame_mode=action.pose_frame_mode,
+                    pose_frame_mode=AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL,
                 ),
-                normalize_video_orientation=action.normalize_video_orientation,
             )
         else:
             source_backend = record3d_source_config_from_action(action)
-        emit_sparse_points = False if action.method is MethodId.MAST3R else action.emit_sparse_points
+        emit_sparse_points = (
+            False if action.method in {MethodId.MAST3R, MethodId.LINGBOT_MAP} else action.emit_sparse_points
+        )
         run_config = build_run_config(
             experiment_name=action.experiment_name.strip() or "pipeline-demo",
             mode=action.mode,
@@ -180,6 +167,7 @@ def build_run_config_from_action(
             trajectory_eval_enabled=action.trajectory_eval_enabled,
             trajectory_alignment_enabled=action.trajectory_alignment_enabled,
             evaluate_cloud=action.evaluate_cloud,
+            evaluate_image=action.evaluate_image,
             ground_alignment_enabled=action.ground_alignment_enabled,
             connect_live_viewer=action.connect_live_viewer,
             export_viewer_rrd=action.export_viewer_rrd,
@@ -209,7 +197,7 @@ def request_support_error(
     *,
     request: RunConfig | None,
     plan: RunPlan | None,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    path_config: PathConfig,
 ) -> str | None:
     """Return why the Pipeline app page cannot execute the current request."""
     if request is None:
@@ -230,8 +218,12 @@ def request_support_error(
         )
     match request.stages.source.backend:
         case AdvioSourceConfig(sequence_id=sequence_slug):
-            if resolve_advio_sequence_id(sequence_slug=sequence_slug, statuses=previewable_statuses)[0] is None:
-                return f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
+            sequence_id, error = resolve_normalized_advio_sequence_id(
+                sequence_slug=sequence_slug,
+                path_config=path_config,
+            )
+            if sequence_id is None:
+                return error
             return None
         case Record3DSourceConfig():
             if request.mode is not PipelineMode.STREAMING:
@@ -312,25 +304,6 @@ def load_pipeline_run_config(path_config: PathConfig, config_path: Path) -> tupl
         return None, str(exc)
 
 
-def resolve_advio_sequence_id(
-    *,
-    sequence_slug: str,
-    statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, str | None]:
-    """Resolve one ADVIO sequence id and matching error message."""
-    sequence_id = None
-    for status in statuses:
-        if status.scene.sequence_slug == sequence_slug:
-            sequence_id = int(status.scene.sequence_id)
-            break
-    if sequence_id is None and sequence_slug.startswith("advio-"):
-        suffix = sequence_slug.split("-", maxsplit=1)[1]
-        sequence_id = int(suffix) if suffix.isdigit() else None
-    if sequence_id is None:
-        return None, f"ADVIO sequence '{sequence_slug}' is not replay-ready in the local dataset."
-    return sequence_id, None
-
-
 def parse_optional_int(*, raw_value: str, field_label: str) -> tuple[int | None, str | None]:
     """Parse a blankable integer form field."""
     if raw_value == "":
@@ -370,6 +343,7 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
             "reconstruction": request.stages.reconstruction.model_dump(mode="json"),
             "align_cloud": request.stages.align_cloud.model_dump(mode="json"),
             "evaluate_cloud": request.stages.evaluate_cloud.model_dump(mode="json"),
+            "evaluate_image": request.stages.evaluate_image.model_dump(mode="json"),
             "summary": request.stages.summary.model_dump(mode="json"),
         },
         "visualization": request.visualization.model_dump(mode="json"),
@@ -381,7 +355,6 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
             target_fps=target_fps,
             dataset_serving=dataset_serving,
             replay_mode=replay_mode,
-            normalize_video_orientation=normalize_video_orientation,
         ):
             payload["source"] = {
                 "kind": "advio",
@@ -389,8 +362,11 @@ def request_summary_payload(request: RunConfig) -> JsonObject:
                 "frame_stride": frame_stride,
                 "target_fps": target_fps,
                 "replay_mode": replay_mode.value,
-                "dataset_serving": None if dataset_serving is None else dataset_serving.model_dump(mode="json"),
-                "normalize_video_orientation": normalize_video_orientation,
+                "dataset_serving": None
+                if dataset_serving is None
+                else dataset_serving.model_copy(
+                    update={"pose_frame_mode": AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL}
+                ).model_dump(mode="json"),
             }
         case _:
             payload["source"] = request.stages.source.backend.model_dump(mode="json")
@@ -446,7 +422,6 @@ __all__ = [
     "record3d_source_config_from_action",
     "request_summary_payload",
     "request_support_error",
-    "resolve_advio_sequence_id",
     "source_input_error",
     "sync_pipeline_page_state_from_template",
 ]

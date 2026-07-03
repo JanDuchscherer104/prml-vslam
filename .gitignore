@@ -186,7 +186,9 @@ cython_debug/
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
 #  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # Ruff stuff:
 .ruff_cache/
@@ -226,15 +228,28 @@ docs/slides/**/*.svgz
 !.codex/config.toml
 !.codex/hooks.json
 
+
+# Claude working directory
+.claude/
+
 # Agent scratch space
 .agents/tmp/
 .agents/work/
 .agents/skills/repo-context-explorer/
+.omc/
 
 # Local pipeline/demo outputs
 .artifacts/
+.artifacts/**/native/
+.artifacts/**/rgb/
+.artifacts/**/frames/
+.artifacts/**/*.ply
+.artifacts/**/*.npy
+.artifacts/**/*.rrd
+.artifacts/**/point_cloud_confidences.npz
 .data/
 .logs/
+external/lingbot-map
 
 # Generated local documentation exports
 README_files/

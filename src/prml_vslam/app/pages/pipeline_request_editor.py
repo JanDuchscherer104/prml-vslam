@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 import streamlit as st
 
-from prml_vslam.methods.stage.backend_config import Mast3rSlamBackendConfig, MethodId, VistaSlamBackendConfig
+from prml_vslam.methods.stage.backend_config import (
+    LingbotMapSlamBackendConfig,
+    Mast3rSlamBackendConfig,
+    MethodId,
+    VistaSlamBackendConfig,
+)
 from prml_vslam.pipeline import PipelineMode
 from prml_vslam.pipeline.config import BackendSpec, build_backend_spec
-from prml_vslam.sources.datasets.advio import AdvioLocalSceneStatus, AdvioModality, AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.advio import AdvioPoseFrameMode, AdvioPoseSource
+from prml_vslam.sources.datasets.normalized_query import NormalizedSequenceRecord, normalized_advio_pose_sources
 from prml_vslam.sources.record3d.record3d import Record3DTransportId
 
 from ..models import PipelinePageState, PipelineSourceId
@@ -20,13 +26,33 @@ from ..record3d_controls import render_record3d_transport_controls, render_recor
 if TYPE_CHECKING:
     from ..bootstrap import AppContext
 
+_DEVICE_OPTIONS: tuple[Literal["auto", "cuda", "cpu"], ...] = ("auto", "cuda", "cpu")
+_VISTA_KEYFRAME_DETECTION_OPTIONS: tuple[Literal["flow", "stride", "flow_stride"], ...] = (
+    "flow",
+    "stride",
+    "flow_stride",
+)
+_LINGBOT_MODE_OPTIONS: tuple[Literal["streaming", "windowed"], ...] = ("streaming", "windowed")
+_LINGBOT_MIN_IMAGE_SIZE = 224
+_LINGBOT_MIN_DEPTH_M = 1e-6
+
+
+def _coerce_lingbot_image_size_to_patch_grid(image_size: int, patch_size: int) -> int:
+    """Return the smallest valid LingBot image size for the selected patch grid."""
+    patch_size = max(int(patch_size), 1)
+    image_size = max(int(image_size), _LINGBOT_MIN_IMAGE_SIZE)
+    remainder = image_size % patch_size
+    if remainder:
+        image_size += patch_size - remainder
+    return image_size
+
 
 def render_request_editor(
     *,
     context: AppContext,
     page_state: PipelinePageState,
     selected_config_path: Path,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    advio_records: list[NormalizedSequenceRecord],
 ) -> tuple[PipelinePageAction, str | None, str | None]:
     """Render grouped request controls and return the resolved action payload."""
     source_tab, run_tab, slam_tab, stages_tab, visualization_tab = st.tabs(
@@ -44,13 +70,12 @@ def render_request_editor(
             record3d_frame_timeout_seconds,
             pose_source,
             pose_frame_mode,
-            normalize_video_orientation,
             source_input_error,
         ) = _render_source_settings(
             context=context,
             page_state=page_state,
             source_kind=source_kind,
-            previewable_statuses=previewable_statuses,
+            advio_records=advio_records,
         )
     with run_tab:
         experiment_name, mode = _render_request_identity_controls(page_state=page_state, source_kind=source_kind)
@@ -66,6 +91,7 @@ def render_request_editor(
             trajectory_eval_enabled,
             trajectory_alignment_enabled,
             evaluate_cloud,
+            evaluate_image,
         ) = _render_stage_settings(page_state)
     with visualization_tab:
         (
@@ -103,6 +129,7 @@ def render_request_editor(
                 "trajectory_eval_enabled": trajectory_eval_enabled,
                 "trajectory_alignment_enabled": trajectory_alignment_enabled,
                 "evaluate_cloud": evaluate_cloud,
+                "evaluate_image": evaluate_image,
                 "connect_live_viewer": connect_live_viewer,
                 "export_viewer_rrd": export_viewer_rrd,
                 "grpc_url": grpc_url,
@@ -119,7 +146,6 @@ def render_request_editor(
                 "record3d_frame_timeout_seconds": record3d_frame_timeout_seconds,
                 "pose_source": pose_source,
                 "pose_frame_mode": pose_frame_mode,
-                "normalize_video_orientation": normalize_video_orientation,
             }
         ),
         slam_input_error or visualization_input_error,
@@ -145,6 +171,8 @@ def _pipeline_method_help(method: MethodId) -> str:
     """Explain the current execution semantics for the selected method."""
     if method is MethodId.MAST3R:
         return "Real MASt3R-SLAM backend for offline and streaming runs (requires CUDA + upstream checkpoints)."
+    if method is MethodId.LINGBOT_MAP:
+        return "Real LingBot-Map backend for offline and streaming runs (requires upstream checkout and checkpoint)."
     return "Real ViSTA-SLAM backend for offline and streaming runs."
 
 
@@ -170,7 +198,7 @@ def _render_source_settings(
     context: AppContext,
     page_state: PipelinePageState,
     source_kind: PipelineSourceId,
-    previewable_statuses: list[AdvioLocalSceneStatus],
+    advio_records: list[NormalizedSequenceRecord],
 ) -> tuple[
     int | None,
     int,
@@ -181,7 +209,6 @@ def _render_source_settings(
     float,
     AdvioPoseSource,
     AdvioPoseFrameMode,
-    bool,
     str | None,
 ]:
     advio_sequence_id = page_state.advio_sequence_id
@@ -190,8 +217,7 @@ def _render_source_settings(
     record3d_wifi_device_address = page_state.record3d_wifi_device_address
     record3d_frame_timeout_seconds = page_state.record3d_frame_timeout_seconds
     pose_source = page_state.pose_source
-    pose_frame_mode = page_state.pose_frame_mode
-    normalize_video_orientation = page_state.normalize_video_orientation
+    pose_frame_mode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
     dataset_frame_stride = page_state.dataset_frame_stride
     dataset_target_fps = page_state.dataset_target_fps
     source_input_error = None
@@ -200,14 +226,13 @@ def _render_source_settings(
             advio_sequence_id,
             pose_source,
             pose_frame_mode,
-            normalize_video_orientation,
             dataset_frame_stride,
             dataset_target_fps,
             source_input_error,
         ) = _render_advio_source_settings(
             context=context,
             page_state=page_state,
-            previewable_statuses=previewable_statuses,
+            advio_records=advio_records,
         )
         if advio_sequence_id is None:
             source_input_error = "Select a replay-ready ADVIO scene."
@@ -229,7 +254,6 @@ def _render_source_settings(
         record3d_frame_timeout_seconds,
         pose_source,
         pose_frame_mode,
-        normalize_video_orientation,
         source_input_error,
     )
 
@@ -238,25 +262,29 @@ def _render_advio_source_settings(
     *,
     context: AppContext,
     page_state: PipelinePageState,
-    previewable_statuses: list[AdvioLocalSceneStatus],
-) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, bool, int, float | None, str | None]:
-    status_by_sequence_id = {status.scene.sequence_id: status for status in previewable_statuses}
-    previewable_ids = [status.scene.sequence_id for status in previewable_statuses]
-    if previewable_ids:
+    advio_records: list[NormalizedSequenceRecord],
+) -> tuple[int | None, AdvioPoseSource, AdvioPoseFrameMode, int, float | None, str | None]:
+    del context
+    record_by_numeric_id = {_advio_record_sequence_id(record): record for record in advio_records}
+    available_ids = list(record_by_numeric_id)
+    if available_ids:
         selected_advio_sequence = (
-            page_state.advio_sequence_id if page_state.advio_sequence_id in previewable_ids else previewable_ids[0]
+            page_state.advio_sequence_id if page_state.advio_sequence_id in available_ids else available_ids[0]
         )
         advio_sequence_id = st.selectbox(
             "ADVIO Scene",
-            options=previewable_ids,
-            index=previewable_ids.index(selected_advio_sequence),
-            format_func=lambda sequence_id: context.advio_service.scene(sequence_id).display_name,
+            options=available_ids,
+            index=available_ids.index(selected_advio_sequence),
+            format_func=lambda sequence_id: record_by_numeric_id[sequence_id].sequence_label,
         )
     else:
         advio_sequence_id = None
-        st.info("No replay-ready ADVIO scenes are available.")
+        st.info("No normalized ADVIO scenes are available.")
     provider_options = (
-        _advio_provider_options(status_by_sequence_id.get(advio_sequence_id))
+        normalized_advio_pose_sources(
+            advio_records,
+            sequence_id=record_by_numeric_id[advio_sequence_id].sequence_id,
+        )
         if advio_sequence_id is not None
         else [AdvioPoseSource.GROUND_TRUTH]
     )
@@ -267,16 +295,7 @@ def _render_advio_source_settings(
         index=provider_options.index(resolved_pose_source),
         format_func=lambda item: item.label,
     )
-    pose_frame_mode = st.selectbox(
-        "Pose Frame Mode",
-        options=list(AdvioPoseFrameMode),
-        index=list(AdvioPoseFrameMode).index(page_state.pose_frame_mode),
-        format_func=lambda item: item.label,
-    )
-    normalize_video_orientation = st.toggle(
-        "Normalize video display orientation",
-        value=page_state.normalize_video_orientation,
-    )
+    pose_frame_mode = AdvioPoseFrameMode.FIXEDPOINT_COMMON_START_LOCAL
     dataset_frame_stride = int(
         st.number_input("Dataset Frame Stride", min_value=1, max_value=120, value=page_state.dataset_frame_stride)
     )
@@ -298,22 +317,15 @@ def _render_advio_source_settings(
         advio_sequence_id,
         pose_source,
         pose_frame_mode,
-        normalize_video_orientation,
         dataset_frame_stride,
         dataset_target_fps,
         sampling_error,
     )
 
 
-def _advio_provider_options(status: AdvioLocalSceneStatus | None) -> list[AdvioPoseSource]:
-    if status is None:
-        return [AdvioPoseSource.GROUND_TRUTH]
-    options = [AdvioPoseSource.GROUND_TRUTH]
-    if AdvioModality.PIXEL_ARCORE in status.local_modalities:
-        options.append(AdvioPoseSource.ARCORE)
-    if AdvioModality.IPHONE_ARKIT in status.local_modalities:
-        options.append(AdvioPoseSource.ARKIT)
-    return options
+def _advio_record_sequence_id(record: NormalizedSequenceRecord) -> int:
+    suffix = record.sequence_id.split("-", maxsplit=1)[1] if record.sequence_id.startswith("advio-") else ""
+    return int(suffix)
 
 
 def _render_record3d_source_settings(
@@ -375,6 +387,8 @@ def _render_slam_settings(page_state: PipelinePageState) -> tuple[MethodId, int 
             backend_spec = _render_vista_backend_settings(backend_spec, max_frames=slam_max_frames)
         case MethodId.MAST3R:
             backend_spec = _render_mast3r_backend_settings(backend_spec, max_frames=slam_max_frames)
+        case MethodId.LINGBOT_MAP:
+            backend_spec = _render_lingbot_backend_settings(backend_spec, max_frames=slam_max_frames)
     return method, slam_max_frames, backend_spec, slam_max_frames_error
 
 
@@ -398,11 +412,21 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     if not isinstance(backend, VistaSlamBackendConfig):
         raise TypeError("Expected a ViSTA backend config.")
 
-    device_options = ["auto", "cuda", "cpu"]
-    device = st.selectbox(
-        "Device",
-        options=device_options,
-        index=device_options.index(backend.device),
+    device = cast(
+        Literal["auto", "cuda", "cpu"],
+        st.selectbox(
+            "Device",
+            options=_DEVICE_OPTIONS,
+            index=_DEVICE_OPTIONS.index(backend.device),
+        ),
+    )
+    keyframe_detection = cast(
+        Literal["flow", "stride", "flow_stride"],
+        st.selectbox(
+            "Keyframe Detection",
+            options=_VISTA_KEYFRAME_DETECTION_OPTIONS,
+            index=_VISTA_KEYFRAME_DETECTION_OPTIONS.index(backend.keyframe_detection),
+        ),
     )
     keyframe_options = ["stride", "flow"]
     keyframe_detection = st.selectbox(
@@ -431,6 +455,7 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     loop_cand_thresh_neighbor = int(
         st.number_input("Loop Candidate Neighbor Threshold", min_value=0, value=backend.loop_cand_thresh_neighbor)
     )
+    stride = int(st.number_input("Keyframe Stride", min_value=1, value=backend.stride))
     random_seed = int(st.number_input("Random Seed", value=backend.random_seed))
     with st.expander("ViSTA Paths", expanded=False):
         vista_slam_dir = _path_input("ViSTA Directory", backend.vista_slam_dir)
@@ -455,19 +480,23 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         rel_pose_thres=rel_pose_thres,
         pgo_every=pgo_every,
         random_seed=random_seed,
+        keyframe_detection=keyframe_detection,
+        stride=stride,
         device=device,
     )
 
 
-def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
+def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool]:
     left, right = st.columns(2, gap="large")
     with left:
         st.markdown("**SLAM Outputs**")
         emit_sparse_points = st.toggle(
             "Sparse Geometry",
-            value=False if page_state.method is MethodId.MAST3R else page_state.emit_sparse_points,
-            disabled=page_state.method is MethodId.MAST3R,
-            help="MASt3R-SLAM exports one dense pointmap PLY, not a separate sparse landmark cloud.",
+            value=False
+            if page_state.method in {MethodId.MAST3R, MethodId.LINGBOT_MAP}
+            else page_state.emit_sparse_points,
+            disabled=page_state.method in {MethodId.MAST3R, MethodId.LINGBOT_MAP},
+            help="MASt3R-SLAM and LingBot-Map export dense geometry, not a separate sparse landmark cloud.",
         )
         emit_dense_points = st.toggle("Dense Geometry", value=page_state.emit_dense_points)
         st.markdown("**Derived Stages**")
@@ -479,6 +508,8 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         trajectory_alignment_enabled = st.toggle("Trajectory Alignment", value=page_state.trajectory_alignment_enabled)
         evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
         st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
+        evaluate_image = st.toggle("Image-Quality Evaluation", value=page_state.evaluate_image)
+        st.caption("Renders the SLAM dense cloud from the estimated trajectory and scores it against input frames.")
         st.markdown("**Summary**")
         st.toggle("Run Summary", value=True, disabled=True)
     return (
@@ -489,6 +520,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         trajectory_eval_enabled,
         trajectory_alignment_enabled,
         evaluate_cloud,
+        evaluate_image,
     )
 
 
@@ -504,14 +536,12 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
     col_a, col_b = st.columns(2, gap="small")
     with col_a:
         device = st.text_input("Torch Device", value=backend.device).strip() or backend.device
-        img_size = int(
-            st.number_input(
-                "Encoder Image Size",
-                min_value=224,
-                step=32,
-                value=int(backend.img_size),
-                help="Long-edge size for the MASt3R encoder. 512 is the upstream default; 224 is the small-model setting.",
-            )
+        img_size_options = [224, 512]
+        img_size = st.selectbox(
+            "Encoder Image Size",
+            options=img_size_options,
+            index=img_size_options.index(backend.img_size) if backend.img_size in img_size_options else 1,
+            help="Long-edge size for the MASt3R encoder. Upstream supports only 224 or 512 (512 is the default).",
         )
         c_conf_threshold = float(
             st.number_input(
@@ -520,6 +550,25 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
                 value=float(backend.c_conf_threshold),
                 help="Confidence threshold applied when exporting the dense point cloud.",
             )
+        )
+        override_keyframes = st.checkbox(
+            "Override Keyframe Density",
+            value=backend.match_frac_thresh is not None,
+            help="Force MASt3R's keyframe overlap threshold (tracking.match_frac_thresh) instead of the YAML default.",
+        )
+        match_frac_thresh = (
+            float(
+                st.slider(
+                    "Keyframe Overlap Threshold",
+                    min_value=0.1,
+                    max_value=0.9,
+                    value=float(backend.match_frac_thresh) if backend.match_frac_thresh is not None else 0.5,
+                    step=0.05,
+                    help="Upstream default 0.333. Higher = more keyframes = denser cloud / higher image coverage (slower).",
+                )
+            )
+            if override_keyframes
+            else None
         )
     with col_b:
         # Tri-state: respect YAML / force True / force False
@@ -574,9 +623,110 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
         device=device,
         img_size=img_size,
         use_calib=use_calib,
+        match_frac_thresh=match_frac_thresh,
         backend_poll_interval_s=backend_poll_interval_s,
         backend_join_timeout_s=backend_join_timeout_s,
         keyframe_buffer_size=keyframe_buffer_size,
+    )
+
+
+def _render_lingbot_backend_settings(
+    backend_spec: BackendSpec,
+    *,
+    max_frames: int | None,
+) -> LingbotMapSlamBackendConfig:
+    backend = (
+        backend_spec
+        if isinstance(backend_spec, LingbotMapSlamBackendConfig)
+        else build_backend_spec(method=MethodId.LINGBOT_MAP, max_frames=max_frames)
+    )
+    if not isinstance(backend, LingbotMapSlamBackendConfig):
+        raise TypeError("Expected a LingBot-Map backend config.")
+
+    col_a, col_b = st.columns(2, gap="small")
+    with col_a:
+        device = cast(
+            Literal["auto", "cuda", "cpu"],
+            st.selectbox("Device", options=_DEVICE_OPTIONS, index=_DEVICE_OPTIONS.index(backend.device)),
+        )
+        mode = cast(
+            Literal["streaming", "windowed"],
+            st.selectbox(
+                "Inference Mode", options=_LINGBOT_MODE_OPTIONS, index=_LINGBOT_MODE_OPTIONS.index(backend.mode)
+            ),
+        )
+        patch_size = int(st.number_input("Patch Size", min_value=1, value=int(backend.patch_size)))
+        image_size_min = _coerce_lingbot_image_size_to_patch_grid(_LINGBOT_MIN_IMAGE_SIZE, patch_size)
+        image_size = int(
+            st.number_input(
+                "Image Size",
+                min_value=image_size_min,
+                value=_coerce_lingbot_image_size_to_patch_grid(int(backend.image_size), patch_size),
+                step=patch_size,
+            )
+        )
+        image_size = _coerce_lingbot_image_size_to_patch_grid(image_size, patch_size)
+    with col_b:
+        num_scale_frames = int(st.number_input("Scale Frames", min_value=1, value=int(backend.num_scale_frames)))
+        point_stride = int(st.number_input("Point Stride", min_value=1, value=int(backend.point_stride)))
+        confidence_threshold = float(
+            st.number_input("Confidence Threshold", min_value=0.0, value=float(backend.confidence_threshold))
+        )
+        auto_keyframes = st.toggle("Auto Keyframes", value=backend.keyframe_interval == "auto")
+        keyframe_interval: int | Literal["auto"] = "auto"
+        if not auto_keyframes:
+            default_keyframe_interval = 1 if backend.keyframe_interval == "auto" else int(backend.keyframe_interval)
+            keyframe_interval = int(
+                st.number_input("Keyframe Interval", min_value=1, value=max(default_keyframe_interval, 1))
+            )
+        limit_dense_points = st.toggle("Limit Dense Points", value=backend.max_points is not None)
+        max_points = None
+        if limit_dense_points:
+            max_points = int(st.number_input("Max Dense Points", min_value=1, value=backend.max_points or 100_000))
+        limit_depth = st.toggle("Limit Depth", value=backend.max_depth_m is not None)
+        max_depth_m = None
+        if limit_depth:
+            max_depth_m = max(
+                _LINGBOT_MIN_DEPTH_M,
+                float(
+                    st.number_input(
+                        "Max Depth M",
+                        min_value=_LINGBOT_MIN_DEPTH_M,
+                        value=backend.max_depth_m or 100.0,
+                    )
+                ),
+            )
+        use_amp = st.toggle("AMP", value=backend.use_amp)
+        use_sdpa = st.toggle("SDPA", value=backend.use_sdpa)
+
+    with st.expander("LingBot Paths", expanded=False):
+        checkpoint_path = _path_input("Checkpoint Path", backend.checkpoint_path)
+
+    return LingbotMapSlamBackendConfig(
+        method_id=MethodId.LINGBOT_MAP,
+        max_frames=max_frames,
+        checkpoint_path=checkpoint_path,
+        device=device,
+        mode=mode,
+        image_size=image_size,
+        patch_size=patch_size,
+        enable_3d_rope=backend.enable_3d_rope,
+        max_frame_num=backend.max_frame_num,
+        num_scale_frames=num_scale_frames,
+        kv_cache_sliding_window=backend.kv_cache_sliding_window,
+        keyframe_interval=keyframe_interval,
+        use_sdpa=use_sdpa,
+        use_amp=use_amp,
+        model_dtype=backend.model_dtype,
+        checkpoint_pos_embed=backend.checkpoint_pos_embed,
+        camera_num_iterations=backend.camera_num_iterations,
+        window_size=backend.window_size,
+        overlap_size=backend.overlap_size,
+        overlap_keyframes=backend.overlap_keyframes,
+        confidence_threshold=confidence_threshold,
+        point_stride=point_stride,
+        max_points=max_points,
+        max_depth_m=max_depth_m,
     )
 
 

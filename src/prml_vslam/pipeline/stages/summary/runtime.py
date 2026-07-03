@@ -6,7 +6,7 @@ from prml_vslam.interfaces.artifacts import ArtifactRef
 from prml_vslam.pipeline.contracts.events import StageOutcome
 from prml_vslam.pipeline.contracts.mode import PipelineMode
 from prml_vslam.pipeline.contracts.plan import RunPlan
-from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageStatus
+from prml_vslam.pipeline.contracts.provenance import RunSummary, StageManifest, StageRuntimeSummary, StageStatus
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageResult, StageRuntimeStatus
 from prml_vslam.pipeline.stages.base.protocols import OfflineStageRuntime
@@ -22,6 +22,7 @@ class SummaryStageInput(BaseData):
     plan: RunPlan
     run_paths: RunArtifactPaths
     stage_outcomes: list[StageOutcome]
+    stage_runtime_statuses: list[StageRuntimeStatus]
 
 
 class SummaryRuntime(OfflineStageRuntime[SummaryStageInput]):
@@ -70,6 +71,7 @@ class SummaryRuntime(OfflineStageRuntime[SummaryStageInput]):
                 plan=input_payload.plan,
                 run_paths=input_payload.run_paths,
                 stage_outcomes=input_payload.stage_outcomes,
+                stage_runtime_statuses=input_payload.stage_runtime_statuses,
             )
         except Exception as exc:
             self._status = self._status.model_copy(
@@ -105,6 +107,7 @@ def _project_summary(
     plan,
     run_paths,
     stage_outcomes: list[StageOutcome],
+    stage_runtime_statuses: list[StageRuntimeStatus],
 ) -> tuple[RunSummary, list[StageManifest], StageOutcome]:
     """Project persisted provenance from terminal stage outcomes."""
     stage_manifests = [
@@ -121,6 +124,9 @@ def _project_summary(
         run_id=plan.run_id,
         artifact_root=plan.artifact_root,
         stage_status={manifest.stage_id: manifest.status for manifest in stage_manifests},
+        stage_runtime_summaries={
+            status.stage_key: _runtime_summary_from_status(status) for status in stage_runtime_statuses
+        },
     )
     write_json(run_paths.summary_path, summary)
     write_json(run_paths.stage_manifests_path, stage_manifests)
@@ -144,6 +150,30 @@ def _project_summary(
         metrics={"stage_count": len(stage_outcomes)},
     )
     return summary, stage_manifests, summary_outcome
+
+
+def _runtime_summary_from_status(status: StageRuntimeStatus) -> StageRuntimeSummary:
+    """Project a live runtime status into the durable summary schema."""
+    return StageRuntimeSummary(
+        stage_key=status.stage_key,
+        lifecycle_state=status.lifecycle_state,
+        progress_message=status.progress_message,
+        completed_steps=status.completed_steps,
+        total_steps=status.total_steps,
+        progress_unit=status.progress_unit,
+        submitted_count=status.submitted_count,
+        completed_count=status.completed_count,
+        failed_count=status.failed_count,
+        processed_items=status.processed_items,
+        accepted_keyframes=status.accepted_keyframes,
+        fps=status.fps,
+        throughput=status.throughput,
+        throughput_unit=status.throughput_unit,
+        latency_ms=status.latency_ms,
+        last_warning=status.last_warning,
+        last_error=status.last_error,
+        updated_at_ns=status.updated_at_ns,
+    )
 
 
 __all__ = ["SummaryRuntime", "SummaryStageInput"]

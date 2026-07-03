@@ -16,7 +16,7 @@ from pydantic import Field
 from prml_vslam.interfaces.camera import CameraIntrinsics
 from prml_vslam.interfaces.observation import ObservationSequenceRef
 from prml_vslam.interfaces.transforms import FrameTransform
-from prml_vslam.sources.datasets.contracts import DatasetId, DatasetServingConfig
+from prml_vslam.sources.datasets.contracts import AdvioServingConfig, DatasetId
 from prml_vslam.utils import BaseData
 
 
@@ -61,7 +61,7 @@ class AdvioManifestAssets(BaseData):
     calibration_path: Path
     intrinsics: CameraIntrinsics
     T_cam_imu: FrameTransform
-    pose_refs: AdvioRawPoseRefs
+    pose_refs: AdvioRawPoseRefs | None = None
     fixpoints_csv_path: Path | None = None
 
 
@@ -70,10 +70,12 @@ class SequenceManifest(BaseData):
 
     sequence_id: str
     dataset_id: DatasetId | None = None
-    dataset_serving: DatasetServingConfig | None = None
+    dataset_serving: AdvioServingConfig | None = None
     video_path: Path | None = None
     rgb_dir: Path | None = None
     timestamps_path: Path | None = None
+    source_frame_indices_path: Path | None = None
+    observation_index_path: Path | None = None
     intrinsics_path: Path | None = None
     rotation_metadata_path: Path | None = None
     advio: AdvioManifestAssets | None = None
@@ -104,6 +106,7 @@ class ReferenceSource(StrEnum):
 class ReferenceCloudSource(StrEnum):
     """Typed source identifier for one prepared reference cloud."""
 
+    RECORD3D_LIDAR = "record3d_lidar"
     TUM_RGBD = "tum_rgbd"
 
 
@@ -111,6 +114,7 @@ class ReferenceCloudCoordinateStatus(StrEnum):
     """Coordinate status for one prepared reference cloud or trajectory."""
 
     SOURCE_NATIVE = "source_native"
+    REGISTERED = "registered"
     ALIGNED = "aligned"
 
 
@@ -158,6 +162,11 @@ class PreparedBenchmarkInputs(BaseData):
     """
 
     reference_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
+    """GT/reference trajectories that may anchor benchmark comparisons."""
+
+    candidate_trajectories: list[ReferenceTrajectoryRef] = Field(default_factory=list)
+    """External baseline trajectories that may be evaluated against a reference."""
+
     reference_clouds: list[ReferenceCloudRef] = Field(default_factory=list)
     observation_sequences: list[ObservationSequenceRef] = Field(default_factory=list)
 
@@ -168,7 +177,8 @@ class PreparedBenchmarkInputs(BaseData):
             (
                 reference
                 for reference in matching
-                if reference.coordinate_status is ReferenceCloudCoordinateStatus.SOURCE_NATIVE
+                if reference.coordinate_status
+                in {ReferenceCloudCoordinateStatus.SOURCE_NATIVE, ReferenceCloudCoordinateStatus.REGISTERED}
             ),
             next(iter(matching), None),
         )
