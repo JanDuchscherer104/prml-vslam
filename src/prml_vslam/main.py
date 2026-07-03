@@ -189,8 +189,6 @@ RUN_CONFIG_OVERRIDE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] 
             ("--stages.align_cloud.reference_source", "Preferred source-prepared reference cloud."),
             ("--stages.align_cloud.max_correspondence_distance_m", "ICP maximum correspondence distance in meters."),
             ("--stages.evaluate_cloud.enabled", "Enable dense-cloud diagnostic planning."),
-            ("--stages.evaluate_cloud.selection.reference_artifact_key", "Reference cloud artifact key."),
-            ("--stages.evaluate_cloud.selection.estimate_artifact_key", "Estimated cloud artifact key."),
             ("--stages.summary.enabled", "Enable summary projection."),
         ),
     ),
