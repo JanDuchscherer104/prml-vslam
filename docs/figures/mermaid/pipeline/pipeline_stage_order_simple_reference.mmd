@@ -1,0 +1,56 @@
+---
+config:
+  theme: base
+  htmlLabels: true
+  flowchart:
+    htmlLabels: true
+    nodeSpacing: 16
+    rankSpacing: 24
+    curve: linear
+  themeVariables:
+    background: "#ffffff"
+    fontFamily: "Inter, DejaVu Sans, Arial, sans-serif"
+    fontSize: "15px"
+    primaryTextColor: "#1f2937"
+    lineColor: "#64748b"
+  themeCSS: |
+    .nodeLabel { font-size: 15px; }
+    .edgeLabel { font-size: 12px; }
+    .cluster-label { font-size: 15px; font-weight: 700; }
+---
+flowchart LR
+    Source["<b>source</b><br/>Record3D stream / dataset<br/>TUM RGB-D / ADVIO"]:::input
+    Vslam["<b>vSLAM</b><br/>trajectory + clouds"]:::vslam
+    AlignTraj["<b>align.Traj</b><br/>Sim(3)"]:::transform
+    AlignGravity["<b>align.Gravity</b><br/>ground"]:::transform
+    EvalTraj["<b>eval.Traj</b><br/>metrics"]:::eval
+    AlignCloud["<b>align.Cloud</b><br/>ICP"]:::transform
+    EvalCloud["<b>eval.Cloud</b><br/>diagnostic"]:::eval
+    EvalImage["<b>eval.Image</b><br/>diagnostic"]:::eval
+    Recon["<b>Reconstruction</b><br/>dense model"]:::transform
+    Summary["<b>summary</b><br/>manifests"]:::output
+    Rerun["<b>RerunSink</b><br/>live / export"]:::output
+
+    Source --> Vslam
+    Vslam --> AlignTraj
+    Vslam --> AlignGravity
+    AlignTraj --> EvalTraj
+    AlignTraj --> AlignCloud
+    AlignCloud --> EvalCloud --> Summary
+    AlignCloud --> EvalImage
+    AlignCloud --> Recon --> Summary
+
+    Source -.-> Rerun
+    Vslam -.-> Rerun
+    AlignGravity -.-> Rerun
+    AlignTraj -.-> Rerun
+    AlignCloud -.-> Rerun
+    Recon -.-> Rerun
+
+    classDef input fill:#D5E8D4,stroke:#82B366,stroke-width:1.5px,rx:0,ry:0;
+    classDef output fill:#F8CECC,stroke:#B85450,stroke-width:1.5px,rx:0,ry:0;
+    classDef compute fill:#E1D5E7,stroke:#9673A6,stroke-width:1.5px,rx:8,ry:8;
+    classDef data fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.2px,rx:0,ry:0;
+    classDef vslam fill:#E1D5E7,stroke:#9673A6,stroke-width:1.5px,rx:8,ry:8;
+    classDef transform fill:#DAE8FC,stroke:#6C8EBF,stroke-width:1.5px,rx:8,ry:8;
+    classDef eval fill:#FFF2CC,stroke:#D6B656,stroke-width:1.5px,rx:8,ry:8;

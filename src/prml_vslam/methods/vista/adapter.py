@@ -53,7 +53,7 @@ class VistaSlamBackend(SlamBackend):
             console=self._console,
             output_policy=output_policy,
             artifact_root=artifact_root,
-            live_mode=True,
+            live_mode=False,
         )
 
     def step_streaming(self, frame: Observation) -> None:

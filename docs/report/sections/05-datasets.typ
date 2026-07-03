@@ -109,6 +109,29 @@ independent validation path is added.
   caption: [Dataset information preserved by source normalization before methods are executed.],
 ) <tab:dataset-structures>
 
+The normalized datastore used for the final evidence pass covers all three source families. The
+coverage summary in @tab:dataset-coverage is derived from the checked-in
+`docs/figures/evidence/dataset-summary.csv` artifact used by the final slide deck. ADVIO dominates
+duration because it contains longer pedestrian phone trajectories, while TUM RGB-D supplies more
+controlled RGB-D sequences and Record3D supplies a smaller custom smartphone set with depth and
+ARKit provider poses.
+
+#figure(
+  table(
+    columns: (0.7fr, 0.55fr, 0.75fr, 0.75fr),
+    align: (left, right, right, right),
+    inset: (x: 0.24em, y: 0.22em),
+    toprule(),
+    table.header([Dataset], [Sequences], [Total duration (min)], [Mean duration (s)]),
+    midrule(),
+    [ADVIO], [23], [67.8], [177.0],
+    [TUM RGB-D], [19], [19.6], [61.9],
+    [Record3D], [8], [13.8], [103.8],
+    bottomrule(),
+  ),
+  caption: [Normalized datastore coverage used to frame the final benchmark evidence.],
+) <tab:dataset-coverage>
+
 The normalized datastore separates persistent source materialization from run-local sampling.
 Full-frame payloads are prepared once for a dataset, sequence, and source profile; later runs select
 frame stride or target frame rate without rebuilding the source entry. The metric record must still

@@ -51,8 +51,8 @@ class SessionStateStore:
             return state
 
     def save(self, state: AppState) -> None:
-        """Persist the JSON-friendly app state."""
-        st.session_state[self.state_key] = state.model_dump(mode="json")
+        """Persist the app state into in-memory session storage."""
+        st.session_state[self.state_key] = state.model_dump(mode="python")
 
     def load_record3d_runtime(self) -> Record3DStreamRuntimeController:
         """Load or create the opaque Record3D runtime controller for this session."""
