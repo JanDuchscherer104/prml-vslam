@@ -149,7 +149,8 @@ cross-provider fixedpoint registration before comparison, whereas TUM RGB-D and 
 local SLAM-compatible origin for one reference stream.
 
 The normalized datastore used for the final evidence pass covers all three source families. The
-coverage summary in @tab:dataset-coverage is derived from the checked-in
+coverage summaries in @tab:dataset-duration-coverage and @tab:dataset-trajectory-coverage are
+derived from the checked-in
 `docs/figures/evidence/dataset-summary.csv` artifact and from the current normalized
 `stats_long.csv` entries. ADVIO dominates total duration because it contains longer pedestrian
 phone trajectories. TUM RGB-D supplies short controlled RGB-D scenes with full depth coverage.
@@ -159,46 +160,67 @@ with the matched-scene ranges reported later for method comparisons.
 
 #figure(
   [
-    #set text(size: 7pt)
+    #set text(size: 6.6pt)
     #table(
-      columns: (0.66fr, 0.28fr, 0.42fr, 0.42fr, 0.44fr, 0.62fr, 0.44fr, 0.62fr),
-      align: (left, right, right, right, right, right, right, right),
-      inset: (x: 0.12em, y: 0.16em),
-      column-gutter: 0.18em,
+      columns: (auto, auto, auto, auto, auto, auto),
+      align: center,
+      inset: (x: 0.12em, y: 0.2em),
+      column-gutter: 2em,
+      row-gutter: 0.2em,
       toprule(),
-      [*Dataset*],
-      [*Seq.*],
+      [#align(center)[*Dataset*]],
+      [#align(center)[*Seq.*]],
       table.cell(colspan: 4)[#align(center)[*Duration*]],
-      table.cell(colspan: 2)[#align(center)[*Trajectory*]],
       cmidrule(start: 2, end: 6),
-      cmidrule(start: 6, end: 8),
       [],
       [],
-      [*Total*],
-      [*Mean*],
-      table.cell(colspan: 2)[#align(center)[*Observation* (s)]],
-      table.cell(colspan: 2)[#align(center)[*Path* (m)]],
-      cmidrule(start: 4, end: 6),
-      cmidrule(start: 6, end: 8),
+      [#align(center)[*Total* (min)]],
+      table.cell(colspan: 3)[#align(center)[*Observation* (s)]],
+      cmidrule(start: 3, end: 6),
       [],
       [],
-      [(min)],
-      [(s)],
-      [*Median*],
-      [*Range*],
-      [*Median*],
-      [*Range*],
+      [],
+      [#align(center)[*Min*]],
+      [#align(center)[*Median*]],
+      [#align(center)[*Max*]],
       midrule(),
-      [*ADVIO*], [23], [67.8], [177.0], [151.6], [51.7-385.6], [140.3], [19.5-486.8],
-      [*TUM RGB-D*], [19], [19.6], [61.9], [46.3], [20.4-172.7], [14.1], [2.6-22.2],
-      [*Record3D*], [8], [13.8], [103.8], [103.2], [33.9-173.9], [129.2], [43.5-1028.2],
+      [*ADVIO*], [23], [67.8], [51.7], [151.6], [385.6],
+      [*TUM RGB-D*], [19], [19.6], [20.4], [46.3], [172.7],
+      [*Record3D*], [8], [13.8], [33.9], [103.2], [173.9],
       bottomrule(),
     )
   ],
   placement: auto,
-  scope: "parent",
-  caption: [Normalized datastore coverage for the final evidence pass. Durations summarize manifest timestamps; path lengths summarize prepared reference trajectories.],
-) <tab:dataset-coverage>
+  caption: [Sequence count and duration coverage for the final evidence pass. Durations summarize manifest timestamps.],
+) <tab:dataset-duration-coverage>
+
+#figure(
+  [
+    #set text(size: 6.6pt)
+    #table(
+      columns: (auto, auto, auto, auto),
+      align: center,
+      inset: (x: 0.12em, y: 0.2em),
+      column-gutter: 2em,
+      row-gutter: 0.2em,
+      toprule(),
+      [#align(center)[*Dataset*]],
+      table.cell(colspan: 3)[#align(center)[*Trajectory Path* (m)]],
+      cmidrule(start: 1, end: 4),
+      [],
+      [#align(center)[*Min*]],
+      [#align(center)[*Median*]],
+      [#align(center)[*Max*]],
+      midrule(),
+      [*ADVIO*], [19.5], [140.3], [486.8],
+      [*TUM RGB-D*], [2.6], [14.1], [22.2],
+      [*Record3D*], [43.5], [129.2], [1028.2],
+      bottomrule(),
+    )
+  ],
+  placement: auto,
+  caption: [Prepared-reference trajectory path-length coverage for the final evidence pass.],
+) <tab:dataset-trajectory-coverage>
 
 The normalized datastore separates persistent source materialization from run-local sampling.
 Full-frame payloads are prepared once for a dataset, sequence, and source profile; later runs select
@@ -224,7 +246,12 @@ self-recorded smartphone video.
 The figures and tables in this section should make both coverage and qualitative difference visible.
 @fig:dataset-qualitative-coverage shows the qualitative axis that motivates the three-dataset
 design: trajectory-only ADVIO, controlled TUM RGB-D reference geometry, and Record3D target-domain
-RGB-D capture. @tab:dataset-coverage gives the compact corpus-size view. The most useful
-supplementary statistics for a fuller dataset appendix would be sequence duration and path-length
-distributions, depth-coverage distributions, indoor/outdoor or scene-category breakdowns, example
-RGB/depth frames, and reference trajectory or cloud overlays for representative sequences.
+RGB-D capture. @tab:dataset-duration-coverage gives the compact corpus-size view, while
+@tab:dataset-trajectory-coverage separates the prepared-reference trajectory statistics. The most
+useful supplementary statistics for a fuller dataset appendix would be sequence duration and
+path-length distributions, depth-coverage distributions, indoor/outdoor or scene-category
+breakdowns, example RGB/depth frames, and reference trajectory or cloud overlays for representative
+sequences. Appendix figures and tables provide the selected ADVIO catalog distributions,
+normalized-store coverage, statistic surfaces, and reference caveats in
+@fig:appendix-advio-catalog-disclosure, @fig:appendix-dataset-summary-bars,
+@tab:appendix-normalized-stat-surface, and @tab:appendix-reference-caveats.
