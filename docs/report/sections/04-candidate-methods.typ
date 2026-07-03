@@ -2,25 +2,26 @@
 
 = Reference Methods
 
-The benchmark treats each reconstruction system as a method that consumes an ordered image stream
-and returns camera poses with dense or semi-dense geometry. The contract is intentionally weaker
-than a shared map representation: methods may produce pointmaps, fused clouds, depth maps,
-confidence rasters, keyframes, or transformer memories. The relevant distinction is how each
-representation affects frame placement, drift correction, and dense-geometry interpretation.
+This section details the state-of-the-art dense monocular SLAM systems chosen for analysis. Each method consumes an ordered image stream and returns camera poses with dense or semi-dense geometry. These systems employ flexible output representations rather than a strict global map, generating structures such as local pointmaps, fused clouds, depth maps, confidence rasters, keyframes, or transformer memories. The primary distinction among them lies in how these varied representations handle frame placement, drift correction, and final dense geometry estimation.
 
 == ViSTA-SLAM
 // RESPONSIBLIY: Lukas (ViSTA-SLAM subsection)
 
-ViSTA-SLAM is an intrinsics-free dense monocular SLAM system based on symmetric two-view
-association @zhang2026vistaslam. Instead of regressing both images into a chosen reference view, the
-frontend predicts local pointmaps in each view's coordinate system plus a relative pose. The backend
-then optimizes a Sim(3) pose graph with pose, scale, and loop-closure edges. Scale edges are needed
-because repeated pointmap predictions for the same view may not share a common scale.
+ViSTA-SLAM operates as an intrinsics-free dense monocular SLAM system using symmetric two-view association @zhang2026vistaslam. The architecture splits into a frontend for local geometry extraction and a pose graph backend for global optimization.
 
-This representation matches raw smartphone video because known intrinsics are not required and
-dense output is available. It also defines the evaluation risk: pairwise learned pointmaps can yield
-visually plausible fused geometry while retaining correlated scale or shape errors. ViSTA-SLAM
-therefore needs both trajectory placement and dense-cloud placement checks.
+The Symmetric Two-view Association (STA) frontend processes uncalibrated RGB image pairs via a shared Vision Transformer encoder. Unlike asymmetric models that regress geometry into a single reference frame, STA predicts local point clouds for each view alongside their relative pose. This symmetric formulation reduces the overall parameter count compared to asymmetric baselines, enabling efficient real-time inference. The frontend optimizes pointmap regression, geometric consistency, and relative pose alignment. The relative pose loss incorporates cycle consistency along the $op("SE")(3)$ manifold:
+
+$
+  L_("pose") & = w_(i j) ( L_R (bold(R)_(i j), hat(bold(R))_(i j)) \
+             & quad + L_t (bold(t)_(i j), hat(bold(t))_(i j)) + L_("id") ) \
+             & quad - alpha log(w_(i j))
+$
+
+The backend mitigates trajectory drift through $op("Sim")(3)$ pose graph optimization. Graph nodes encode absolute camera poses and independent scale factors. The graph connects these nodes using pose edges from single forward passes and scale edges across different passes of the same view. The system minimizes the residual error in the Lie algebra $frak(s)frak(i)frak(m)(3)$ via the Levenberg-Marquardt algorithm:
+
+$ min_({bold(v)_i^j}) sum_(bold(e)_(i j)) norm(log_("Sim"(3)) (bold(e)_(i j) dot (bold(v)_i^j)^(-1) dot bold(v)_j^i))_(bold(Omega)_(i j))^2 $
+
+This representation matches raw smartphone video constraints. It removes the requirement for known intrinsics while supplying dense 3D geometry. Pairwise learned pointmaps present a specific evaluation risk: the network can generate plausible local geometry that retains correlated scale or shape distortions. This requires benchmark adapters to validate both trajectory alignment and dense cloud placement to verify metric consistency.
 
 == MASt3R-SLAM
 // RESPONSIBLIY: Christopher (MASt3R-SLAM subsection)
