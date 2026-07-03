@@ -118,7 +118,7 @@ max_correspondence_distance_m = 0.05
 enabled = true
 
 [stages.reconstruction]
-enabled = false
+enabled = true
 
     [stages.reconstruction.input_selection]
     source_kind = "slam_dense_point_cloud"

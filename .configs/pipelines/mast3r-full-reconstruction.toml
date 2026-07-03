@@ -94,6 +94,15 @@ max_correspondence_distance_m = 0.02
 [stages.evaluate_trajectory]
 enabled = true
 
+[stages.reconstruction]
+enabled = true
+
+    [stages.reconstruction.input_selection]
+    source_kind = "slam_dense_point_cloud"
+
+    [stages.reconstruction.backend]
+    method_id = "poisson"
+
 [stages.evaluate_cloud]
 enabled = true
 
