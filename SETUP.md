@@ -203,6 +203,18 @@ uv run --extra lingbot prml-vslam run-config .configs/pipelines/lingbot-smoke.to
 
 **Note**: This requires the _normalized_ vslam-datastore entry of `freiburg3_large_cabinet` to be present. See [Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore) for details.
 
+## NKSR/CUDA Setup
+
+The NKSR reconstruction backend is installed through the optional `nksr` extra. It requires `torch-scatter` and compiling a CUDA extension, so it must be run with the mamba environment activated.
+
+```bash
+# mamba env create -f environment.yml
+mamba activate prml-vslam
+uv sync --extra dev --extra nksr
+```
+
+This will pull and build the Neural Kernel Surface Reconstruction package from the upstream NVIDIA repository. You can then run pipeline configurations that specify `method_id = "nksr"` for the reconstruction backend.
+
 ## Dataset Downloads and VSLAM Datastore
 
 Dataset-backed pipeline configs and sweeps read from the normalized VSLAM
