@@ -66,4 +66,5 @@
 #include "sections/06-metrics.typ"
 #include "sections/07-experiments.typ"
 #include "sections/08-discussion.typ"
+#include "sections/11-retrospective.typ"
 #include "sections/09-conclusion.typ"
