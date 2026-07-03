@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 from prml_vslam.pipeline.contracts.context import PipelinePlanContext
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
-from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig, ReconstructionBackendConfig
+from prml_vslam.reconstruction.config import NksrBackendConfig, ReconstructionBackendConfig
 from prml_vslam.reconstruction.stage.contracts import (
     ReconstructionBackend,
     ReconstructionInputSelection,
@@ -24,7 +24,7 @@ class ReconstructionStageConfig(StageConfig):
     model_config = ConfigDict(extra="ignore")
 
     stage_key: StageKey | None = StageKey.RECONSTRUCTION
-    backend: ReconstructionBackend = Field(default_factory=Open3dTsdfBackendConfig)
+    backend: ReconstructionBackend = Field(default_factory=NksrBackendConfig)
     """Concrete reconstruction backend config."""
 
     input_selection: ReconstructionInputSelection = Field(default_factory=ReconstructionInputSelection)

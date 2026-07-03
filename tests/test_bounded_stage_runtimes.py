@@ -26,8 +26,12 @@ from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.contracts import StageRuntimeStatus, VisualizationIntent
 from prml_vslam.pipeline.stages.summary import SummaryRuntime, SummaryStageInput
 from prml_vslam.reconstruction import ReconstructionArtifacts
-from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
-from prml_vslam.reconstruction.stage import ReconstructionRuntime, ReconstructionStageInput
+from prml_vslam.reconstruction.config import PoissonBackendConfig
+from prml_vslam.reconstruction.stage import (
+    ReconstructionInputSourceKind,
+    ReconstructionRuntime,
+    ReconstructionStageInput,
+)
 from prml_vslam.reconstruction.stage.visualization import (
     ROLE_RECONSTRUCTION_MESH,
     ROLE_RECONSTRUCTION_POINT_CLOUD,
@@ -193,7 +197,7 @@ def test_reconstruction_runtime_returns_reconstruction_artifacts(
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfBackendConfig):
+    class FakeBackendConfig(PoissonBackendConfig):
         extract_mesh: bool = True
 
         def setup_target(self, **_kwargs):
@@ -263,7 +267,7 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
         reference_enabled=True,
     )
 
-    class FakeBackendConfig(Open3dTsdfBackendConfig):
+    class FakeBackendConfig(PoissonBackendConfig):
         extract_mesh: bool = False
 
         def setup_target(self, **_kwargs):
@@ -306,6 +310,61 @@ def test_reconstruction_runtime_omits_mesh_visualization_when_mesh_artifact_abse
     assert [(item.intent, item.role) for item in updates[0].visualizations] == [
         (VisualizationIntent.POINT_CLOUD, ROLE_RECONSTRUCTION_POINT_CLOUD),
     ]
+
+
+def test_reconstruction_runtime_uses_point_cloud_backend_for_evaluation_aligned_cloud(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_config, _plan, run_paths = _request_plan_paths(
+        tmp_path,
+        reference_enabled=True,
+    )
+    calls: dict[str, Path] = {}
+
+    class FakeBackendConfig(PoissonBackendConfig):
+        def setup_target(self, **_kwargs):
+            return FakeBackend()
+
+    class FakeBackend:
+        def run_sequence(self, observations, *, artifact_root: Path) -> ReconstructionArtifacts:
+            del observations, artifact_root
+            raise AssertionError("evaluation_aligned_cloud reconstruction must not consume RGB-D observations")
+
+        def run_point_cloud(self, point_cloud_path: Path, *, artifact_root: Path) -> ReconstructionArtifacts:
+            calls["point_cloud_path"] = point_cloud_path
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            cloud = artifact_root / "reconstruction_cloud.ply"
+            metadata = artifact_root / "reconstruction_metadata.json"
+            cloud.write_text("ply\n", encoding="utf-8")
+            metadata.write_text("{}\n", encoding="utf-8")
+            return ReconstructionArtifacts(reference_cloud_path=cloud, metadata_path=metadata)
+
+    class ForbiddenObservationSequenceLoader:
+        def __init__(self, sequence_ref: ObservationSequenceRef) -> None:
+            del sequence_ref
+            raise AssertionError("evaluation_aligned_cloud reconstruction must not open an observation sequence")
+
+    monkeypatch.setattr(
+        "prml_vslam.reconstruction.stage.runtime.FileObservationSequenceLoader",
+        ForbiddenObservationSequenceLoader,
+    )
+    point_cloud_path = tmp_path / "point_cloud_sim3_icp_aligned.ply"
+    point_cloud_path.write_text("ply\n", encoding="utf-8")
+
+    result = ReconstructionRuntime().run_offline(
+        ReconstructionStageInput(
+            backend=FakeBackendConfig(),
+            run_paths=run_paths,
+            input_source=ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD,
+            benchmark_inputs=_rgbd_benchmark_inputs(tmp_path),
+            point_cloud=ArtifactRef(path=point_cloud_path, kind="ply", fingerprint="icp"),
+        )
+    )
+
+    assert calls == {"point_cloud_path": point_cloud_path}
+    assert result.outcome.status is StageStatus.COMPLETED
+    assert result.final_runtime_status.progress_unit == "point_clouds"
 
 
 def test_summary_runtime_returns_run_summary_and_retains_manifests(tmp_path: Path) -> None:

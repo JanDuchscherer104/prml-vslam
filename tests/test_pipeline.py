@@ -460,7 +460,9 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
         method=MethodId.VISTA,
         reference_enabled=True,
     )
-    run_config.stages.reconstruction.backend.extract_mesh = True
+    from prml_vslam.reconstruction.config import PoissonBackendConfig
+
+    run_config.stages.reconstruction.backend = PoissonBackendConfig()
     plan = _plan_with_stages(
         tmp_path=tmp_path,
         run_config=run_config,
@@ -479,11 +481,22 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     source_reference_cloud.parent.mkdir(parents=True, exist_ok=True)
     source_reference_cloud.write_text("source benchmark reference\n", encoding="utf-8")
 
+    import numpy as np
+
+    from prml_vslam.interfaces.artifacts import ArtifactRef
+    from prml_vslam.reconstruction.stage.contracts import ReconstructionInputSourceKind
+    from prml_vslam.utils.geometry import write_point_cloud_ply
+
+    dummy_pcd = tmp_path / "dummy.ply"
+    write_point_cloud_ply(dummy_pcd, np.random.rand(10, 3))
+
     result = ReconstructionRuntime().run_offline(
         ReconstructionStageInput(
             backend=run_config.stages.reconstruction.backend,
             run_paths=context.run_paths,
             benchmark_inputs=benchmark_inputs,
+            input_source=ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD,
+            point_cloud=ArtifactRef(path=dummy_pcd, kind="ply", fingerprint="dummy"),
         )
     )
 
@@ -495,7 +508,7 @@ def test_reference_reconstruction_stage_writes_cloud_and_metadata(tmp_path: Path
     assert source_reference_cloud.read_text(encoding="utf-8") == "source benchmark reference\n"
     assert result.outcome.artifacts["reconstruction_metadata"].path.exists()
     assert result.outcome.artifacts["reference_mesh"].path.exists()
-    assert result.outcome.metrics["observation_count"] == 1
+    assert "point_cloud_input" in result.outcome.metrics
 
 
 def test_snapshot_projector_preserves_stopped_preview_handle() -> None:

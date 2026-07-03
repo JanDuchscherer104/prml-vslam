@@ -18,12 +18,11 @@ from prml_vslam.utils.serialization import stable_hash
 
 
 class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveUpdateStageRuntime):
-    """Adapt reconstruction-owned Open3D TSDF execution to the bounded runtime API.
+    """Adapt reconstruction execution to the bounded runtime API.
 
-    The runtime turns prepared RGB-D observation references into a
+    The runtime turns prepared point-cloud or observation references into a
     reconstruction-owned backend call, then wraps the durable output in generic
-    stage result/status contracts. Open3D TSDF parameters, output metadata, and
-    reconstruction artifact semantics stay in :mod:`prml_vslam.reconstruction`.
+    stage result/status contracts.
     """
 
     def __init__(self, *, visualization_adapter: ReconstructionVisualizationAdapter | None = None) -> None:
@@ -79,16 +78,16 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
 
     def _run(self, input_payload: ReconstructionStageInput) -> StageResult:
         if input_payload.input_source in {
+            ReconstructionInputSourceKind.EVALUATION_ALIGNED_CLOUD,
             ReconstructionInputSourceKind.SLAM_DENSE_POINT_CLOUD,
             ReconstructionInputSourceKind.SLAM_SPARSE_POINT_CLOUD,
         }:
             if input_payload.point_cloud is None:
-                raise RuntimeError("SLAM point-cloud reconstruction input was selected without a point-cloud artifact.")
-            raise NotImplementedError(
-                "The reconstruction runtime currently supports RGB-D observation sequences only; "
-                "add a point-cloud reconstruction backend path before selecting "
-                f"'{input_payload.input_source.value}'."
-            )
+                raise RuntimeError(
+                    f"Point-cloud reconstruction input '{input_payload.input_source.value}' was selected without "
+                    "a point-cloud artifact."
+                )
+            return self._run_point_cloud(input_payload)
         if input_payload.input_source is ReconstructionInputSourceKind.SLAM_PREDICTED_GEOMETRY_SEQUENCE:
             raise NotImplementedError("Predicted-geometry reconstruction input is not implemented yet.")
         if input_payload.benchmark_inputs is None:
@@ -123,6 +122,54 @@ class ReconstructionRuntime(OfflineStageRuntime[ReconstructionStageInput], LiveU
             total_steps=sequence_ref.observation_count,
             progress_unit="observations",
             processed_items=sequence_ref.observation_count,
+        )
+        visualizations = self._visualization_adapter.build_items(
+            artifacts,
+            artifact_map,
+            reconstruction_id="reference",
+        )
+        if visualizations:
+            self._pending_updates.append(
+                StageRuntimeUpdate(
+                    stage_key=StageKey.RECONSTRUCTION,
+                    timestamp_ns=time.time_ns(),
+                    visualizations=visualizations,
+                    runtime_status=final_status,
+                )
+            )
+        return StageResult(
+            stage_key=StageKey.RECONSTRUCTION,
+            payload=artifacts,
+            outcome=outcome,
+            final_runtime_status=final_status,
+        )
+
+    def _run_point_cloud(self, input_payload: ReconstructionStageInput) -> StageResult:
+        if input_payload.point_cloud is None:
+            raise RuntimeError("Point-cloud reconstruction requires a point-cloud artifact.")
+        backend_config = input_payload.backend
+        backend = backend_config.setup_target(input_payload=input_payload)
+        artifacts = backend.run_point_cloud(
+            input_payload.point_cloud.path,
+            artifact_root=input_payload.run_paths.reference_cloud_path.parent,
+        )
+        artifact_map = _artifact_map(artifacts)
+        outcome = StageOutcome(
+            stage_key=StageKey.RECONSTRUCTION,
+            status=StageStatus.COMPLETED,
+            config_hash=stable_hash(backend_config),
+            input_fingerprint=stable_hash(input_payload.point_cloud),
+            artifacts=artifact_map,
+            metrics={"point_cloud_input": input_payload.point_cloud.path.as_posix()},
+        )
+        final_status = StageRuntimeStatus(
+            stage_key=StageKey.RECONSTRUCTION,
+            lifecycle_state=StageStatus.COMPLETED,
+            progress_message="Point-cloud reconstruction complete.",
+            completed_steps=1,
+            total_steps=1,
+            progress_unit="point_clouds",
+            processed_items=1,
         )
         visualizations = self._visualization_adapter.build_items(
             artifacts,

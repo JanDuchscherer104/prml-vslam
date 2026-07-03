@@ -3,7 +3,7 @@
 These are package-owned method-selection contracts for reconstruction
 implementations. They may use :class:`prml_vslam.utils.FactoryConfig` because
 they construct concrete reconstruction backends; pipeline reconstruction stage
-configs should reference them rather than duplicating TSDF or Open3D policy.
+configs should reference them rather than duplicating method-specific policy.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from prml_vslam.utils import BaseConfig, FactoryConfig
 from .contracts import ReconstructionMethodId
 
 if TYPE_CHECKING:
-    from .open3d_tsdf import Open3dTsdfBackend
+    from .nksr import NksrBackend
+    from .poisson import PoissonBackend
 
 
 class ReconstructionBackendConfig(BaseConfig):
@@ -38,62 +39,93 @@ class ReconstructionBackendConfig(BaseConfig):
         return self.method_id.display_name
 
 
-class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig["Open3dTsdfBackend"]):
-    """Configure the minimal Open3D TSDF reconstruction backend.
+class NksrBackendConfig(ReconstructionBackendConfig, FactoryConfig["NksrBackend"]):
+    """Configure the Neural Kernel Surface Reconstruction (NKSR) backend.
 
-    The repo targets Open3D ``0.19.x`` and uses its
-    ``ScalableTSDFVolume`` integration path directly. Inputs must be metric RGB-D
-    observations with coherent intrinsics and ``T_world_camera`` poses; this
-    config controls TSDF parameters, not source normalization or pipeline
-    scheduling.
+    NKSR (CVPR 2023) is a high-fidelity surface reconstruction algorithm that
+    processes large point clouds efficiently using GPU acceleration.
     """
 
-    method_id: Literal[ReconstructionMethodId.OPEN3D_TSDF] = ReconstructionMethodId.OPEN3D_TSDF
+    method_id: Literal[ReconstructionMethodId.NKSR] = ReconstructionMethodId.NKSR
     """Stable backend discriminator."""
 
-    voxel_length_m: float = Field(default=0.02, gt=0.0)
-    """Length of one TSDF voxel edge in meters."""
+    voxel_size: float = Field(default=0.01, gt=0.0)
+    """Voxel size for reconstruction (detail level). Smaller is finer."""
 
-    sdf_trunc_m: float = Field(default=0.08, gt=0.0)
-    """Signed-distance truncation used by the TSDF integrator in meters."""
+    normal_radius_m: float = Field(default=0.05, gt=0.0)
+    """Search radius in meters for estimating point-cloud normals."""
 
-    depth_scale: float = Field(default=1.0, gt=0.0)
-    """Scale applied by Open3D before depth truncation."""
+    normal_max_nn: int = Field(default=30, ge=1)
+    """Maximum neighbor count for point-cloud normal estimation."""
 
-    depth_trunc_m: float = Field(default=3.0, gt=0.0)
-    """Depth values beyond this range are discarded before integration."""
+    device: str = "cuda"
+    """Device to run NKSR on (e.g., 'cuda', 'cpu')."""
 
-    integrate_color: bool = False
-    """Whether RGB values should be fused into the TSDF volume."""
-
-    convert_rgb_to_intensity: bool = False
-    """Whether Open3D should convert RGB to intensity when building RGBD images."""
-
-    volume_unit_resolution: int = Field(default=16, ge=1)
-    """Open3D TSDF volume-unit resolution."""
-
-    depth_sampling_stride: int = Field(default=4, ge=1)
-    """Open3D TSDF depth-sampling stride."""
-
-    extract_mesh: bool = False
-    """Whether to preserve an extracted mesh in addition to the point cloud."""
+    preprocess_normals: bool = True
+    """Whether to estimate/re-estimate normals before running NKSR."""
 
     @property
-    def target_type(self) -> type[Open3dTsdfBackend]:
+    def target_type(self) -> type[NksrBackend]:
         """Return the concrete reconstruction backend type."""
-        from .open3d_tsdf import Open3dTsdfBackend
+        from .nksr import NksrBackend
 
-        return Open3dTsdfBackend
+        return NksrBackend
 
-    def setup_target(self, **kwargs: Any) -> Open3dTsdfBackend:
-        """Instantiate the Open3D TSDF backend while ignoring unrelated kwargs."""
+    def setup_target(self, **kwargs: Any) -> NksrBackend:
+        """Instantiate the NKSR backend while ignoring unrelated kwargs."""
         kwargs.pop("path_config", None)
-        from .open3d_tsdf import Open3dTsdfBackend
+        from .nksr import NksrBackend
 
-        return Open3dTsdfBackend(self, input_payload=kwargs.get("input_payload"))
+        return NksrBackend(self, input_payload=kwargs.get("input_payload"))
+
+
+class PoissonBackendConfig(ReconstructionBackendConfig, FactoryConfig["PoissonBackend"]):
+    """Configure the Screened Poisson surface reconstruction backend.
+
+    Uses Open3D's implementation of Screened Poisson Surface Reconstruction.
+    """
+
+    method_id: Literal[ReconstructionMethodId.POISSON] = ReconstructionMethodId.POISSON
+    """Stable backend discriminator."""
+
+    depth: int = Field(default=8, ge=1)
+    """Octree depth. Finer reconstruction requires larger depth."""
+
+    width: float = 0.0
+    """Target width of the octree. If > 0, depth is ignored."""
+
+    scale: float = 1.1
+    """The ratio between the diameter of the cube used for reconstruction and the diameter of the bounding box of the samples."""
+
+    linear_fit: bool = False
+    """If true, use linear interpolation for density estimation."""
+
+    density_quantile: float = Field(default=0.02, ge=0.0, le=1.0)
+    """Lower density quantile removed from Poisson meshes to trim weak support."""
+
+    normal_radius_m: float = Field(default=0.05, gt=0.0)
+    """Search radius in meters for estimating point-cloud normals."""
+
+    normal_max_nn: int = Field(default=30, ge=1)
+    """Maximum neighbor count for point-cloud normal estimation."""
+
+    @property
+    def target_type(self) -> type[PoissonBackend]:
+        """Return the concrete reconstruction backend type."""
+        from .poisson import PoissonBackend
+
+        return PoissonBackend
+
+    def setup_target(self, **kwargs: Any) -> PoissonBackend:
+        """Instantiate the Poisson backend while ignoring unrelated kwargs."""
+        kwargs.pop("path_config", None)
+        from .poisson import PoissonBackend
+
+        return PoissonBackend(self, input_payload=kwargs.get("input_payload"))
 
 
 __all__ = [
-    "Open3dTsdfBackendConfig",
+    "NksrBackendConfig",
+    "PoissonBackendConfig",
     "ReconstructionBackendConfig",
 ]
