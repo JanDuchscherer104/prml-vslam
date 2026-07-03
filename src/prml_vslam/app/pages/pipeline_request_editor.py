@@ -91,6 +91,7 @@ def render_request_editor(
             trajectory_eval_enabled,
             trajectory_alignment_enabled,
             evaluate_cloud,
+            evaluate_image,
         ) = _render_stage_settings(page_state)
     with visualization_tab:
         (
@@ -128,6 +129,7 @@ def render_request_editor(
                 "trajectory_eval_enabled": trajectory_eval_enabled,
                 "trajectory_alignment_enabled": trajectory_alignment_enabled,
                 "evaluate_cloud": evaluate_cloud,
+                "evaluate_image": evaluate_image,
                 "connect_live_viewer": connect_live_viewer,
                 "export_viewer_rrd": export_viewer_rrd,
                 "grpc_url": grpc_url,
@@ -475,7 +477,7 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
     )
 
 
-def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool]:
+def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool]:
     left, right = st.columns(2, gap="large")
     with left:
         st.markdown("**SLAM Outputs**")
@@ -497,6 +499,8 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         trajectory_alignment_enabled = st.toggle("Trajectory Alignment", value=page_state.trajectory_alignment_enabled)
         evaluate_cloud = st.toggle("Dense-Cloud Evaluation", value=page_state.evaluate_cloud)
         st.caption("Dense-cloud evaluation remains a planned diagnostic stage without a registered runtime.")
+        evaluate_image = st.toggle("Image-Quality Evaluation", value=page_state.evaluate_image)
+        st.caption("Renders the SLAM dense cloud from the estimated trajectory and scores it against input frames.")
         st.markdown("**Summary**")
         st.toggle("Run Summary", value=True, disabled=True)
     return (
@@ -507,6 +511,7 @@ def _render_stage_settings(page_state: PipelinePageState) -> tuple[bool, bool, b
         trajectory_eval_enabled,
         trajectory_alignment_enabled,
         evaluate_cloud,
+        evaluate_image,
     )
 
 
@@ -522,14 +527,12 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
     col_a, col_b = st.columns(2, gap="small")
     with col_a:
         device = st.text_input("Torch Device", value=backend.device).strip() or backend.device
-        img_size = int(
-            st.number_input(
-                "Encoder Image Size",
-                min_value=224,
-                step=32,
-                value=int(backend.img_size),
-                help="Long-edge size for the MASt3R encoder. 512 is the upstream default; 224 is the small-model setting.",
-            )
+        img_size_options = [224, 512]
+        img_size = st.selectbox(
+            "Encoder Image Size",
+            options=img_size_options,
+            index=img_size_options.index(backend.img_size) if backend.img_size in img_size_options else 1,
+            help="Long-edge size for the MASt3R encoder. Upstream supports only 224 or 512 (512 is the default).",
         )
         c_conf_threshold = float(
             st.number_input(
@@ -538,6 +541,25 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
                 value=float(backend.c_conf_threshold),
                 help="Confidence threshold applied when exporting the dense point cloud.",
             )
+        )
+        override_keyframes = st.checkbox(
+            "Override Keyframe Density",
+            value=backend.match_frac_thresh is not None,
+            help="Force MASt3R's keyframe overlap threshold (tracking.match_frac_thresh) instead of the YAML default.",
+        )
+        match_frac_thresh = (
+            float(
+                st.slider(
+                    "Keyframe Overlap Threshold",
+                    min_value=0.1,
+                    max_value=0.9,
+                    value=float(backend.match_frac_thresh) if backend.match_frac_thresh is not None else 0.5,
+                    step=0.05,
+                    help="Upstream default 0.333. Higher = more keyframes = denser cloud / higher image coverage (slower).",
+                )
+            )
+            if override_keyframes
+            else None
         )
     with col_b:
         # Tri-state: respect YAML / force True / force False
@@ -584,6 +606,7 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
         device=device,
         img_size=img_size,
         use_calib=use_calib,
+        match_frac_thresh=match_frac_thresh,
         backend_poll_interval_s=backend_poll_interval_s,
         backend_join_timeout_s=backend_join_timeout_s,
     )
