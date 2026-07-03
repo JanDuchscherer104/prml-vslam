@@ -18,4 +18,4 @@ The software implementation distributed pipeline infrastructure, model adapters 
 - *Jan Duchscherer:* Developed the configurable pipeline framework, Rerun Viewer integration and Streamlit application. Implemented the ARCore baseline and developed the video source integrations, incremental 3D reconstruction and point cloud evaluation.
 - *Lukas Röß:* Developed the method integration infrastructure, integrated ViSTA-SLAM, implemented the NKSR/Poisson 3D mesh reconstruction and briefly supported video source integrations.
 - *Christopher Kirschner:* Adapted the MASt3R-SLAM model for the benchmark and implemented output-image quality metrics.
-- *Florian Beck:* Implemented the point cloud evaluation and fixed the sweeper implementation.
+- *Florian Beck:* Implemented the point cloud evaluation, fixed the sweeper implementation and adapted parameters and executed the final sweep runs.
