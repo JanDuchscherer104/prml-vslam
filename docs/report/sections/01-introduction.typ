@@ -1,31 +1,11 @@
 = Introduction
 
-Smartphone video is attractive for remote assistance because it is ubiquitous and easy to capture.
-It is difficult to benchmark scientifically. A phone recording may lack a stable calibration model,
-metric scale, synchronized inertial state, or globally meaningful world frame. In the intended
-off-device setting, the phone remains a simple sensor while trajectory estimation, dense
-reconstruction, alignment, and visualization run on a workstation.
+Smartphone video provides an accessible data source for remote assistance and live stream analysis. However, professional Visual SLAM (VSLAM) pipelines demand rigid factory calibration. Consumer frameworks rely on real-time sensor fusion and fail when processing retrospective, uncalibrated video streams. Without known camera intrinsics, global metric consistency and dense mapping fidelity deteriorate. Structure from Motion (SfM) resolves uncalibrated data but operates via offline batch processing. VSLAM avoids this limitation by incrementally processing video streams, fulfilling the real-time constraints required for emergency response. Modern learning-based VSLAM integrates SfM-like global optimization into the backend while maintaining a low-latency tracking frontend.
 
-Recent dense monocular visual simultaneous localization and mapping (VSLAM) methods make this
-setting increasingly plausible. ViSTA-SLAM avoids known intrinsics by estimating symmetric two-view
-constraints and optimizing a Sim(3) pose graph @zhang2026vistaslam. MASt3R-SLAM uses learned
-two-view pointmaps as geometric priors for real-time tracking and global optimization
-@murai2025mast3rslam. LingBot-Map, based on the Geometric Context Transformer (GCT), instead treats
-streaming reconstruction as causal long-range attention over anchor, local-window, and trajectory
-memory contexts @chen2026gct. These systems differ in coordinate representation, memory model,
-optimization structure, and dense-output semantics. Directly comparing their native outputs risks
-measuring adapter conventions instead of geometric quality.
+The core challenge involves developing an off-device VSLAM pipeline that processes smartphone monocular video, autonomously handles unknown intrinsics, and outputs high-precision trajectories alongside dense 3D point clouds. In this off-device configuration, the smartphone acts as a simple sensor. Workstation hardware executes the trajectory estimation, dense reconstruction, alignment, and visualization.
 
-This paper therefore specifies a measurement substrate, not a new SLAM method. It normalizes public
-and self-recorded sources into a shared observation representation, invokes method backends through
-a common adapter boundary, records method-native and benchmark-facing artifacts, and makes each
-coordinate transformation part of the experimental record.
+Recent dense monocular VSLAM methods address this challenge. ViSTA-SLAM abandons known intrinsics by estimating symmetric two-view constraints and optimizing a Sim(3) pose graph @zhang2026vistaslam. MASt3R-SLAM extracts learned two-view pointmaps as geometric priors for real-time tracking and global optimization @murai2025mast3rslam. LingBot-Map treats streaming reconstruction as causal long-range attention over anchor, local-window, and trajectory memory contexts @chen2026gct. Because these systems employ distinct coordinate representations and dense-output semantics, direct output comparisons risk measuring adapter conventions rather than true geometric quality.
 
-The contributions are threefold. First, the source contract preserves timestamps, intrinsics,
-reference trajectories, depth-derived geometry, and provenance for ADVIO, TUM RGB-D, and Record3D.
-Second, the method contract separates method-native world frames from benchmark reference frames for
-uncalibrated dense monocular reconstruction. Third, the evaluation contract makes Sim(3),
-gravity-aware trajectory placement, and iterative closest point (ICP) registration explicit choices.
-The methodological question is what must be normalized, persisted, and rejected so that later
-trajectory and dense-geometry measurements reflect VSLAM behavior rather than dataset layout,
-viewer transforms, or oracle post-processing.
+This paper establishes a robust measurement substrate to benchmark these state-of-the-art uncalibrated methods. It normalizes public and self-recorded data into a shared representation, invokes the reconstruction backends through a unified adapter boundary and tracks every coordinate transformation.
+
+The contributions are threefold. First, the source contract standardizes timestamps, reference trajectories, and provenance across the ADVIO, TUM RGB-D, and Record3D datasets. Second, the method contract isolates method-native world frames from benchmark reference frames. Third, the evaluation contract mandates robust metrics for trajectory drift and reconstruction fidelity, including gravity-aware placement and iterative closest point (ICP) registration. This infrastructure ensures that the resulting measurements isolate core VSLAM performance from dataset layout or hidden post-processing steps.
