@@ -155,6 +155,53 @@ it belongs in the metric record @besl1992method @zhou2018open3d. Dense-cloud acc
 completeness, Chamfer distance, or F-score should be reported only after the dense metric runtime is
 validated against the same frozen experiment matrix.
 
+For a placed estimate cloud $E$ and reference cloud $R$, the dense-cloud score uses the two
+nearest-neighbor directions separately before combining them. Accuracy queries estimate points
+against the reference,
+
+$
+  "accuracy" =
+  frac(1, abs(E)) sum_(bold(e) in E) min_(bold(r) in R) norm(bold(e) - bold(r)),
+$
+
+and completeness queries reference points against the estimate,
+
+$
+  "completeness" =
+  frac(1, abs(R)) sum_(bold(r) in R) min_(bold(e) in E) norm(bold(r) - bold(e)).
+$
+
+The reported Chamfer distance is their sum. At tolerance $tau$, precision is the fraction of
+estimate points within $tau$ of the reference and recall is the fraction of reference points within
+$tau$ of the estimate. Let
+
+$
+  d_R(bold(e)) = min_(bold(r) in R) norm(bold(e) - bold(r)),
+  quad
+  d_E(bold(r)) = min_(bold(e) in E) norm(bold(r) - bold(e)).
+$
+
+Then
+
+$
+  P_tau =
+  frac(abs({ bold(e) in E | d_R(bold(e)) <= tau }), abs(E)).
+$
+
+$
+  R_tau =
+  frac(abs({ bold(r) in R | d_E(bold(r)) <= tau }), abs(R)).
+$
+
+The dense-cloud F-score is
+
+$
+  F_1 = frac(2 P_tau R_tau, P_tau + R_tau).
+$
+
+The final dense-cloud tables use $tau = 0.05 "m"$, so the score reads as surface overlap at a
+5 cm tolerance rather than an unbounded distance average.
+
 #figure(
   table(
     columns: (0.92fr, 1.3fr, 1.35fr),

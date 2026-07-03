@@ -23,6 +23,7 @@ LICENSE     text eol=lf
 *.pdf  binary
 *.pptx binary
 *.lock binary
+
 # Graphify Large Artifacts (LFS)
 
 

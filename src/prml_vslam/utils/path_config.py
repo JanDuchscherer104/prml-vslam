@@ -84,6 +84,8 @@ class RunArtifactPaths(BaseData):
     """Path to the canonical long-form trajectory metric table."""
     cloud_metrics_path: Path
     """Path to persisted dense-cloud evaluation metrics."""
+    image_metrics_path: Path
+    """Path to persisted rendered-image evaluation metrics."""
     reference_cloud_path: Path
     """Path to the reconstruction-stage reference cloud artifact."""
     summary_path: Path
@@ -126,6 +128,7 @@ class RunArtifactPaths(BaseData):
             ).resolve(),
             trajectory_metrics_long_path=(resolved_root / "evaluation" / "trajectory" / "metrics_long.csv").resolve(),
             cloud_metrics_path=(resolved_root / "evaluation" / "cloud_metrics.json").resolve(),
+            image_metrics_path=(resolved_root / "evaluation" / "image_metrics.json").resolve(),
             reference_cloud_path=(resolved_root / "reconstruction" / "reconstruction_cloud.ply").resolve(),
             summary_path=(resolved_root / "summary" / "run_summary.json").resolve(),
             stage_manifests_path=(resolved_root / "summary" / "stage_manifests.json").resolve(),

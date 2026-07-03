@@ -1,0 +1,54 @@
+experiment_name = "advio-21-offline-vista"
+mode            = "offline"
+output_dir      = ".artifacts"
+
+[stages.source]
+enabled = true
+
+[stages.source.backend]
+source_id = "advio"
+sequence_id = "advio-21"
+
+[stages.source.backend.dataset_serving]
+pose_source = "ground_truth"
+pose_frame_mode = "provider_world"
+
+[stages.slam]
+enabled = true
+
+[stages.slam.outputs]
+emit_dense_points  = true
+emit_sparse_points = false
+
+[stages.slam.backend]
+method_id = "vista"
+
+[stages.align_ground]
+enabled = false
+
+[stages.evaluate_trajectory]
+enabled = false
+
+[stages.evaluate_image]
+enabled = true
+
+[stages.evaluate_image.rendering]
+depth_max_m   = 1e6      # Render-Tiefenclip in Cloud-Einheiten (ViSTA ist up-to-scale -> groß lassen)
+dilation_px   = 0        # optionales Loch-Füllen für dünne Clouds (0 = roh)
+save_gallery  = true     # GT/Render/Side-by-Side unter evaluation/render_eval/ schreiben
+gallery_every = 10       # nur jedes N-te Paar in die Galerie (1 = alle)
+
+[stages.reconstruction]
+enabled = false
+
+[stages.evaluate_cloud]
+enabled = false
+
+[stages.summary]
+enabled = true
+
+[visualization]
+export_viewer_rrd     = false
+connect_live_viewer   = false
+grpc_url              = "rerun+http://127.0.0.1:9876/proxy"
+preserve_native_rerun = true

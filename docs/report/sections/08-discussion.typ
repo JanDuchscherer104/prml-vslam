@@ -16,13 +16,22 @@ attention: anchors, local context, and trajectory memory become the learned anal
 grounding, local tracking, and global history. This supports streaming inference, but it also means
 that coordinate commitment and memory compression are part of the method's failure surface.
 
-The limitation is the absence of a complete frozen benchmark matrix. The implementation can
-normalize sources, run method adapters, persist trajectories and clouds, align prepared references,
-and record diagnostic visualization. It does not yet provide a validated cross-method leaderboard,
-dense-cloud metric tables, efficiency measurements, confidence intervals, or hypothesis tests.
-Because preprocessing, sampling, and alignment choices can dominate monocular benchmark results, the
-statistical unit for future claims must be the completed method--dataset--sequence run under a fixed
-protocol.
+The limitation is that the final evidence matrix is local and artifact-scoped rather than a broad
+statistical benchmark. It now includes matched trajectory medians, registered ADVIO provider
+baselines, dense-cloud medians for TUM RGB-D and Record3D, render-based image diagnostics, and local
+runtime telemetry. It still does not provide confidence intervals, hypothesis tests, a complete
+LingBot cross-dataset trajectory table, ADVIO dense-cloud scores, or a hardware-normalized
+efficiency study. Because preprocessing, sampling, and alignment choices can dominate monocular
+benchmark results, the statistical unit for future claims remains the completed
+method--dataset--sequence run under a fixed protocol.
+
+The results support a cautious comparison rather than a single winner. MASt3R-SLAM gives the best
+accuracy on short controlled RGB-D sequences and the best dense-cloud overlap where the reference
+surface is clean. ViSTA-SLAM is less accurate in those medians but completed more long runs, which
+matters for phone trajectories where a fixed keyframe buffer can turn accuracy into brittle
+failure. ADVIO remains the hardest setting for both vision-only methods: the registered ARCore and
+ARKit baselines show how much metric scale and gravity from phone sensor fusion help, while the
+monocular methods lose orientation and local consistency.
 
 Diagnostic visualization remains valuable but secondary. Rerun recordings expose frame mistakes,
 scale errors, cloud-placement failures, and missing references @rerun2026. They should be read as
