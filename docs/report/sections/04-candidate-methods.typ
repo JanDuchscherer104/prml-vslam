@@ -40,27 +40,27 @@ reproducibility variables.
 == LingBot-Map
 // RESPONSIBLIY: JAN (LingBot-Map subsection)
 
-// <I revised this section>
-LingBot-Map is an end-to-end optimized feed-forward streaming reconstruction model and does not maintain a traditional SLAM graph backend@chen2026gct. Instead, it employs Geometric Context Attention (GCA) to maintain a local window of recent frames and their dense geometry, while also keeping compressed trajectory memory for older frames, hence allowing the emergence of graph-like behavior through learned attention mechanisms.
-// The model predicts camera poses and dense depth maps causally as the stream progresses, with scale semantics learned from anchor-frame normalization.
-The method employs a DINOv2 backbone to extract image features, which are concatenated with per-frame camera, register, and anchor tokens. These tokens are subsequently processed through an auto-regressive transformer decoder
-The GCA module maintains anchor frames for coordinate and scale grounding, a local pose-reference window for recent dense geometry, and compressed trajectory memory for older context to enable capturing long-range dependencies, hence reducing per-frame context growth by roughly 80$times$ over naïve causal attention.
-// </I revised this section>
+LingBot-Map is an end-to-end optimized streaming reconstruction model and does not maintain a traditional SLAM graph backend. The Geometric Context
+Transformer (GCT) is a causal feed-forward model: at time $t$ it predicts a
+camera-to-world pose and dense depth map from frames observed up to $t$
+@chen2026gct. A DINOv2 backbone encodes each uncalibrated RGB frame, augments it
+with one camera token, four register tokens, and one anchor token, and alternates
+per-frame attention with Geometric Context Attention (GCA). GCA gives the
+streaming state three roles: anchor frames set the coordinate frame and
+monocular scale, a local pose-reference window retains full image tokens for
+recent overlap, and trajectory memory preserves only six context tokens per
+older frame to capture necessary invariants.
 
+This learned state is the main distinction that enables learned attention to stand in for a traditional SLAM graph optimization to capture long-term geometric context as it reduces per-frame memory growth by a factor of 80, with memory dropping from 36.06 GB to 13.28 GB and throughput rising
+from 11.87 FPS to 20.29 FPS@chen2026gct.
 
-The model predicts poses and dense depth maps causally as the stream progresses. The distinguishing detail is that these are not just cache
-policies: the paper trains a DINOv2-based transformer with camera, register, and anchor tokens,
-camera-to-world pose supervision, depth supervision, and a relative pose loss inside the local
-window. Its scale semantics are learned from anchor-frame normalization, while its long-range state
-keeps only compact per-frame trajectory tokens after image tokens leave the local window.
+Similarly to ViSTA-SLAM and MASt3R-SLAM, LingBot-Map supervises depth,
+absolute camera-to-world pose, and relative poses within the local window, so
+anchor, window, and cache settings affect the geometric estimate.
 
-This design makes coordinate commitment part of the learned state. Anchor errors or limited anchor
-coverage can affect the full sequence, and compressed trajectory memory is less auditable than
-explicit graph edges. The adapter therefore treats LingBot-Map as a trajectory and depth-derived
-cloud exporter; its attention state is not a benchmark reference. In the final local evidence pass,
-LingBot-Map is retained as a reference method and contributes only TUM RGB-D dense-cloud diagnostic
-values where completed artifacts exist. It is not treated as a full cross-dataset trajectory
-candidate or as phone-video leaderboard evidence.
+The method provides two modes: Streaming
+mode runs one causal pass, whereas windowed mode resets the KV cache over
+overlapping segments and aligns the resulting windows to bound peak memory, hence enabling indefinite-length sequences, at the cost of losing capactiy to capture connections between distant frames.
 
 #figure(
   table(
@@ -83,9 +83,9 @@ candidate or as phone-video leaderboard evidence.
     [CUDA runtime and pointmap bias matter.],
     [LingBot-Map],
     [Anchor-grounded coordinate and scale for streaming.],
-    [GCA with local window and trajectory memory.],
+    [GCA with local window and six-token trajectory memory.],
 
-    [Anchor errors and compressed memory are hard to audit.], bottomrule(),
+    [No explicit loop closure; compressed memory is opaque.], bottomrule(),
   ),
   caption: [Representation choices that determine how each method should be adapted and evaluated.],
 ) <tab:method-representation>
