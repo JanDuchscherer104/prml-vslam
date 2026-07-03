@@ -22,22 +22,52 @@ dense output is available. It also defines the evaluation risk: pairwise learned
 visually plausible fused geometry while retaining correlated scale or shape errors. ViSTA-SLAM
 therefore needs both trajectory placement and dense-cloud placement checks.
 
-// MASt3R-SLAM
+== MASt3R-SLAM
 // RESPONSIBLIY: Christopher (MASt3R-SLAM subsection)
-/*
-MASt3R-SLAM combines learned two-view priors with an explicit SLAM backend @murai2025mast3rslam.
-MASt3R predictions provide pointmaps and matching features; the online system adds efficient
-pointmap matching, tracking, keyframe fusion, loop closure, and second-order global optimization.
-Its generic central-camera assumption requires a unique camera center and ray representation per
-image, but not a fixed calibrated pinhole model for the whole sequence.
 
-For evaluation, pointmaps act as geometric pseudo-measurements. Tracking estimates a frame relative
-to a keyframe, fusion maintains canonical keyframe pointmaps, and global optimization reconciles the
-keyframe graph. The benchmark must therefore record image preprocessing, pointmap frame, CUDA
-runtime, and cloud-placement transform; weak camera-model assumptions do not remove those
-reproducibility variables.
-*/
-#include "drafts/ck-mast3r-integration.typ"
+MASt3R-SLAM is the second method we add to the benchmark. It is a learning-based
+SLAM method that builds a dense 3D reconstruction from a single camera
+@murai2025mast3rslam. It estimates the 3D scene directly from the images and does
+not need the camera calibration. This is why it fits uncalibrated input such as a
+smartphone video.
+
+Three things set MASt3R apart from a classical SLAM system. First, a large,
+pre-trained network sits behind it (a foundation model): it has learned 3D geometry
+from very many images and therefore gives robust 3D estimates even for unfamiliar
+footage.
+
+Second, MASt3R does not need the camera parameters in advance, above all not the
+focal length. A classical method needs the focal length to turn a pixel into a
+viewing ray into the scene, and only then determines the depth. MASt3R turns this
+around: the network predicts the 3D point for each pixel directly — that is,
+direction and depth at once. You do not need to know the focal length; it can be
+read off these 3D points afterwards. The matching between two images therefore also
+happens directly in 3D space and not through classical 2D image features.
+
+Third, the camera is allowed to change during the recording — for example a zoom in
+the middle of the video. This is possible because the focal length is not fixed in
+advance.
+
+MASt3R-SLAM is more than this single network, though: an online system runs on top
+of it. It tracks each new frame against the existing keyframes, fuses them into a
+shared set of 3D points, and — when the camera revisits a place — closes the loop
+and re-optimises all keyframes together. This is what keeps the trajectory globally
+consistent and the drift small over a long video.
+
+We connect MASt3R-SLAM through the same interface as ViSTA-SLAM. Both methods read
+the same input frames and write the same output files.
+
+MASt3R-SLAM can run with or without a known calibration. If the calibration is
+given, we pass it to the method. If not, the method estimates the camera focal
+length on its own. Either way it runs on the raw video.
+
+A second setting controls how dense the reconstruction is. It defines how often a
+new keyframe is added. More keyframes give a denser point cloud and cover more of
+the image, but the run takes longer.
+
+Each run produces two files: the camera path in the TUM format, and a dense,
+coloured point cloud. Both files are the input for the trajectory and
+reconstruction evaluation in the next sections.
 
 == LingBot-Map
 // RESPONSIBLIY: JAN (LingBot-Map subsection)
@@ -79,10 +109,10 @@ candidate or as phone-video leaderboard evidence.
 
     [Pairwise geometry errors can persist.],
     [MASt3R-SLAM],
-    [Two-view pointmaps with central-camera rays.],
+    [Per-pixel 3D pointmaps; no known focal length needed.],
     [Keyframe fusion, loop closure, and global optimization.],
 
-    [CUDA runtime and pointmap bias matter.],
+    [Keyframe density and CUDA runtime shape the result.],
     [LingBot-Map],
     [Anchor-grounded coordinate and scale for streaming.],
     [GCA with local window and trajectory memory.],
