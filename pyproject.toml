@@ -73,6 +73,10 @@ dependencies = [
     "tensorboard>=2.14,<3",
     "DBoW3Py",
   ]
+  nksr = [
+    "torch-scatter",
+    "nksr @ git+https://github.com/nv-tlabs/nksr.git#subdirectory=package",
+  ]
   lingbot = [
     "torch==2.5.1",
     "torchvision==0.20.1",
@@ -92,6 +96,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prml_vslam"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 target-version = "py311"
@@ -136,6 +143,8 @@ no-build-isolation-package = ["lietorch", "mast3r-slam"]
   MAST3R-SLAM = ["torch==2.5.1"]
   curope      = ["torch==2.5.1"]
   xformers    = ["torch==2.5.1"]
+  nksr        = ["torch==2.5.1", "gitpython", "ninja"]
+  torch-scatter = ["torch==2.5.1"]
 
   [tool.uv.sources]
   DBoW3Py     = { path = "external/vista-slam/DBoW3Py", editable = true, extra = "vista" }

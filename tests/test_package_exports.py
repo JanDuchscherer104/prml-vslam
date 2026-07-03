@@ -102,7 +102,8 @@ def test_vista_package_is_the_only_canonical_vista_surface() -> None:
 
 
 def test_reconstruction_package_exports_runtime_surfaces_without_harness() -> None:
-    assert "Open3dTsdfBackend" in reconstruction_package.__all__
+    assert "NksrBackend" in reconstruction_package.__all__
+    assert "PoissonBackend" in reconstruction_package.__all__
     assert "OfflineReconstructionBackend" in reconstruction_package.__all__
     assert "FileObservationSequenceLoader" not in reconstruction_package.__all__
     assert "Reconstruction" + "Session" not in reconstruction_package.__all__

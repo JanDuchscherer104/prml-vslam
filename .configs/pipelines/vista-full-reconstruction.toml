@@ -3,9 +3,12 @@
 # This file defines a complete pipeline run config, including the source, SLAM
 # backend overrides, stage-local evaluation/reconstruction policy, and
 # visualization settings.
+# mamba activate prml-vslam
+# uv run --extra vista prml-vslam run-config .configs/pipelines/vista-full.toml
+# uv run rerun .artifacts/vista-tum-cabinet-full/vista/visualization/viewer_recording.rrd --serve-web
 
-experiment_name          = "vista-full-record3d-wifi"
-mode                     = "streaming"
+experiment_name          = "vista-tum-cabinet-full"
+mode                     = "offline"
 output_dir               = ".artifacts"
 ray_local_head_lifecycle = "ephemeral"
 
@@ -13,10 +16,15 @@ ray_local_head_lifecycle = "ephemeral"
 enabled = true
 
     [stages.source.backend]
-    source_id             = "record3d"
-    transport             = "wifi"
-    device_address        = "192.168.159.24"
-    frame_timeout_seconds = 10.0
+    source_id   = "tum_rgbd"
+    sequence_id = "freiburg3_large_cabinet"
+    # source_id   = "record3d_dataset"
+    # sequence_id = "2026-06-03--18-24-27"
+    # source_id   = "advio"
+    # sequence_id = "advio-20"
+    frame_stride = 1
+    # target_fps  = 30.0
+    replay_mode = "fast_as_possible"
 
 [stages.slam]
 enabled = true
@@ -43,15 +51,30 @@ sampling_interval_ms    = 1000
     [stages.slam.backend]
     method_id = "vista"
     # Frame cap to stop the backend after N frames.
-    max_frames = 1500
+    # max_frames = 1500
 
-    # Maximum number of keyframes the pose graph may hold.
+    # ViSTA-SLAM TUM-RGBD paper/eval backend preset. The upstream paper/eval
+    # script uses stride=3 on the original TUM-RGBD frame index stream.
+    # Comparable to MASt3R `keyframe_buffer_size`: upper bound on retained
+    # keyframes before the backend would be capacity-limited.
+    # Upstream/paper ViSTA TUM-RGBD value is 400; this low-VRAM comparison cap
+    # mirrors MASt3R `keyframe_buffer_size = 32`.
     max_view_num = 400
+
+    # Comparable to MASt3R's internal `FrameTracker` keyframe decision. MASt3R
+    # does not expose a stride/flow selector in this repo; keep source sampling
+    # shared when comparing effective input cadence.
+    keyframe_detection = "stride"
+
+    # Comparable to shared source `frame_stride` plus MASt3R's internal accepted
+    # keyframe density. MASt3R has no backend-local stride knob; use the shared
+    # source sampling policy for strict input-cadence control.
+    stride = 25
 
     # Optical-flow magnitude threshold that triggers a new keyframe.
     # Set to a negative value (e.g., -1.0) to force every packet to become a keyframe
     # and test true backpressure.
-    flow_thres = 20
+    flow_thres = 20.0
 
     # Number of temporal-neighbor edges per keyframe in the pose graph.
     neighbor_edge_num = 3
@@ -87,22 +110,27 @@ enabled = true
     strategy       = "ransac_point_cloud"
     min_confidence = 0.6
 
+[stages.align_cloud]
+enabled                       = true
+max_correspondence_distance_m = 0.05
+
 [stages.evaluate_trajectory]
-enabled = false
+enabled = true
 
 [stages.reconstruction]
 enabled = true
 
-# --- Resource & Placement Policy ---
-# num_cpus = 1.0
-# memory_bytes = 2147483648  # 2GB
+    [stages.reconstruction.input_selection]
+    source_kind = "slam_dense_point_cloud"
 
     [stages.reconstruction.backend]
-    method_id    = "nksr"
-    voxel_size   = 0.01
+    method_id = "poisson"
 
 [stages.evaluate_cloud]
 enabled = false
+
+[stages.align_trajectory]
+enabled = true
 
 [stages.summary]
 enabled = true
@@ -112,7 +140,7 @@ enabled = true
 # ------------------------------------------
 [visualization]
 # Whether to connect the Rerun live viewer via gRPC.
-connect_live_viewer = true
+connect_live_viewer = false
 
 # Whether one canonical repo-owned `.rrd` recording should be exported.
 export_viewer_rrd = true
@@ -133,7 +161,7 @@ log_source_rgb = false
 log_diagnostic_preview = false
 
 # Whether to project the RGB image onto the 3D camera frustum.
-log_camera_image_rgb = true
+log_camera_image_rgb = false
 
 # Keep only a few recent frusta visible in the streaming viewer.
 
@@ -141,4 +169,9 @@ log_camera_image_rgb = true
 show_tracking_trajectory = true
 
 # Keep dense reference trajectories compact.
-trajectory_pose_axis_length = 0.01
+trajectory_pose_axis_length = 0.0
+
+# Reduce geometry logged to Rerun while preserving full benchmark artifacts.
+point_cloud_decimation_keep_ratio = 0.25
+mesh_decimation_keep_ratio        = 0.25
+decimation_random_seed            = 0

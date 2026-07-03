@@ -428,9 +428,11 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
             index=_VISTA_KEYFRAME_DETECTION_OPTIONS.index(backend.keyframe_detection),
         ),
     )
+
     col_a, col_b, col_c = st.columns(3, gap="small")
     with col_a:
         max_view_num = int(st.number_input("Max Views", min_value=1, value=backend.max_view_num))
+        stride = int(st.number_input("Keyframe Stride", min_value=1, value=backend.stride))
         flow_thres = float(st.number_input("Flow Threshold", value=float(backend.flow_thres)))
         point_conf_thres = float(
             st.number_input("Point Confidence", min_value=0.0, value=float(backend.point_conf_thres))
@@ -461,6 +463,8 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         checkpoint_path=checkpoint_path,
         vocab_path=vocab_path,
         max_view_num=max_view_num,
+        keyframe_detection=keyframe_detection,
+        stride=stride,
         flow_thres=flow_thres,
         neighbor_edge_num=neighbor_edge_num,
         loop_edge_num=loop_edge_num,
@@ -471,8 +475,6 @@ def _render_vista_backend_settings(backend_spec: BackendSpec, *, max_frames: int
         rel_pose_thres=rel_pose_thres,
         pgo_every=pgo_every,
         random_seed=random_seed,
-        keyframe_detection=keyframe_detection,
-        stride=stride,
         device=device,
     )
 
@@ -588,6 +590,14 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
                 value=float(backend.backend_join_timeout_s),
             )
         )
+        keyframe_buffer_size = int(
+            st.number_input(
+                "Keyframe Buffer",
+                min_value=1,
+                value=int(backend.keyframe_buffer_size),
+                help="Maximum number of MASt3R keyframes preallocated by the upstream shared buffer.",
+            )
+        )
 
     with st.expander("MASt3R Paths", expanded=False):
         mast3r_slam_dir = _path_input("MASt3R-SLAM Directory", backend.mast3r_slam_dir)
@@ -609,6 +619,7 @@ def _render_mast3r_backend_settings(backend_spec: BackendSpec, *, max_frames: in
         match_frac_thresh=match_frac_thresh,
         backend_poll_interval_s=backend_poll_interval_s,
         backend_join_timeout_s=backend_join_timeout_s,
+        keyframe_buffer_size=keyframe_buffer_size,
     )
 
 

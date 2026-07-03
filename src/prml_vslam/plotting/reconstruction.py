@@ -354,7 +354,7 @@ def _build_figure(
                 i=mesh_triangles[:, 0],
                 j=mesh_triangles[:, 1],
                 k=mesh_triangles[:, 2],
-                name=f"TSDF mesh ({len(mesh_triangles):,} triangles)",
+                name=f"Reference mesh ({len(mesh_triangles):,} triangles)",
                 color=mesh_color,
                 opacity=mesh_opacity,
             )
@@ -366,7 +366,7 @@ def _build_figure(
                 y=points_view[:, 1],
                 z=points_view[:, 2],
                 mode="markers",
-                name=f"TSDF points ({len(points_view):,}/{points_total:,})",
+                name=f"Reference points ({len(points_view):,}/{points_total:,})",
                 marker={
                     "size": 1.5,
                     "color": points_view[:, 2],

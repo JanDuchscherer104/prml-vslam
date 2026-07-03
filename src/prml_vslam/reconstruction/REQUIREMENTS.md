@@ -38,6 +38,9 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
 - `intrinsics`, `rgb`, and `depth_m` for one observation must describe the same
   raster.
 - depth inputs must be metric depth in meters, not visualization products
+- point-cloud input selections must consume the selected PLY artifact directly;
+  `evaluation_aligned_cloud` uses `point_cloud_sim3_icp_aligned.ply` and must
+  not fall back to RGB-D observation integration
 - durable normalized output must include one world-space
   `reconstruction_cloud.ply`; optional mesh/debug artifacts may exist but must not
   replace the public point-cloud contract
@@ -50,6 +53,9 @@ This document is the concise source of truth for `prml_vslam.reconstruction`.
   sufficient
 - the first executable reconstruction method must be a minimal Open3D TSDF
   backend based on `ScalableTSDFVolume`
+- Open3D-backed point-cloud reconstruction may share the same backend adapter
+  while the config union has only one Open3D backend, but metadata must record
+  that TSDF integration was not used
 - the public execution seam must stay minimal and offline-first until a real
   streaming reconstruction use case exists
 - reconstruction stage input construction must stay in the reconstruction-owned

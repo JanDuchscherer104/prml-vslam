@@ -12,23 +12,22 @@ methods can normalize into the same reconstruction input. Benchmark policy stays
 in [`prml_vslam.pipeline`](../pipeline/README.md), and Rerun logging stays in
 [`prml_vslam.visualization`](../visualization/README.md) plus the pipeline sink.
 
-The current implementation is intentionally narrow: one minimal Open3D TSDF
-implementation backed by the repo pin `open3d>=0.19.0,<0.20` from
-[`../../../pyproject.toml`](../../../pyproject.toml). The package should not
-start with a general-purpose reconstruction framework, a zoo of backends, or a
-repo-local TSDF implementation. It first makes the pipeline `reconstruction`
-stage executable with one well-typed, easy-to-extend method boundary.
+The current implementation targets dense point clouds extracted from SLAM trajectories. The package provides two primary reconstruction backends:
+
+1. **Poisson**: A lightweight CPU/GPU surface reconstruction method.
+2. **NKSR**: A heavy, neural kernel surface reconstruction backend relying on `torch-scatter`.
+
+The package should not start with a general-purpose reconstruction framework, a zoo of backends, or a
+repo-local TSDF implementation. It makes the pipeline `reconstruction` stage executable with one well-typed, easy-to-extend method boundary.
 
 ## Current State
 
-- one executable reconstruction method: Open3D `ScalableTSDFVolume`
+- two executable reconstruction methods: `poisson` and `nksr`
 - one config-driven method boundary that selects the configured backend
   without a separate harness object
-- one normalized offline reconstruction boundary built from shared
-  `Observation` values plus explicit `T_world_camera` poses
-- one normalized durable output for the stage: a world-space
-  `reconstruction_cloud.ply`
-- optional extra artifacts such as a mesh or debug metadata only when the
+- one normalized offline reconstruction boundary built from a dense SLAM point cloud
+- one normalized durable output for the stage: a world-space `reconstruction_cloud.ply` and `reconstruction_mesh.ply`
+- optional extra artifacts such as debug metadata only when the
   concrete implementation can provide them without widening the public stage
   contract
 - no direct Rerun logging from this package; the package should emit typed
@@ -66,9 +65,10 @@ src/prml_vslam/reconstruction
 │   └── OfflineReconstructionBackend # normalized offline reconstruction protocol
 ├── config.py                        # discriminated backend config union
 │   ├── ReconstructionBackendConfig  # shared reconstruction config base
-│   └── Open3dTsdfBackendConfig      # concrete Open3D TSDF config
-└── open3d_tsdf.py                   # thin Open3D-backed implementation
-    └── Open3dTsdfBackend            # concrete TSDF reconstructor
+│   ├── PoissonBackendConfig         # concrete Poisson config
+│   └── NksrBackendConfig            # concrete NKSR config
+├── nksr.py                          # Neural Kernel Surface Reconstruction implementation
+└── poisson.py                       # Poisson surface reconstruction implementation
 ```
 
 The important design choice is that typed configs and protocols are the method
@@ -102,15 +102,25 @@ surface instead of duplicating Open3D fields under a stage-local id:
 
 ```python
 class ReconstructionMethodId(StrEnum):
-    OPEN3D_TSDF = "open3d_tsdf"
+    POISSON = "poisson"
+    NKSR = "nksr"
 
 
 class ReconstructionBackendConfig(BaseConfig):
     method_id: ReconstructionMethodId
 
 
-class Open3dTsdfBackendConfig(ReconstructionBackendConfig, FactoryConfig[Open3dTsdfBackend]):
-    method_id: Literal[ReconstructionMethodId.OPEN3D_TSDF] = ReconstructionMethodId.OPEN3D_TSDF
+class PoissonBackendConfig(ReconstructionBackendConfig, FactoryConfig[PoissonBackend]):
+    method_id: Literal[ReconstructionMethodId.POISSON] = ReconstructionMethodId.POISSON
+    depth: int = 9
+    width: float = 0
+    scale: float = 1.1
+    linear_fit: bool = False
+
+class NksrBackendConfig(ReconstructionBackendConfig, FactoryConfig[NksrBackend]):
+    method_id: Literal[ReconstructionMethodId.NKSR] = ReconstructionMethodId.NKSR
+    voxel_size: float = 0.05
+    device: Literal["cuda", "cpu"] = "cuda"
 ```
 
 This gives the stage one discriminated config union and one obvious extension
@@ -248,33 +258,16 @@ This keeps the public stage contract distinct from source-prepared benchmark
 reference clouds while still allowing the Open3D implementation to preserve a
 mesh or debug artifacts when useful.
 
-## Open3D TSDF Scope
+## Reconstruction Implementation Scope
 
-The first implementation should use only the classic Open3D integration path:
+The implementation should operate directly on point clouds exported by SLAM:
 
-- `open3d.geometry.RGBDImage.create_from_color_and_depth(...)`
-- `open3d.camera.PinholeCameraIntrinsic(...)`
-- `open3d.pipelines.integration.ScalableTSDFVolume(...)`
-- `ScalableTSDFVolume.integrate(...)`
-- `ScalableTSDFVolume.extract_point_cloud()` and optionally
-  `extract_triangle_mesh()`
-
-That is the smallest implementation that still matches the package goal. It
-avoids:
-
-- custom TSDF kernels
-- Open3D tensor reconstruction unless a later measured need justifies it
-- viewer-specific payload types in the package boundary
-- fake abstraction layers around library details we only use once
-
-The thin Open3D adapter should therefore:
-
-1. normalize one observation into Open3D `Image`, `RGBDImage`, and
-   `PinholeCameraIntrinsic`
-2. integrate into one `ScalableTSDFVolume`
-3. extract one fused world-space point cloud
-4. write the normalized `reconstruction_cloud.ply`
-5. persist typed metadata that records the Open3D settings and frame semantics
+1. load a dense point cloud (`.ply` or `.npz`)
+2. estimate normals if required by the algorithm
+3. reconstruct a mesh using the Poisson or NKSR algorithm
+4. extract a point cloud representation of the surface
+5. write the normalized `reconstruction_mesh.ply` and `reconstruction_cloud.ply`
+6. persist typed metadata that records the settings and semantics
 
 ## Package Boundaries
 
@@ -296,13 +289,5 @@ This package should not own:
 
 ## Primary External References
 
-- Open3D `ScalableTSDFVolume`:
-  [open3d.pipelines.integration.ScalableTSDFVolume](https://www.open3d.org/docs/release/python_api/open3d.pipelines.integration.ScalableTSDFVolume.html)
-- Open3D `RGBDImage`:
-  [open3d.geometry.RGBDImage](https://www.open3d.org/docs/release/python_api/open3d.geometry.RGBDImage.html)
-- Open3D `PinholeCameraIntrinsic`:
-  [open3d.camera.PinholeCameraIntrinsic](https://www.open3d.org/docs/release/python_api/open3d.camera.PinholeCameraIntrinsic.html)
-
-These docs currently resolve to the `0.19.0` API, which matches the repo's
-current dependency pin. If the repository updates the Open3D pin later, this
-guide should be updated in the same change.
+- Open3D `Poisson`: [Poisson surface reconstruction](https://www.open3d.org/docs/release/tutorial/geometry/surface_reconstruction.html#Poisson-surface-reconstruction)
+- NKSR: [Neural Kernel Surface Reconstruction](https://github.com/nv-tlabs/nksr)

@@ -34,7 +34,7 @@ from prml_vslam.pipeline.contracts.plan import PlannedSource, RunPlan, RunPlanSt
 from prml_vslam.pipeline.contracts.stages import StageKey
 from prml_vslam.pipeline.stages.base.config import StageConfig
 from prml_vslam.pipeline.stages.summary.config import SummaryStageConfig
-from prml_vslam.reconstruction.config import Open3dTsdfBackendConfig
+from prml_vslam.reconstruction.config import NksrBackendConfig
 from prml_vslam.reconstruction.stage.config import ReconstructionStageConfig
 from prml_vslam.sources.config import (
     AdvioSourceConfig,
@@ -543,7 +543,7 @@ def build_run_config(
             ),
             reconstruction=ReconstructionStageConfig(
                 enabled=reference_enabled,
-                backend=Open3dTsdfBackendConfig(),
+                backend=NksrBackendConfig(),
             ),
             align_cloud=CloudAlignmentStageConfig(enabled=cloud_alignment_enabled),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=evaluate_cloud),

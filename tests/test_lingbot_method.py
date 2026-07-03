@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 import prml_vslam.app.pages.pipeline_request_editor as pipeline_request_editor
 import prml_vslam.methods.lingbot.adapter as lingbot_adapter
 from prml_vslam.app.models import PipelineSourceId
