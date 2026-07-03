@@ -15,7 +15,7 @@ All team members collaborated on the final structure and synthesis of the docume
 The software implementation distributed pipeline infrastructure, model adapters and evaluation tooling across the team:
 
 - *Valentin Bumeder:* Managed project organization and issue tracking. Implemented the trajectory evaluation pipeline using the `evo` package, the trajectory alignment and the evaluation sweeper.
-- *Jan Duchscherer:* Developed the configurable pipeline framework, Rerun Viewer integration and Streamlit application. Implemented the ARCore baseline and developed the video source integrations, incremental 3D reconstruction and point cloud evaluation.
+- *Jan Duchscherer:* Developed the configurable pipeline framework, Rerun Viewer integration and Streamlit application. Implemented all three datasets and iPhone live streaming, recorded the custom dataset, implemented RANSAC ground-plan detection and ICP point cloud alignment, as well as the LingBot-Map adapter.
 - *Lukas Röß:* Developed the method integration infrastructure, integrated ViSTA-SLAM, implemented the NKSR/Poisson 3D mesh reconstruction and briefly supported video source integrations.
 - *Christopher Kirschner:* Adapted the MASt3R-SLAM model for the benchmark and implemented output-image quality metrics.
 - *Florian Beck:* Implemented the point cloud evaluation and fixed the sweeper implementation.

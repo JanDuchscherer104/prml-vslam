@@ -9,20 +9,11 @@ settings, the measured object should be the SLAM method and its declared preproc
 incidental file layout, viewer transforms, or repeated copying of RGB-D payloads. A run is therefore
 planned as a deterministic sequence of stages, consisting of normalized sources, vSLAM, optional gravity, Sim(3) and ICP
 alignment, trajectory metrics, point-cloud & image projection evaluation, and live or export sinks.
-A pipeline run separates deterministic planning from runtime orchestration. The persisted
-`RunConfig` owns the fixed `StageBundle`; compilation walks enabled sections in the
-repository-defined order, checks availability, and emits a `RunPlan` with planned stage
-outputs. The coordinator then registers the available runtime factories with the
-`RuntimeManager`, while `StageRunner` invokes each offline or streaming protocol and
-stores typed results in `StageResultStore` for downstream input builders.
 
 
 #figure(
-  image("../../figures/mermaid/pipeline/pipeline_config_build_slide_candidate.svg", width: 100%),
-  caption: text(size: 9.5pt)[Pipeline run compilation and orchestration. `RunConfig`
-    fixes the configurable stage sections, `RunPlan` records the ordered executable
-    stages, and runtime specs are bound lazily at execution time before completed
-    results become typed handoffs for later stages.],
+  image("../../figures/fletcher/pipeline/pipeline_stage_order.png", width: 100%),
+  caption: text(size: 9.5pt)[Stage flow with observer fan-out.],
 ) <fig:framework-contracts>
 
 Artifact-based reproducibility means: stages build their own inputs, the pipeline
@@ -31,7 +22,7 @@ Standardized path contracts fix evidence under `input/`, `benchmark/`, `slam/`, 
 `reconstruction/`, and `summary/` sub-dirs of the respective run directory. Rerun and UI state receive live observer updates via an event-based fan-out by some of the stages, as illustrated in @fig:framework-contracts.
 
 Streaming preserves the same stage order but moves the runtime boundary to a bounded actor pipeline.
-Source and method execution form the hot path where frames are credit-flowed, and RGB, depth, and
+Source and method execution form the hot path: frames are credit-flowed, and RGB, depth, and
 point-map arrays travel as transient references instead of repeated copies. Method outputs and
 captured frame/keyframe rates and latency enable runtime evaluation; replay can respect timestamps or run
 fast-as-possible, and live Record3D uses the same path for incremental visualization and export.
