@@ -1,7 +1,7 @@
 = Retrospective
 
 // TODO: AI Usage
-// ++ Performance Boost and quick setup 
+// ++ Performance Boost and quick setup
 // -- Scope Blow
 // -- Huge Debugging, Refactoring & Finalization Efforts
 

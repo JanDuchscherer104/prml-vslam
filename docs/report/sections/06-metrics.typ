@@ -1,12 +1,106 @@
 #import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
 
-= Trajectory Alignment
+= Trajectory Alignment and Evaluation
 
-// TODO: Trajectory Alignment Methodology by VB.
+For benchmarking of the implemented SLAM methods, stages for #link("https://github.com/JanDuchscherer104/prml-vslam/tree/main/src/prml_vslam/align")[alignment] and #link("https://github.com/JanDuchscherer104/prml-vslam/blob/main/src/prml_vslam/eval/services/trajectory_evaluation.py")[evaluation] of the estimated trajectories of the VSLAM Methods against reference trajectories have been implemented in the pipeline. 
 
-= Trajectory Evaluation
+== Alignment problem
 
-// TODO: Trajectory Evaluation Methodology by VB.
+A monocular camera cannot observe metric scale, the world coordinate frame, or the orientation of
+the world: a real scene and a uniformly scaled, translated, and rotated replica of it project to
+identical images. Estimated and reference trajectories are therefore never in the same frame,
+scale, or orientation, and no residual error is meaningful until a best-fit transform places the
+estimate into the reference frame. The ambiguity has exactly three degrees of freedom -- scale,
+translation, and rotation -- matching the parameters of a similarity transform, which motivates the
+alignment model used below. Evaluation is explicit by construction: the trajectory-evaluation stage
+only runs when a benchmark reference is available and requested by the experiment configuration, so
+no metric is fabricated when a reference is missing.
+
+// TODO: cite a general monocular VO/SLAM survey or tutorial for the scale/frame/orientation ambiguity claim above (see REPORT_PLAN_TRAJECTORY_EVALUATION.md Part C.1 -- unverified candidates, confirm before citing).
+
+== Timestamp association
+
+Estimated and reference trajectories are sampled at different, generally mismatched rates -- for
+example a mobile-provider reference at device rate versus a SLAM trajectory at keyframe rate -- so
+poses must be paired before alignment or metrics are computed. Pairing uses nearest-timestamp
+association with a fixed tolerance of $0.01 "s"$ @grupp2017evo. Only associated pairs enter both
+alignment and metric computation; if association coverage is insufficient, the metric is skipped for
+that run rather than computed on a biased subset, consistent with the artifact-completeness
+criterion in @tab:experiment-protocol.
+
+== Sim(3) alignment (Umeyama)
+
+Monocular trajectories are observable only up to a similarity transform. Alignment therefore solves
+
+$
+  bold(S)^* = arg min_(bold(S) in "Sim"(3)) sum_i norm(bold(x)_i^"ref" - bold(S) bold(x)_i^"est")^2,
+  quad bold(S) bold(x) = s bold(R) bold(x) + bold(t),
+$
+
+in closed form via Umeyama's singular-value decomposition @umeyama1991least. $"SE"(3)$ has no scale
+term and cannot correct the ambiguity above, while a full affine map has too many degrees of freedom
+and can mask genuine drift as alignment; $"Sim"(3)$ matches the ambiguity exactly. A closed-form
+estimator is preferred over an iterative refinement because it is deterministic and carries no
+initialization or local-optimum risk. The recovered $(s, bold(R), bold(t))$ is itself a result:
+$s approx 1$ indicates correct metric-scale recovery.
+
+// TODO: cite Horn (1987) for the related scale-free absolute-orientation solution and state precisely what Umeyama's method adds beyond it (see REPORT_PLAN_TRAJECTORY_EVALUATION.md Part C.2 -- unverified, confirm before citing).
+
+For references with a known up axis, an unconstrained rotation is too permissive: on near-planar
+phone trajectories, Umeyama's fit can return an up/down-flipped $bold(R)$ that lowers the residual
+while being physically nonsensical. We therefore also implement a gravity-aware variant that
+constrains $bold(R)$ to a yaw rotation about the known up axis $bold(u)$,
+
+$
+  bold(S)^* = arg min_(s,theta,bold(t)) sum_i
+  norm(bold(x)_i^"ref" - (s bold(R)_"yaw"(theta) bold(x)_i^"est" + bold(t)))^2,
+  quad bold(R)_"yaw" bold(u) = bold(u),
+$
+
+solved in closed form by projecting centered positions onto the horizontal plane, recovering the yaw
+angle via $op("atan2")$, and then back-solving scale and translation. This path applies only when
+the reference's target frame is recognized as gravity-aligned, which the current implementation
+tests by matching frame names of the form `advio_*_world`; in practice only ADVIO references receive
+it, while TUM RGB-D and Record3D use the unconstrained fit (the trajectory-evaluation results below
+discuss a case where this gate did not fire on ADVIO).
+
+// TODO: cite a VIO gravity-initialization precedent (e.g. VINS-Mono, ORB-SLAM3) and state precisely how this post-hoc, evaluation-time gravity lock relates to gravity-constrained state estimation (see REPORT_PLAN_TRAJECTORY_EVALUATION.md Part C.3 -- unverified, confirm before citing).
+
+This gravity-aware trajectory alignment changes the reported metric and is unrelated to the separate
+RANSAC ground-plane fit used only to orient the point-cloud viewer for display; the latter never
+affects a reported trajectory or dense-geometry metric.
+
+== Metrics: APE and RPE
+
+Let $bold(T)_i$ and $hat(bold(T))_i$ denote the associated, Sim(3)-aligned reference and estimated
+poses. Absolute pose error (APE) measures global placement,
+
+$
+  bold(e)_i^"ape" = op("trans")(bold(T)_i^(-1) hat(bold(T))_i),
+  quad
+  "RMSE"_"ape" = sqrt(frac(1, n) sum_i norm(bold(e)_i^"ape")^2),
+$
+
+and is dominated by accumulated drift and loop-closure quality. Relative pose error (RPE) instead
+compares motion over a lag $h$ chosen so consecutive poses are separated by a fixed path length
+$Delta = 1 "m"$,
+
+$
+  bold(E)_i^"rpe" = (bold(T)_i^(-1) bold(T)_(i+h))^(-1) (hat(bold(T))_i^(-1) hat(bold(T))_(i+h)),
+$
+
+and is robust to a single large global error, so it measures local tracking consistency instead
+@zhang2018trajectory @sturm2012benchmark. The two are complementary: low RPE with high APE indicates
+good local tracking but weak or missing loop closure, whereas high RPE indicates locally
+inconsistent odometry regardless of the global outcome @zhang2018trajectory. Each run persists seven
+summary statistics per metric (RMSE, mean, median, standard deviation, minimum, maximum, and sum of
+squared errors); RMSE is the reported headline as the outlier-sensitive, field-standard statistic,
+while medians are additionally used in @tab:trajectory-results, where a single diverged sequence
+would otherwise dominate the mean.
+
+// TODO: cite a methodological source for reporting medians alongside RMSE under small sample sizes (see REPORT_PLAN_TRAJECTORY_EVALUATION.md Part C.5 -- unverified, confirm before citing).
+
+// ------------------------------------ POINT-CLOUD -------------------------------------------
 
 = Point Cloud Evaluation
 
