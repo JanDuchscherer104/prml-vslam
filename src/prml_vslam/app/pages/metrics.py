@@ -20,9 +20,14 @@ from prml_vslam.eval.dataset_aggregation import (
     build_wide_metric_rows,
     filter_metric_rows,
 )
-from prml_vslam.eval.query import RunTrajectoryEvaluation
+from prml_vslam.eval.query import RunCloudEvaluation, RunTrajectoryEvaluation
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 from prml_vslam.plotting.metrics import (
+    build_cloud_accuracy_completeness_xy_figure,
+    build_cloud_distance_metrics_figure,
+    build_cloud_icp_impact_figure,
+    build_cloud_point_count_figure,
+    build_cloud_quality_metrics_figure,
     build_coverage_chart,
     build_dataset_heatmap,
     build_trajectory_error_box,
@@ -96,6 +101,8 @@ def render(context: AppContext) -> None:
 
     loaded = [query.load_run_evaluation(run) for run in selection.runs]
     _render_run_status(loaded)
+    cloud_evaluations = [query.load_run_cloud_evaluation(run) for run in selection.runs]
+    _render_cloud_metrics(cloud_evaluations)
     metric_rows = [row for loaded_run in loaded for row in loaded_run.metric_rows]
     if not metric_rows:
         st.info("No persisted trajectory metric rows are available for this sequence yet.")
@@ -129,6 +136,54 @@ def _render_run_status(loaded: list[RunTrajectoryEvaluation]) -> None:
     with st.container(border=True):
         st.subheader("Run Coverage")
         st.dataframe(rows, hide_index=True, width="stretch")
+
+
+def _render_cloud_metrics(loaded: list[RunCloudEvaluation]) -> None:
+    available = [item for item in loaded if item.artifact is not None]
+    errored = [item for item in loaded if item.load_error is not None]
+    if not available and not errored:
+        return
+    with st.container(border=True):
+        st.subheader("Point-Cloud Evaluation")
+        st.caption(
+            "Persisted Open3D dense-cloud metrics. Lower distance values are better; F1 and ICP fitness are ratios."
+        )
+        if errored:
+            st.warning("Some cloud metric artifacts could not be loaded.")
+            st.dataframe(
+                [
+                    {
+                        "Run": item.run.label,
+                        "Artifact Root": item.run.artifact_root.as_posix(),
+                        "Message": item.load_error,
+                    }
+                    for item in errored
+                ],
+                hide_index=True,
+                width="stretch",
+            )
+        if not available:
+            return
+        rows = [row.table_row() for item in available for row in item.metric_rows]
+        st.dataframe(rows, hide_index=True, width="stretch")
+        tabs = st.tabs([item.run.label for item in available]) if len(available) > 1 else [st.container()]
+        for tab, item in zip(tabs, available, strict=True):
+            artifact = item.artifact
+            if artifact is None:
+                continue
+            with tab:
+                st.caption(f"Metrics artifact: `{artifact.path}`")
+                col_distance, col_quality = st.columns(2, gap="large")
+                col_distance.plotly_chart(build_cloud_distance_metrics_figure(artifact), width="stretch")
+                col_quality.plotly_chart(build_cloud_quality_metrics_figure(artifact), width="stretch")
+                col_impact, col_xy = st.columns(2, gap="large")
+                col_impact.plotly_chart(build_cloud_icp_impact_figure(artifact), width="stretch")
+                col_xy.plotly_chart(build_cloud_accuracy_completeness_xy_figure(artifact), width="stretch")
+                st.caption(
+                    "The XY plot uses persisted aggregate cloud metrics. It is not a per-point distance CDF because "
+                    "cloud evaluation artifacts currently persist scalar summaries, not full nearest-neighbor series."
+                )
+                st.plotly_chart(build_cloud_point_count_figure(artifact), width="stretch")
 
 
 def _sim3_alignment_skip_count(item: RunTrajectoryEvaluation) -> int:
@@ -215,7 +270,7 @@ def _render_dataset_summary(context: AppContext, dataset: DatasetId) -> None:
     query = context.trajectory_evaluation_query
     page_state = context.state.metrics
 
-    with st.spinner("Loading dataset evaluation…"):
+    with st.spinner("Loading dataset evaluation..."):
         dataset_selection = query.load_dataset_evaluation(dataset)
 
     if not dataset_selection.metric_rows:

@@ -1,4 +1,4 @@
-# advio-15-offline-mast3r.toml
+# TUM-RGBD MASt3R offline smoke config.
 experiment_name = "mast3r-offline-freiburg-cabinet"
 mode            = "offline"
 output_dir      = ".artifacts"
@@ -9,10 +9,6 @@ enabled = true
     [stages.source.backend]
     source_id   = "tum_rgbd"
     sequence_id = "freiburg3_large_cabinet"
-
-        [stages.source.backend.dataset_serving]
-        pose_source = "ground_truth"
-
 
 [stages.slam]
 enabled = true

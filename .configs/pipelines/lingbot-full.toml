@@ -44,8 +44,9 @@ sampling_interval_ms    = 1000
     # CPU fallback runs; CPU is not a meaningful benchmark path for LingBot.
     device = "cuda"
 
-    # Windowed inference bounds GPU residency for long scenes.
-    mode = "streaming"
+    # Upstream finite-sequence windowed inference owns long-scene windowing,
+    # overlap alignment, and stitching.
+    mode = "windowed"
 
     # 392 is the best full-run trajectory profile found so far on the local
     # 12 GB RTX 3080 Ti FlashInfer path.
