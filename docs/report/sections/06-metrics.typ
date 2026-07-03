@@ -1,4 +1,4 @@
-git#import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
+#import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
 
 = Trajectory Alignment
 
@@ -12,9 +12,8 @@ git#import "@preview/booktabs:0.0.4": bottomrule, midrule, toprule
 
 // POINT-CLOUD
 
-Point-cloud registration is a placement diagnostic after global trajectory alignment, not a
-trajectory metric substitute. Given a Sim(3)-placed method cloud $P$ and a reference cloud $Q$,
-point-to-point ICP estimates a local rigid correction:
+Most datasets used for dense-geometry evaluation come with reference point clouds. Given a Sim(3)-placed method cloud $P$ and a reference cloud $Q$,
+point-to-point ICP estimates a correction:
 
 $
   bold(T)^* =
@@ -22,7 +21,7 @@ $
   norm(bold(T) bold(p) - op("NN")_Q(bold(T) bold(p)))^2 .
 $
 
-A correspondence threshold $tau$ defines which nearest-neighbor matches count as inliers:
+We define a threshold $tau$ that determines which nearest-neighbor matches count as inliers:
 
 $
   cal(C)_tau =
@@ -30,14 +29,13 @@ $
     norm(bold(T)^* bold(p) - op("NN")_Q(bold(T)^* bold(p))) <= tau } .
 $
 
-The threshold affects fitness, inlier root-mean-square error, and any later dense-geometry score, so
-it belongs in the metric record @besl1992method @zhou2018open3d. Dense-cloud accuracy,
-completeness, Chamfer distance, or F-score should be reported only after the dense metric runtime is
-validated against the same frozen experiment matrix.
+The threshold affects fitness, inlier RMSE, and any dense-geometry score for later methods. It belongs in the metric record @besl1992method @zhou2018open3d. Dense-cloud accuracy,
+completeness, Chamfer distance, and F-score should be reported only after the dense metric runtime is
+validated against the same matrix.
 
-For a placed estimate cloud $E$ and reference cloud $R$, the dense-cloud score uses the two
-nearest-neighbor directions separately before combining them. Accuracy queries estimate points
-against the reference,
+For an estimate cloud $E$ and reference cloud $R$, the dense-cloud score uses the two
+nearest-neighbor directions separately before combining them. The accuracy queries our estimate points
+against the reference points,
 
 $
   "accuracy" =
@@ -51,8 +49,21 @@ $
   frac(1, abs(R)) sum_(bold(r) in R) min_(bold(e) in E) norm(bold(r) - bold(e)).
 $
 
-The reported Chamfer distance is their sum. At tolerance $tau$, precision is the fraction of
-estimate points within $tau$ of the reference and recall is the fraction of reference points within
+Their sum is the reported Chamfer distance:
+
+$
+  "Chamfer" = "accuracy" + "completeness".
+$
+
+This two-direction construction is illustrated in @fig:pointcloud-chamfer-metric.
+
+#figure(
+  image("../../figures/pointcloud/metric_schematics/pointcloud_chamfer.svg", width: 100%),
+  caption: [Chamfer distance adds the estimate-to-reference and reference-to-estimate nearest-neighbor directions into one dense-cloud distance score.],
+) <fig:pointcloud-chamfer-metric>
+
+To calculate the F-score for this dense-cloud, we introduce a tolerance $tau$. Points outside this tolerance are counted as not covered. Analogous to the Chamfer distance, both the estimated point cloud and the reference point cloud are queried.
+The *precision* $P$ is the fraction of estimate points within $tau$ of the reference and *recall* $R$ is the fraction of reference points within
 $tau$ of the estimate. Let
 
 $
@@ -80,7 +91,13 @@ $
 $
 
 The final dense-cloud tables use $tau = 0.05 "m"$, so the score reads as surface overlap at a
-5 cm tolerance rather than an unbounded distance average.
+5 cm tolerance rather than an unbounded distance average. @fig:pointcloud-f1-metric visualizes this
+thresholded overlap interpretation. Note: 5cm tolerance is quite strict and
+
+#figure(
+  image("../../figures/pointcloud/metric_schematics/pointcloud_f1.svg", width: 100%),
+  caption: [Dense-cloud F-score converts nearest-neighbor distances into precision and recall under the 5 cm tolerance used for the final metric tables.],
+) <fig:pointcloud-f1-metric>
 
 #figure(
   table(

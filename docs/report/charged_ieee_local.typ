@@ -203,11 +203,12 @@
     scope: "parent",
     clearance: 30pt,
     {
-      show std.title: set align(center)
-      show std.title: set par(leading: 0.5em)
-      show std.title: set text(size: 24pt, weight: "regular")
-      show std.title: set block(below: 8.35mm)
-      std.title()
+      block(below: 8.35mm)[
+        #set align(center)
+        #set par(leading: 0.5em)
+        #set text(size: 24pt, weight: "regular")
+        #title
+      ]
 
       // Display the authors list.
       set par(leading: 0.6em)
