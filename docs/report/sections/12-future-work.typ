@@ -17,10 +17,10 @@
 == COLMAP as an Offline Baseline
 
 One useful next step is a comparison against COLMAP. COLMAP is not a real-time VSLAM system. It is an
-offline SfM/MVS pipeline: it first estimates camera poses and sparse points, and then reconstructs a
+offline SfM/MVS pipeline. It first estimates camera poses and sparse points, and then reconstructs a
 dense model @schoenberger2016sfm @schoenberger2016mvs. This makes it a good reference baseline for
-quality, but not automatic ground truth. Monocular COLMAP can still have unknown scale and can fail on
-blurred, texture-poor, or dynamic phone videos.
+quality, but not automatic ground truth. Especially our Record3D dataset could be improved substantially by this.
+Monocular COLMAP can still have unknown scale and can fail on blurred, texture-poor, or dynamic phone videos.
 
 #figure(
   {
@@ -47,12 +47,14 @@ blurred, texture-poor, or dynamic phone videos.
 
 == Frame Rate and Resolution Sweeps
 
-Another open question is how much quality we lose when we make the input cheaper. Lower resolution
-means fewer pixels and less GPU memory, but it can remove details that tracking or dense prediction
+Another open question is how much quality we lose when we make the input cheaper. We already optimized the parameter for
+our runs and tried to stay true to the values which where depicted in their respective papers, but we found several
+inconsistencies and improvements for our specific hardware. Lower resolution means fewer pixels and less GPU memory, but it can remove details that tracking or dense prediction
 needs. A larger frame stride means fewer frames pass through the model, but the motion gap between two
 used frames becomes larger. Future runs should sweep `target_fps`, `frame_stride`, and
 `rgb_max_width_px`, and report accuracy, dense-cloud quality, runtime, and failure rate together
-@bodin2018slambench2 @sturm2012benchmark.
+@bodin2018slambench2 @sturm2012benchmark. It would be interesting to find direct correlations between those
+parameters, and the accuracy/performance of our methods.
 
 #figure(
   {
@@ -92,13 +94,18 @@ used frames becomes larger. Future runs should sweep `target_fps`, `frame_stride
 
 == Reconstruction After SLAM
 
-The current metric flow mostly compares aligned point clouds. A future reconstruction stage would ask
-a different question: can we fuse the partial clouds into a better surface or renderable scene? TSDF
+The current metric flow mostly compares aligned point clouds. A future reconstruction stage would be important for
+a cleaner view. We should try to fuse the partial clouds into a better surface or renderable scene. TSDF
 fusion is the most direct first step because it is already supported by the Open3D RGB-D backend
-@newcombe2011kinectfusion. Poisson surface reconstruction and 3D Gaussian Splatting would test other
+@newcombe2011kinectfusion. @fig:future-open3d-tsdf shows an Open3D TSDF reconstruction example for this direction. Poisson surface reconstruction and 3D Gaussian Splatting would test other
 outputs: one creates a surface, the other creates a renderable radiance representation
 @kazhdan2006poisson @kerbl2023gaussian. These methods should be scored separately, because a smooth
 mesh or a nice render does not always mean better SLAM geometry.
+
+#figure(
+  image("../../figures/pointcloud/open3d-tsdf.png", width: 100%),
+  caption: [Open3D TSDF reconstruction example for a future fused-surface evaluation stage.],
+) <fig:future-open3d-tsdf>
 
 #figure(
   {
@@ -127,7 +134,9 @@ metric record should therefore store the reference-cloud sampling, voxel size, c
 filter, ICP threshold, inlier statistics, and final metric-cloud pair. This is especially important
 for intrinsics-free dense monocular methods such as ViSTA-SLAM, where point density and surface noise
 can affect Chamfer distance and F-score independently of the camera trajectory @besl1992method
-@zhou2018open3d @zhang2026vistaslam.
+@zhou2018open3d @zhang2026vistaslam. We should also explore the possibility of runtime pointcloud fusion.
+There are scenes, in which geometries are swept several times, creating overlapping pointclouds. Fusing those
+overlapping clouds could result in a more accurate reconstruction, and reduces the amount of points that need to be tracked.
 
 #figure(
   {
@@ -150,31 +159,15 @@ can affect Chamfer distance and F-score independently of the camera trajectory @
 
 == Dynamic-Object Filtering
 
-Our reconstruction target is a static scene. Moving cars, people, or animals should therefore be
-detected and removed before the final scene reconstruction. Lift4D is useful here not because we need
-full 4D output, but because it models dynamic objects in monocular video and completes regions that
+Our reconstruction target is a static scene. Dynamic objects, like moving cars, people, or animals should therefore be
+detected and removed before the final scene reconstruction, since they can corrupt the detected static geometry.
+Lift4D might be useful here not because we need full 4D output, but because it models dynamic objects in monocular video and completes regions that
 were hidden by those objects @litman2026lift4d @kerbl2023gaussian. In a future pipeline, such a stage
 could provide masks for dynamic content and an inferred background behind it. The important caveat is
 that this completed background is predicted by a learned prior, so it should be marked separately from
-directly observed geometry.
+directly observed geometry. This part is essential for usage in real-world scenarios.
 
 #figure(
-  grid(
-    columns: (1.35fr, 0.9fr),
-    gutter: 0.55em,
-    [#image("../../figures/papers/lift4d.jpg", width: 100%)],
-    [
-      #set text(size: 7.2pt)
-      #fw-box([Dynamic filtering idea], [
-        monocular video input
-        #parbreak()
-        detect cars, people, animals
-        #parbreak()
-        mask dynamic objects
-        #parbreak()
-        predict hidden background
-      ], fill: rgb("fbfcff"), width: 100%)
-    ],
-  ),
+  image("../../figures/papers/lift4d.jpg", width: 100%),
   caption: [Lift4D as a future-work direction for dynamic-object filtering: detect moving objects, remove them from the static reconstruction input, and predict background regions hidden by those objects.],
 ) <fig:future-lift4d>
