@@ -240,6 +240,13 @@ docs/slides/**/*.svgz
 
 # Local pipeline/demo outputs
 .artifacts/
+.artifacts/**/native/
+.artifacts/**/rgb/
+.artifacts/**/frames/
+.artifacts/**/*.ply
+.artifacts/**/*.npy
+.artifacts/**/*.rrd
+.artifacts/**/point_cloud_confidences.npz
 .data/
 .logs/
 external/lingbot-map

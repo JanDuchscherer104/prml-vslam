@@ -1,0 +1,260 @@
+# MASt3R-SLAM 18-scene sweep: 6 TUM RGB-D + 6 ADVIO + 6 Record3D.
+#
+# Requires the mast3r extra (conflicts with vista and lingbot; install separately):
+#   mamba activate prml-vslam
+#   export UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX
+#   uv sync --extra dev --extra streaming --extra mast3r
+#
+# Inspect the expanded plan (no execution):
+#   uv run prml-vslam plan-sweep-config .configs/sweeps/benchmark-18-mast3r-sweep.toml
+#
+# Execute sequentially, attempting all runs:
+#   uv run --extra mast3r prml-vslam run-sweep-config .configs/sweeps/benchmark-18-mast3r-sweep.toml \
+#       --continue-on-failure
+
+[sweep]
+name       = "benchmark-18-mast3r"
+output_dir = ".artifacts/sweeps"
+
+# -- TUM RGB-D -----------------------------------------------------------------
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_360"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_desk2"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_floor"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_plant"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "tum_rgbd"
+sequence_id         = "freiburg1_room"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+# -- ADVIO ---------------------------------------------------------------------
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-01"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-02"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-03"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-04"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-05"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "advio"
+sequence_id         = "advio-06"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "ground_truth"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = false
+align_cloud         = false
+align_cloud_max_correspondence_distance_m = 0.02
+
+# -- Record3D ------------------------------------------------------------------
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-17-10"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-20-22"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-24-27"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-26-32"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-27-25"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[[datasets]]
+dataset_id          = "record3d_dataset"
+sequence_id         = "2026-06-03--18-29-08"
+frame_stride        = 1
+replay_mode         = "fast_as_possible"
+baseline_source     = "arkit"
+align_ground        = true
+align_trajectory    = true
+evaluate_trajectory = true
+evaluate_cloud      = true
+align_cloud         = true
+align_cloud_max_correspondence_distance_m = 0.02
+
+[methods.mast3r]
+config_path = ".configs/templates/mast3r-slam.toml"

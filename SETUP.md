@@ -54,14 +54,6 @@ which nvcc
 - uv mutates the same `.venv` to match the selected method. This is expected:
 for example, switching from `mast3r` to `lingbot` removes MASt3R-only packages
 and installs LingBot-only packages.
-- If a native package fails after switching mamba environments, remove generated
-native build caches before retrying. CMake caches absolute compiler and OpenCV
-paths:
-
-```bash
-rm -rf external/vista-slam/DBoW3Py/build
-rm -rf external/vista-slam/DBoW3Py/*.egg-info
-```
 
 ## ViSTA/CUDA Setup
 
@@ -113,18 +105,25 @@ Optionally run the local CI checks and the ViSTA smoke pipeline:
 uv run --extra vista prml-vslam run-config .configs/pipelines/vista-smoke-test.toml
 ```
 
-### Resolving DBoW3Py Compilation Error
+### Resolving DBoW3Py Import Or Compilation Error
 
 If a native package fails after switching mamba environments, remove generated
 native build caches before retrying. CMake caches absolute compiler and OpenCV
 paths:
 
 ```bash
-rm -rf external/vista-slam/DBoW3Py/build
-rm -rf external/vista-slam/DBoW3Py/*.egg-info
+rm -f external/vista-slam/DBoW3Py/DBoW3Py*.so
+rm -f external/vista-slam/DBoW3Py/libDBoW3.so*
+uv sync --reinstall-package DBoW3Py --extra dev --extra vista --extra streaming
 ```
 
-Then retry the `uv sync` command with the `vista` extra.
+Verify that the extension and `libDBoW3.so.0.0` are importable from the active
+mamba environment:
+
+```bash
+uv run python -c "import DBoW3Py; print(DBoW3Py.__file__)"
+ldd external/vista-slam/DBoW3Py/DBoW3Py*.so | grep DBoW3
+```
 
 ## MASt3R/CUDA Setup
 
@@ -203,6 +202,18 @@ uv run --extra lingbot prml-vslam run-config .configs/pipelines/lingbot-smoke.to
 ```
 
 **Note**: This requires the _normalized_ vslam-datastore entry of `freiburg3_large_cabinet` to be present. See [Dataset Downloads and VSLAM Datastore](#dataset-downloads-and-vslam-datastore) for details.
+
+## NKSR/CUDA Setup
+
+The NKSR reconstruction backend is installed through the optional `nksr` extra. It requires `torch-scatter` and compiling a CUDA extension, so it must be run with the mamba environment activated.
+
+```bash
+# mamba env create -f environment.yml
+mamba activate prml-vslam
+uv sync --extra dev --extra nksr
+```
+
+This will pull and build the Neural Kernel Surface Reconstruction package from the upstream NVIDIA repository. You can then run pipeline configurations that specify `method_id = "nksr"` for the reconstruction backend.
 
 ## Dataset Downloads and VSLAM Datastore
 

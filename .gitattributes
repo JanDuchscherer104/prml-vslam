@@ -27,3 +27,12 @@ LICENSE     text eol=lf
 # Graphify Large Artifacts (LFS)
 
 
+
+# Pipeline run artifacts (LFS)
+
+.artifacts/**/native/** -filter -diff -merge -text
+.artifacts/**/rgb/** -filter -diff -merge -text
+.artifacts/**/frames/** -filter -diff -merge -text
+.artifacts/**/*.ply -filter -diff -merge -text
+.artifacts/**/*.npy -filter -diff -merge -text
+.artifacts/**/*.rrd -filter -diff -merge -text

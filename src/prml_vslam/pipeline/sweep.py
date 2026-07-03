@@ -15,7 +15,7 @@ Schema overview::
     dataset_id          = "tum_rgbd"        # "tum_rgbd" | "advio" | "record3d_dataset"
     sequence_id         = "freiburg1_xyz"
     frame_stride        = 1
-    target_fps          = 30.0
+    replay_mode         = "fast_as_possible"
     baseline_source     = "ground_truth"
     align_ground        = false
     align_trajectory    = true
@@ -24,9 +24,9 @@ Schema overview::
     [methods.vista]
     config_path = ".configs/templates/vista-slam.toml"
 
-Method templates contribute **only** ``[stages.slam]``; all other sections are
-silently ignored.  Source selection, baseline policy, and downstream stage
-enablement are owned by the sweep ``[[datasets]]`` entries.
+Method templates contribute ``[stages.slam]`` and optional ``[visualization]``.
+Source selection, baseline policy, and downstream stage enablement are owned by
+the sweep ``[[datasets]]`` entries.
 
 Non-goals: aggregation, dashboards, W&B integration, or new external dependencies.
 """
@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 import tomllib
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -60,6 +60,7 @@ from prml_vslam.sources.config import (
     TumRgbdSourceConfig,
 )
 from prml_vslam.sources.contracts import ReferenceSource
+from prml_vslam.sources.replay import ReplayMode
 from prml_vslam.sources.stage.config import SourceStageConfig
 from prml_vslam.utils import BaseConfig, PathConfig
 from prml_vslam.visualization.contracts import VisualizationConfig
@@ -118,7 +119,16 @@ def _load_slam_stage_from_template(path: Path) -> SlamStageConfig:
         FileNotFoundError: When *path* does not exist.
         ValueError: When ``[stages.slam]`` is absent from the template.
     """
+    return _load_slam_stage_from_payload(_load_toml_payload(path), path)
+
+
+def _load_method_template(path: Path) -> tuple[SlamStageConfig, VisualizationConfig]:
+    """Load method-owned sweep sections from one template TOML."""
     raw = _load_toml_payload(path)
+    return _load_slam_stage_from_payload(raw, path), VisualizationConfig.model_validate(raw.get("visualization", {}))
+
+
+def _load_slam_stage_from_payload(raw: dict[str, Any], path: Path) -> SlamStageConfig:
     slam_raw = raw.get("stages", {}).get("slam")
     if slam_raw is None:
         raise ValueError(
@@ -152,18 +162,21 @@ def _build_source_backend_for_sweep(dataset: SweepDataset) -> SourceBackendConfi
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
                 target_fps=dataset.target_fps,
+                replay_mode=dataset.replay_mode,
             )
         case "advio":
             return AdvioSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
                 target_fps=dataset.target_fps,
+                replay_mode=dataset.replay_mode,
             )
         case "record3d_dataset":
             return Record3DDatasetSourceConfig(
                 sequence_id=dataset.sequence_id,
                 frame_stride=dataset.frame_stride,
                 target_fps=dataset.target_fps,
+                replay_mode=dataset.replay_mode,
             )
         case _:
             raise ValueError(
@@ -209,12 +222,16 @@ class SweepDataset(BaseConfig):
         frame_stride: Read-time stride for replaying stored normalized observations.
             ``1`` means every frame; ``2`` means every other frame, etc.
         target_fps: Read-time target FPS for replaying stored normalized observations.
+        replay_mode: Replay pacing for normalized observations.
         baseline_source: Reference trajectory used by trajectory evaluation.
         align_ground: Enable ground-alignment stage.
+        align_ground_strategy: Ground-plane detection strategy.
+        align_ground_min_confidence: Minimum confidence required to apply ground alignment.
         align_trajectory: Enable trajectory Sim(3)-alignment stage.
         evaluate_trajectory: Enable trajectory evaluation stage.
         reconstruction: Enable 3-D reconstruction stage.
         align_cloud: Enable dense-cloud alignment stage.
+        align_cloud_max_correspondence_distance_m: ICP maximum correspondence distance.
         evaluate_cloud: Enable dense-cloud evaluation stage.
     """
 
@@ -232,11 +249,20 @@ class SweepDataset(BaseConfig):
     target_fps: float | None = Field(default=None, gt=0.0)
     """Read-time target FPS for replaying stored normalized observations."""
 
+    replay_mode: ReplayMode = ReplayMode.REALTIME
+    """Replay pacing used by the dataset source."""
+
     baseline_source: ReferenceSource | None = None
     """Reference trajectory source used by the trajectory-evaluation stage."""
 
     align_ground: bool = False
     """Enable ground-alignment stage."""
+
+    align_ground_strategy: Literal["ransac_point_cloud"] = "ransac_point_cloud"
+    """Ground-plane detection strategy used when ``align_ground`` is enabled."""
+
+    align_ground_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    """Minimum confidence required before ground alignment is applied."""
 
     align_trajectory: bool = False
     """Enable trajectory Sim(3)-alignment stage."""
@@ -249,6 +275,9 @@ class SweepDataset(BaseConfig):
 
     align_cloud: bool = False
     """Enable dense-cloud alignment stage."""
+
+    align_cloud_max_correspondence_distance_m: float = Field(default=0.05, gt=0.0)
+    """Maximum ICP correspondence distance in meters."""
 
     evaluate_cloud: bool = False
     """Enable dense-cloud evaluation stage."""
@@ -271,8 +300,8 @@ class SweepDataset(BaseConfig):
 class SweepMethod(BaseConfig):
     """Reference to a method template TOML file.
 
-    The sweeper reads only ``[stages.slam]`` from the template; all other
-    sections are ignored.
+    The sweeper reads ``[stages.slam]`` and optional ``[visualization]`` from the
+    template; dataset source and downstream stage policy remain in the sweep.
 
     Attributes:
         config_path: Path to the method template TOML, resolved relative to the
@@ -356,6 +385,7 @@ class SweepRunItem(BaseConfig):
         dataset: Dataset entry that drives source and downstream stage policy.
         method_id: Backend method ID from ``[methods]``.
         slam_stage: Validated SLAM stage config extracted from the method template.
+        visualization: Visualization policy extracted from the method template.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -377,6 +407,9 @@ class SweepRunItem(BaseConfig):
 
     slam_stage: SlamStageConfig
     """SLAM stage config extracted verbatim from the method template."""
+
+    visualization: VisualizationConfig = Field(default_factory=VisualizationConfig)
+    """Visualization config extracted from the method template."""
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +474,7 @@ def expand_sweep(
     for dataset in config.datasets:
         for method_id, method in config.methods.items():
             template_path = _resolve_path(method.config_path, path_config)
-            slam_stage = _load_slam_stage_from_template(template_path)
+            slam_stage, visualization = _load_method_template(template_path)
             backend = slam_stage.backend
             if backend is None:
                 raise ValueError(f"Method template {template_path} has no [stages.slam.backend] section.")
@@ -473,6 +506,7 @@ def expand_sweep(
                     dataset=dataset,
                     method_id=method_id,
                     slam_stage=slam_stage,
+                    visualization=visualization,
                 )
             )
 
@@ -490,8 +524,7 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
       ``sequence_id``.
     * Carries the ``SlamStageConfig`` verbatim from the method template.
     * Applies downstream stage-enablement flags from the dataset entry.
-    * Defaults visualization to ``connect_live_viewer=False``,
-      ``export_viewer_rrd=False`` (appropriate for unattended batch runs).
+    * Carries visualization policy from the method template.
 
     Args:
         item: A fully-expanded sweep run item produced by :func:`expand_sweep`.
@@ -516,7 +549,13 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
         stages=StageBundle(
             source=SourceStageConfig(backend=source_backend),
             slam=item.slam_stage,
-            align_ground=GroundAlignmentStageConfig(enabled=ds.align_ground),
+            align_ground=GroundAlignmentStageConfig(
+                enabled=ds.align_ground,
+                ground={
+                    "strategy": ds.align_ground_strategy,
+                    "min_confidence": ds.align_ground_min_confidence,
+                },
+            ),
             align_trajectory=TrajectoryAlignmentStageConfig(
                 enabled=ds.align_trajectory,
                 baseline_source=baseline_source,
@@ -526,14 +565,14 @@ def build_run_config_from_sweep_item(item: SweepRunItem) -> RunConfig:
                 evaluation=trajectory_policy,
             ),
             reconstruction=ReconstructionStageConfig(enabled=ds.reconstruction),
-            align_cloud=CloudAlignmentStageConfig(enabled=ds.align_cloud),
+            align_cloud=CloudAlignmentStageConfig(
+                enabled=ds.align_cloud,
+                max_correspondence_distance_m=ds.align_cloud_max_correspondence_distance_m,
+            ),
             evaluate_cloud=CloudEvaluationStageConfig(enabled=ds.evaluate_cloud),
             summary=SummaryStageConfig(enabled=True),
         ),
-        visualization=VisualizationConfig(
-            connect_live_viewer=False,
-            export_viewer_rrd=False,
-        ),
+        visualization=item.visualization,
     )
 
 

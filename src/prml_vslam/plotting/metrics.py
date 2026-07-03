@@ -11,10 +11,11 @@ import plotly.graph_objects as go
 from evo.core import metrics
 from plotly.subplots import make_subplots
 
+from prml_vslam.eval.contracts import CloudMetricId, DenseCloudEvaluationArtifact
 from prml_vslam.eval.dataset_aggregation import CoverageMatrix, HeatmapData, PerSequenceRow
 from prml_vslam.eval.trajectory_contracts import TrajectoryMetricResultRow
 
-from .theme import BLUE, DEFAULT_COLORS, apply_standard_xy_layout
+from .theme import BLUE, DEFAULT_COLORS, GRAY, GREEN, ORANGE, PURPLE, RED, apply_standard_xy_layout
 from .trajectories import _add_xy_trajectory_trace, _apply_standard_trajectory_xy_layout
 
 _RMSE_METRIC_FACETS = [
@@ -333,3 +334,232 @@ def build_violin_by_method(rows: list[PerSequenceRow]) -> go.Figure:
         violingap=0.3,
     )
     return figure
+
+
+def build_cloud_distance_metrics_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build grouped bars for distance-valued point-cloud metrics."""
+    metric_specs = (
+        (CloudMetricId.ACCURACY, "Accuracy"),
+        (CloudMetricId.COMPLETENESS, "Completeness"),
+        (CloudMetricId.CHAMFER, "Chamfer"),
+    )
+    figure = go.Figure()
+    colors = (BLUE, ORANGE, GREEN)
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    for (metric_id, label), color in zip(metric_specs, colors, strict=True):
+        figure.add_bar(
+            x=estimate_labels,
+            y=[estimate.metrics.get(metric_id) for estimate in artifact.estimates],
+            name=label,
+            marker_color=color,
+            hovertemplate="%{x}<br>%{fullData.name}: %{y:.4f} m<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Point-Cloud Distance Metrics",
+        xaxis_title="Estimate",
+        yaxis_title="Distance (m)",
+    )
+    figure.update_layout(barmode="group")
+    figure.update_yaxes(rangemode="tozero", showgrid=True)
+    return figure
+
+
+def build_cloud_quality_metrics_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build bars for thresholded F1 and ICP fitness scores."""
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    figure = go.Figure()
+    figure.add_bar(
+        x=estimate_labels,
+        y=[estimate.metrics.get(CloudMetricId.F1) for estimate in artifact.estimates],
+        name=f"F1 @ {artifact.f1_threshold_m:.2f} m",
+        marker_color=PURPLE,
+        hovertemplate="%{x}<br>%{fullData.name}: %{y:.3f}<extra></extra>",
+    )
+    icp_fitness = [estimate.metrics.get(CloudMetricId.ICP_FITNESS) for estimate in artifact.estimates]
+    if any(value is not None for value in icp_fitness):
+        figure.add_bar(
+            x=estimate_labels,
+            y=icp_fitness,
+            name="ICP fitness",
+            marker_color=GREEN,
+            hovertemplate="%{x}<br>%{fullData.name}: %{y:.3f}<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Point-Cloud Quality Scores",
+        xaxis_title="Estimate",
+        yaxis_title="Score",
+    )
+    figure.update_layout(barmode="group")
+    figure.update_yaxes(range=[0.0, 1.0], showgrid=True)
+    return figure
+
+
+def build_cloud_point_count_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build a compact point-count comparison for evaluated clouds."""
+    estimate_labels = [_estimate_label(estimate.estimate_kind.value) for estimate in artifact.estimates]
+    figure = go.Figure(
+        go.Bar(
+            x=estimate_labels,
+            y=[estimate.estimate_point_count for estimate in artifact.estimates],
+            name="Estimate points",
+            marker_color=BLUE,
+            hovertemplate="%{x}<br>Estimate points: %{y:,}<extra></extra>",
+        )
+    )
+    if artifact.estimates:
+        figure.add_scatter(
+            x=estimate_labels,
+            y=[artifact.estimates[0].reference_point_count] * len(estimate_labels),
+            mode="lines+markers",
+            name="Reference points",
+            line={"color": ORANGE, "width": 2.0, "dash": "dot"},
+            hovertemplate="Reference points: %{y:,}<extra></extra>",
+        )
+    apply_standard_xy_layout(
+        figure,
+        title="Evaluated Point Counts",
+        xaxis_title="Estimate",
+        yaxis_title="Points",
+    )
+    figure.update_yaxes(rangemode="tozero", showgrid=True)
+    return figure
+
+
+def build_cloud_icp_impact_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build signed Sim(3) -> ICP metric deltas where positive means better."""
+    sim3 = _estimate_metrics_by_kind(artifact, "sim3")
+    sim3_icp = _estimate_metrics_by_kind(artifact, "sim3_icp")
+    metric_specs = (
+        (CloudMetricId.ACCURACY, "Accuracy", False),
+        (CloudMetricId.COMPLETENESS, "Completeness", False),
+        (CloudMetricId.CHAMFER, "Chamfer", False),
+        (CloudMetricId.F1, "F1", True),
+    )
+    labels: list[str] = []
+    signed_impacts: list[float] = []
+    customdata: list[list[str | float]] = []
+    colors: list[str] = []
+    for metric_id, label, higher_is_better in metric_specs:
+        if metric_id not in sim3 or metric_id not in sim3_icp:
+            continue
+        before = sim3[metric_id]
+        after = sim3_icp[metric_id]
+        raw_delta = after - before
+        signed_impact = raw_delta if higher_is_better else -raw_delta
+        labels.append(label)
+        signed_impacts.append(signed_impact)
+        customdata.append([before, after, raw_delta, "higher" if higher_is_better else "lower"])
+        colors.append(GREEN if signed_impact >= 0.0 else RED)
+
+    figure = go.Figure(
+        go.Bar(
+            x=labels,
+            y=signed_impacts,
+            marker_color=colors,
+            customdata=customdata,
+            hovertemplate=(
+                "%{x}<br>"
+                "Sim3: %{customdata[0]:.4g}<br>"
+                "Sim3 + ICP: %{customdata[1]:.4g}<br>"
+                "Raw delta: %{customdata[2]:+.4g}<br>"
+                "Better direction: %{customdata[3]}<br>"
+                "Signed impact: %{y:+.4g}<extra></extra>"
+            ),
+        )
+    )
+    figure.add_hline(y=0.0, line_color=GRAY, line_dash="dot")
+    apply_standard_xy_layout(
+        figure,
+        title="ICP Impact on Point-Cloud Metrics",
+        xaxis_title="Metric",
+        yaxis_title="Signed impact (positive is better)",
+        showlegend=False,
+    )
+    figure.update_yaxes(showgrid=True, zeroline=True)
+    return figure
+
+
+def build_cloud_accuracy_completeness_xy_figure(artifact: DenseCloudEvaluationArtifact) -> go.Figure:
+    """Build an accuracy-vs-completeness scatter for dense-cloud estimates."""
+    figure = go.Figure()
+    points: dict[str, tuple[float, float]] = {}
+    for estimate in artifact.estimates:
+        accuracy = estimate.metrics.get(CloudMetricId.ACCURACY)
+        completeness = estimate.metrics.get(CloudMetricId.COMPLETENESS)
+        if accuracy is None or completeness is None:
+            continue
+        estimate_kind = estimate.estimate_kind.value
+        label = _estimate_label(estimate_kind)
+        f1 = estimate.metrics.get(CloudMetricId.F1)
+        marker_size = 12.0 if f1 is None else 12.0 + 16.0 * max(0.0, min(1.0, f1))
+        color = GREEN if estimate_kind == "sim3_icp" else BLUE if estimate_kind == "sim3" else ORANGE
+        points[estimate_kind] = (accuracy, completeness)
+        figure.add_trace(
+            go.Scatter(
+                x=[accuracy],
+                y=[completeness],
+                mode="markers+text",
+                name=label,
+                text=[label],
+                textposition="top center",
+                marker={"size": marker_size, "color": color, "line": {"color": "white", "width": 1.5}},
+                customdata=[[f1 if f1 is not None else np.nan, estimate.estimate_point_count]],
+                hovertemplate=(
+                    "%{text}<br>"
+                    "Accuracy: %{x:.4f} m<br>"
+                    "Completeness: %{y:.4f} m<br>"
+                    "F1: %{customdata[0]:.3f}<br>"
+                    "Estimate points: %{customdata[1]:,}<extra></extra>"
+                ),
+            )
+        )
+
+    if "sim3" in points and "sim3_icp" in points:
+        start_x, start_y = points["sim3"]
+        end_x, end_y = points["sim3_icp"]
+        figure.add_annotation(
+            x=end_x,
+            y=end_y,
+            ax=start_x,
+            ay=start_y,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=3,
+            arrowsize=1.2,
+            arrowwidth=2.0,
+            arrowcolor=GRAY,
+            text="ICP",
+        )
+
+    apply_standard_xy_layout(
+        figure,
+        title="Accuracy vs Completeness (Lower-Left Is Better)",
+        xaxis_title="Accuracy: estimate -> reference mean distance (m)",
+        yaxis_title="Completeness: reference -> estimate mean distance (m)",
+    )
+    figure.update_xaxes(rangemode="tozero", showgrid=True)
+    figure.update_yaxes(rangemode="tozero", showgrid=True)
+    return figure
+
+
+def _estimate_metrics_by_kind(
+    artifact: DenseCloudEvaluationArtifact,
+    estimate_kind: str,
+) -> dict[CloudMetricId, float]:
+    return next(
+        (estimate.metrics for estimate in artifact.estimates if estimate.estimate_kind.value == estimate_kind),
+        {},
+    )
+
+
+def _estimate_label(value: str) -> str:
+    return {
+        "sim3": "Sim3",
+        "sim3_icp": "Sim3 + ICP",
+        "reconstruction": "Reconstruction",
+    }.get(value, value.replace("_", " ").title())

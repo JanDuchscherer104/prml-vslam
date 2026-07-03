@@ -69,6 +69,70 @@ class StageManifest(BaseData):
         ]
 
 
+class StageRuntimeSummary(BaseData):
+    """Persist a compact terminal runtime snapshot for one stage.
+
+    The summary is a provenance-owned projection of the final runtime status.
+    It intentionally duplicates only scalar fields that are useful after a run
+    completes, avoiding a dependency from provenance contracts back to live
+    stage-runtime DTOs.
+    """
+
+    stage_key: StageKey
+    """Stage whose runtime produced this terminal status."""
+
+    lifecycle_state: StageStatus
+    """Final lifecycle state reported by the runtime."""
+
+    progress_message: str = ""
+    """Human-readable terminal progress detail."""
+
+    completed_steps: int | None = Field(default=None, ge=0)
+    """Completed progress units when the runtime measured bounded work."""
+
+    total_steps: int | None = Field(default=None, ge=0)
+    """Total progress units when the runtime measured bounded work."""
+
+    progress_unit: str | None = None
+    """Name of the progress unit."""
+
+    submitted_count: int = Field(default=0, ge=0)
+    """Number of work items submitted to the runtime or proxy."""
+
+    completed_count: int = Field(default=0, ge=0)
+    """Number of submitted work items completed by the runtime or proxy."""
+
+    failed_count: int = Field(default=0, ge=0)
+    """Number of submitted work items that failed."""
+
+    processed_items: int = Field(default=0, ge=0)
+    """Domain-neutral count of items processed by the runtime."""
+
+    accepted_keyframes: int = Field(default=0, ge=0)
+    """SLAM keyframes accepted into the pose graph."""
+
+    fps: float | None = Field(default=None, ge=0.0)
+    """Frame rate when measured by the runtime."""
+
+    throughput: float | None = Field(default=None, ge=0.0)
+    """Generic non-frame throughput when measured by the runtime."""
+
+    throughput_unit: str | None = None
+    """Unit label for :attr:`throughput`."""
+
+    latency_ms: float | None = Field(default=None, ge=0.0)
+    """Runtime-measured latency in milliseconds."""
+
+    last_warning: str | None = None
+    """Most recent non-fatal warning reported by the runtime."""
+
+    last_error: str | None = None
+    """Most recent error reported by the runtime."""
+
+    updated_at_ns: int = Field(default=0, ge=0)
+    """Terminal status update timestamp in nanoseconds."""
+
+
 class RunSummary(BaseData):
     """Persist the final run-level status view derived from executed stages."""
 
@@ -81,5 +145,8 @@ class RunSummary(BaseData):
     stage_status: dict[StageKey, StageStatus] = Field(default_factory=dict)
     """Final status per stage."""
 
+    stage_runtime_summaries: dict[StageKey, StageRuntimeSummary] = Field(default_factory=dict)
+    """Final runtime metrics per stage when available."""
 
-__all__ = ["ArtifactRef", "RunSummary", "StageManifest", "StageStatus"]
+
+__all__ = ["ArtifactRef", "RunSummary", "StageManifest", "StageRuntimeSummary", "StageStatus"]

@@ -8,6 +8,6 @@ not own persisted stage policy itself.
 """
 
 from .image_service import ImageQualityEvaluationService
-from .services import TrajectoryEvaluationService
+from .services import DenseCloudEvaluationService, TrajectoryEvaluationService
 
-__all__ = ["ImageQualityEvaluationService", "TrajectoryEvaluationService"]
+__all__ = ["DenseCloudEvaluationService", "ImageQualityEvaluationService", "TrajectoryEvaluationService"]

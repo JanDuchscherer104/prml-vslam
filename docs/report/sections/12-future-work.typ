@@ -92,20 +92,16 @@ parameters, and the accuracy/performance of our methods.
   caption: [Resolution and frame-stride sweeps measure the quality/runtime tradeoff instead of assuming one fixed preprocessing setting is best.],
 ) <fig:future-resolution-stride>
 
-== Reconstruction After SLAM
+== NKSR and Poisson Surface Reconstruction
 
-The current metric flow mostly compares aligned point clouds. A future reconstruction stage would be important for
-a cleaner view. We should try to fuse the partial clouds into a better surface or renderable scene. TSDF
-fusion is the most direct first step because it is already supported by the Open3D RGB-D backend
-@newcombe2011kinectfusion. @fig:future-open3d-tsdf shows an Open3D TSDF reconstruction example for this direction. Poisson surface reconstruction and 3D Gaussian Splatting would test other
-outputs: one creates a surface, the other creates a renderable radiance representation
-@kazhdan2006poisson @kerbl2023gaussian. These methods should be scored separately, because a smooth
-mesh or a nice render does not always mean better SLAM geometry.
+The metric pipeline currently evaluates aligned point clouds. The system now integrates Neural Kernel Surface Reconstruction (NKSR) and Poisson surface reconstruction to generate cohesive 3D meshes. The team merged the initial implementation and parameter fine-tuning to establish a foundation for continued work. This configuration processes the dense point cloud outputs from ViSTA-SLAM and produces a final surface mesh.
+
+While the initial parameter tuning is integrated, further optimization and validation remain active areas for future development. These methods require distinct evaluation metrics. A smooth mesh does not always indicate accurate SLAM geometry. Future iterations must refine the reconstruction parameters across diverse datasets and evaluate the resulting mesh geometry against established baselines.
 
 #figure(
-  image("../../figures/pointcloud/open3d-tsdf.png", width: 100%),
-  caption: [Open3D TSDF reconstruction example for a future fused-surface evaluation stage.],
-) <fig:future-open3d-tsdf>
+  image("../../figures/pointcloud/poisson-reconstruction-final-vista-mesh-orginal-vista-pointcloud-and-trajectory.png", width: 100%),
+  caption: [Visual comparison between the original ViSTA-SLAM point cloud, the estimated camera trajectory, and the final mesh generated via Poisson surface reconstruction.],
+) <fig:future-poisson-reconstruction>
 
 #figure(
   {
@@ -118,7 +114,7 @@ mesh or a nice render does not always mean better SLAM geometry.
       fw-arrow,
       fw-box([Shared frame], [poses, scale, provenance], fill: rgb("eef8f3")),
       fw-arrow,
-      fw-box([Reconstruction], [TSDF, Poisson, or 3DGS], fill: rgb("fff7ec")),
+      fw-box([Reconstruction], [NKSR, Poisson, or 3DGS], fill: rgb("fff7ec")),
       fw-arrow,
       fw-box([Evaluation], [cloud, mesh, and render metrics], fill: rgb("f7f1ff")),
     )
