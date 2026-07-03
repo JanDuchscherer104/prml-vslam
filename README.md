@@ -8,21 +8,6 @@ https://github.com/JanDuchscherer104/prml-vslam/raw/main/docs/figures/evidence/t
 
 https://github.com/JanDuchscherer104/prml-vslam/raw/main/docs/figures/evidence/teddy-vista-loop.mp4
 
-## Documentation Map
-
-- `README.md`
-  - project front door, workflow pointers, and high-level project framing
-- `SETUP.md`
-  - environment setup, validation commands, and Streamlit launch variants
-- `src/prml_vslam/**/README.md`
-  - current implementation guidance and code-oriented extension notes
-- `src/prml_vslam/**/REQUIREMENTS.md`
-  - concise package contracts, current-state boundaries, and target-state rules
-- `AGENTS.md` and nested `AGENTS.md`
-  - repo policy and agent-facing workflow guidance
-- `docs/Questions.md`
-  - update-sessions related clarification log for challenge scope and intent
-
 ## Status
 
 Implemented or functional:
@@ -37,11 +22,12 @@ Implemented or functional:
   [LingBot-Map](https://github.com/Robbyant/lingbot-map) integration
 - Rerun live streaming and `.rrd` file export
 - Explicit trajectory evaluation when benchmark inputs are available
+- cloud and efficiency evaluation execution
 
 Not yet implemented or limited:
 
 - reference reconstruction stage
-- cloud and efficiency evaluation execution
+
 
 ## Quick Entry
 
