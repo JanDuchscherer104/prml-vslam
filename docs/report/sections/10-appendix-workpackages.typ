@@ -76,7 +76,7 @@
     - #ds-code-strong("vslam-datastore/") \ --  norm. \ data samples #datastore_group
       - #ds-code-strong("advio/<seq>/<profile>/") #datastore_group
         - meta-data, statistics \ & manifest  #datastore_leaf
-        - #ds-code-strong("observations/") \ --  RGB fames #datastore_group
+        - #ds-code-strong("observations/") \ --  RGB frames #datastore_group
           - #ds-code("rgb/*.png") #datastore_array
           - #ds-code("observations.json") \ --  per frame payload & metadata #datastore_leaf
         - #ds-code-strong("trajectories/") \  #datastore_group
@@ -106,35 +106,14 @@
 
 #pagebreak()
 
-= Appendix: Supplementary Architecture and Artifact Map
-
-== Pipeline Architecture Diagrams
-
-The following diagrams document reproducibility-relevant implementation structure that is too
-detailed for the main paper: deterministic planning, standardized stage handoff, and separation
-between live diagnostics and durable artifacts.
-
-#figure(
-  image("../../figures/mermaid/pipeline/03-run-config-stage-plan.png", width: 100%),
-  caption: [Supplementary architecture: deterministic compilation from experiment configuration to an ordered execution plan.],
-) <fig:appendix-run-config-stage-plan>
-
-#figure(
-  image("../../figures/mermaid/pipeline/06-stage-result.png", width: 100%),
-  caption: [Supplementary architecture: terminal stage handoff and durable artifact persistence.],
-) <fig:appendix-stage-result-handoff>
-
-#figure(
-  image("../../figures/mermaid/pipeline/07-runtime-updates-visualization.png", width: 100%),
-  caption: [Supplementary architecture: live diagnostic updates are separated from durable scientific artifacts.],
-) <fig:appendix-runtime-updates-visualization>
+= Appendix: Supplementary Materials
 
 == Persisted Datastore Layouts
 
 The normalized datastore is materialized as a dataset, sequence, and profile hierarchy. The
-representative entries below show the persisted files that define the benchmark input contract for
+representative entries in @fig:appendix-vslam-datastore-layouts show the persisted files that define the benchmark input contract for
 each dataset family; profile identifiers are shortened because they identify materialization
-profiles rather than scientific variables.
+profiles.
 
 #place(
   top + center,
@@ -147,65 +126,3 @@ profiles rather than scientific variables.
     ) <fig:appendix-vslam-datastore-layouts>
   ],
 )
-
-#figure(
-  table(
-    columns: (0.58fr, 2.42fr),
-    align: (left, left),
-    inset: (x: 0.24em, y: 0.21em),
-    column-gutter: 0.36em,
-    toprule(),
-    table.header([Dataset], [Persisted modality and frame contract]),
-    midrule(), [ADVIO],
-    ragged(
-      [RGB-only observations; `ground_truth.tum` reference; registered `arcore.tum` and `arkit.tum` as candidates and baseline references; aligned AR files as diagnostic references only. All registered trajectories target `advio_fixedpoint_common_start_local`; no reference cloud is persisted.],
-    ),
-    [TUM RGB-D],
-
-    ragged(
-      [RGB and registered depth observations; `ground_truth.tum` maps from `tum_rgbd_mocap_world` to `tum_rgbd_world` after first-pose-relative normalization. `tum_rgbd.ply` is a reference cloud in the same target frame.],
-    ),
-    [Record3D],
-
-    ragged(
-      [RGB and depth observations; `arkit.tum` and `record3d_lidar.ply` use `record3d_world` as native and target frame after the metadata `p_yz_flip` pose-frame conversion and first-pose-relative normalization.],
-    ),
-    bottomrule(),
-  ),
-  caption: [Supplementary datastore modality and frame contracts for representative normalized entries.],
-) <tab:appendix-vslam-datastore-contracts>
-
-== Artifact and Responsibility Map
-
-The artifact map is supplementary context for reproducing or extending the benchmark.
-
-#figure(
-  table(
-    columns: (0.76fr, 1.55fr, 1.45fr),
-    align: (left, left, left),
-    inset: (x: 0.24em, y: 0.21em),
-    column-gutter: 0.38em,
-    toprule(),
-    table.header([Area], [Artifact or contract], [Scientific role]),
-    midrule(), [Source data], [Manifest, observations, timestamps, intrinsics, and prepared references.],
-    [Separates method inputs from evaluation references.],
-    [Method execution],
-    [Configuration, trajectory, dense cloud, and native extras.],
-
-    [Preserves comparable outputs and native diagnostics.],
-    [Trajectory alignment],
-    [Alignment metadata, aligned trajectory, reference source, and association policy.],
-
-    [Documents the transformation used before trajectory metrics are interpreted.],
-    [Dense geometry],
-    [Reference, Sim(3)-placed, and ICP-refined clouds plus placement metadata.],
-
-    [Separates cloud placement from dense-quality scoring.],
-    [Visualization],
-    [Neutral visualization items and recordings.],
-
-    [Debugs persisted artifacts.], [Reporting], [Experiment matrix, metric tables, limitations, and recommendations.],
-    [Turns validated runs into scientific claims.], bottomrule(),
-  ),
-  caption: [Supplementary artifact map for reproducing and extending the benchmark framework.],
-) <tab:artifact-map>

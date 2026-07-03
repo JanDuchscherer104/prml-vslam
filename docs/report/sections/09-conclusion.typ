@@ -6,6 +6,5 @@ normalized method inputs and interpretable outputs: source manifests, prepared r
 adapters, explicit frame placement, similarity alignment, gravity-aware alignment, ICP placement
 metadata, and metric records. The final local evidence pass now reports matched trajectory medians,
 ADVIO provider baselines, dense-cloud overlap metrics, render diagnostics, and runtime telemetry
-from the available artifacts. The next step is to expand that matrix into a fully frozen benchmark
-with complete LingBot coverage, ADVIO dense-reference evidence, confidence intervals, and
-hardware-normalized efficiency measurements.
+from the available artifacts. These results support artifact-scoped comparison while keeping broader
+method-ranking claims tied to the future frozen benchmark matrix described above.
