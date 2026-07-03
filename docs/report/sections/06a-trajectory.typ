@@ -69,7 +69,7 @@ affects a reported trajectory or dense-geometry metric.
 
 == Metrics: APE and RPE
 
-For comparison of the VSLAM methods, two types of metrics are calculated within the pipeline. 
+For comparison of the VSLAM methods, two types of metrics are calculated within the pipeline.
 
 Let $bold(T)_i$ and $hat(bold(T))_i$ denote the associated, Sim(3)-aligned reference and estimated
 poses. Absolute pose error (APE) measures global placement,
@@ -100,8 +100,8 @@ would otherwise dominate the mean.
 
 == Trajectory Evaluation Results
 
-The final local evidence set is the `benchmark-18` expirement. The experiment ran MASt3R-SLAM and 
-ViSTA-SLAM on 6 scenes per dataset, leading to a total of 18 scenes. LingBot-Map is not part of this sweep. 
+The final local evidence set is the `benchmark-18` expirement. The experiment ran MASt3R-SLAM and
+ViSTA-SLAM on 6 scenes per dataset, leading to a total of 18 scenes. LingBot-Map is not part of this sweep.
 @tab:trajectory-results reports matched-scene medians -- for ADVIO and Record3D only scenes both methods completed are
 compared, so that one method's failed runs are not silently excluded from just its own column. All
 values are Sim(3)-aligned RMSE and therefore measure trajectory-shape agreement rather than raw
@@ -141,11 +141,11 @@ to a bounded number of keyframes, trading accuracy for robustness rather than fa
   caption: [Matched-scene trajectory medians from local `benchmark-18` sweep summaries; raw metric files are not checked into the manuscript source tree.],
 ) <tab:trajectory-results>
 
-On TUM RGB-D both methods succeed, with MASt3R-SLAM delivering roughly three times more accurate results. 
+On TUM RGB-D both methods succeed, with MASt3R-SLAM delivering roughly three times more accurate results.
 The TUM RGB-D scenes have short trajectories (6--16 m),  that are slow, and richly textured, favoring MASt3R-SLAM's dense two-view matching and
 global optimization. ViSTA-SLAM's specific weak point within TUM RGB-D is rotation-heavy motion
 (`freiburg1_360`), where its APE rotation is falling behind MAST3R. On Record3D, global
-accuracy (APE) is nearly tied, but MASt3R-SLAM's local drift (RPE) is roughly five times lower. Following the APE metric, 
+accuracy (APE) is nearly tied, but MASt3R-SLAM's local drift (RPE) is roughly five times lower. Following the APE metric,
 this difference would not be visible, which is why both metrics are reported jointly above. On
 ADVIO both methods fail, dominated by rotation (88°--112° APE rotation) with RPE
 translation near 4 m per metre traveled. Part of this is attributable to
@@ -212,7 +212,7 @@ ADVIO also provides registered ARCore and ARKit trajectories as candidates again
 truth, evaluated on the same matched scenes as @tab:trajectory-results (@tab:advio-baselines)
 @cortes2018advio. These mobile visual-inertial odometry (VIO) systems fuse the camera with the
 phone's gyroscope and accelerometer, and outperform both monocular methods by roughly 3--12x in
-translation and 8--10x in rotation. The IMU covers three weaknesses of monocular VSLAM methods. 
-The metric scale and the gravity direction lead to less estimation faults. Furthermore it is blur-robust through fast turns. 
-This does not make the vision-only methods worse in an absolute sense as they solve a strictly harder, uncalibrated and IMU-free problem. 
+translation and 8--10x in rotation. The IMU covers three weaknesses of monocular VSLAM methods.
+The metric scale and the gravity direction lead to less estimation faults. Furthermore it is blur-robust through fast turns.
+This does not make the vision-only methods worse in an absolute sense as they solve a strictly harder, uncalibrated and IMU-free problem.
 ARCore and ARKit are themselves not ground truth, sitting roughly 1--2% of path length off the reference.
